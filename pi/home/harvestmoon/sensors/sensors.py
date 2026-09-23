@@ -22,6 +22,7 @@ Standard library only - nothing to pip install.
 """
 
 import os, socket, json, time, math, urllib.request
+from collections import deque
 
 XB_HOST    = os.environ.get("XB_HOST", "192.168.1.167")
 XB_PORT    = int(os.environ.get("XB_PORT", "39150"))
@@ -50,6 +51,56 @@ def true_wind(awa_deg, aws, boat_speed):
     y = aws * math.sin(awa)
     return math.degrees(math.atan2(y, x)) % 360, math.hypot(x, y)
 
+# ---- Gust: peak TRUE wind over the trailing hour ---------------------------
+# Same method as the cabin frame (frame.py): every wind sentence becomes a
+# true-wind sample, a median of the last few samples knocks out single-sample
+# anemometer glitches, and the highest filtered value in the last hour is the
+# gust. Published as gustKn / gustDirDeg / gustAt for the Instruments tab.
+GUST_WINDOW = int(os.environ.get("GUST_WINDOW", "3600"))
+GUST_MAX_KT = 70                       # anything above is treated as garbage
+gust_hist = deque()                    # (epoch, knots, true dir or None)
+_recent_tws = deque(maxlen=5)
+
+def nmea_ok(line):
+    # Reject sentences whose checksum is wrong - corrupted wind sentences
+    # are exactly what produce phantom gusts.
+    line = line.strip()
+    if not line.startswith('$'): return False
+    if '*' not in line: return True
+    body, _, ck = line[1:].partition('*')
+    try: want = int(ck[:2], 16)
+    except ValueError: return False
+    got = 0
+    for ch in body: got ^= ord(ch)
+    return got == want
+
+def _median(v):
+    s = sorted(v); n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+def gust_sample(awa, aws):
+    if not (0 <= aws <= GUST_MAX_KT): return
+    twa, tws = true_wind(awa, aws, fresh('boatspd') or 0.0)
+    _recent_tws.append(tws)
+    if len(_recent_tws) < 3: return
+    g = _median(_recent_tws)
+    hdg = fresh('hdg_mag')
+    twd = None
+    if hdg is not None:
+        var = fresh('var')
+        if var is None: var = bow_offset_config()[2]
+        twd = (hdg + var + twa) % 360
+    now = time.time()
+    gust_hist.append((now, g, twd))
+    while gust_hist and now - gust_hist[0][0] > GUST_WINDOW:
+        gust_hist.popleft()
+
+def gust_peak():
+    now = time.time()
+    while gust_hist and now - gust_hist[0][0] > GUST_WINDOW:
+        gust_hist.popleft()
+    return max(gust_hist, key=lambda g: g[1]) if gust_hist else None
+
 # ---- NMEA parse (mirrors frame.py's proven field extraction) --------------
 def parse(sentence):
     try:
@@ -59,6 +110,8 @@ def parse(sentence):
             awa, aws = fnum(p[1]), fnum(p[3])
             if awa is not None: remember('awa', awa)
             if aws is not None: remember('aws', aws)
+            if awa is not None and aws is not None and nmea_ok(sentence):
+                gust_sample(awa, aws)
         elif t.endswith('DPT') and len(p) > 1 and p[1]:        # depth (m below transducer)
             m = fnum(p[1])
             if m is not None: remember('depth_m', m)
@@ -129,6 +182,11 @@ def build_fields():
         f['headingTrueDeg'] = round((fresh('hdg_mag') + _v) % 360)
         f['variationDeg'] = round(_v, 1)
         f['variationFromGps'] = (fresh('var') is not None)
+    pk = gust_peak()
+    if pk is not None:
+        f['gustKn'] = round(pk[1], 1)
+        if pk[2] is not None: f['gustDirDeg'] = round(pk[2])
+        f['gustAt'] = int(pk[0] * 1000)
     if fresh('lat') is not None: f['lat'] = round(fresh('lat'), 6)
     if fresh('lon') is not None: f['lon'] = round(fresh('lon'), 6)
     return f

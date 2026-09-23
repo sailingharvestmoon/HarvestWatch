@@ -345,6 +345,7 @@ input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%
       <div class="tiles">
         <div class="tile teal"><small>True wind</small><b id="iTws">--</b><span id="iTwd">—</span></div>
         <div class="tile teal"><small>Apparent</small><b id="iAws">--</b><span id="iAwa">—</span></div>
+        <div class="tile teal" style="grid-column:1/-1"><small>Peak gust · last 60 min</small><b id="iGust">--</b><span id="iGustSub">&nbsp;</span></div>
       </div>
       <div class="section-title">Water &amp; motion</div>
       <div class="tiles">
@@ -435,7 +436,7 @@ input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%
   <div class="page-head">
     <button class="back" onclick="closeAlertPage()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg>Alerts</button>
     <b id="apTitle"></b>
-    <span class="switch" id="apSwitchWrap"><input type="checkbox" id="apSwitch"><span></span></span>
+    <label class="switch" id="apSwitchWrap"><input type="checkbox" id="apSwitch"><span></span></label>
   </div>
   <div class="page-body" id="apBody"></div>
   <div class="page-foot"><button class="btn primary block" id="apSave" onclick="saveAlertPage()">Save</button></div>
@@ -1377,7 +1378,8 @@ function openAlertPage(id) {
   const a = ALERTS.find(x => x.id === id); apCur = a;
   $('apTitle').textContent = a.name;
   const sw = $('apSwitch');
-  sw.checked = a.en ? C(a.en) : true; sw.disabled = !a.en;
+  sw.checked = a.en ? C(a.en) : true;
+  $('apSwitchWrap').style.display = a.en ? '' : 'none';
   const nowTxt = a.now ? a.now() : '';
   const [cls, lbl] = alertStatus(a);
   const fields = a.fields.map(f => {
@@ -1395,6 +1397,7 @@ function openAlertPage(id) {
   }
   $('apBody').innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span class="chip ${cls}">${lbl}</span><span class="note">${esc(nowTxt)}</span></div>
+    ${a.en ? `<p class="note" style="margin:-4px 4px 12px;">Switch at top right turns this alert on or off. Tap Save to send it to the boat.</p>` : `<p class="note" style="margin:-4px 4px 12px;">Always on while the anchor watch runs — to stop it, end the watch on the Anchor tab.</p>`}
     <div class="card">${fields}</div>
     <p class="note" style="margin:12px 4px 0;">${a.desc}</p>${extra}`;
   a.fields.forEach(f => $('ap_' + f.k).addEventListener('input', e => {
@@ -1450,6 +1453,15 @@ function paintInstruments() {
   $('roseMode').textContent = hdg === null ? 'North up — no heading, boat not shown' : (hT !== null ? 'True north up' : 'Magnetic north up');
   setTile('iTws', tws !== null ? tws.toFixed(1) : null, 'kn', twd !== null ? `from ${compass(twd)} ${twd}°` : '', 'iTwd');
   setTile('iAws', aws !== null ? aws.toFixed(1) : null, 'kn', awa !== null ? `${awa}° off bow` : '', 'iAwa');
+  // Peak gust over the trailing hour, tracked on the Pi by sensors.py
+  // (same median-filtered true wind the cabin frame shows).
+  const gk = n('gustKn'), gd = n('gustDirDeg'), ga = n('gustAt');
+  let gsub = gk === null ? 'waiting for the Pi to publish gusts' : '';
+  if (gk !== null && ga) {
+    const t = new Date(ga).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    gsub = `${gd !== null ? `from ${compass(gd)} ${gd}° · ` : ''}at ${t} (${ago(ga)})`;
+  }
+  setTile('iGust', gk !== null ? gk.toFixed(1) : null, 'kn', gsub, 'iGustSub');
   const g = depthNow();
   setTile('iDepth', g ? g.water.toFixed(1) : (n('depthFt') !== null ? n('depthFt').toFixed(1) : null), 'ft', g ? 'below surface' : 'below transducer', 'iDepthSub');
   setTile('iTemp', n('waterTempF'), '°F');
@@ -1517,7 +1529,7 @@ function paintBoat() {
   if (el.contains(document.activeElement)) return;   // don't fight the keyboard
   el.innerHTML = BOAT_FIELDS.map(f => `
     <div class="row"><div class="txt"><b>${f.label}</b><small>${f.note}</small></div>
-      ${f.sw ? `<span class="switch" style="margin-right:4px;"><input type="checkbox" id="bs_${f.sw}" ${C(f.sw) ? 'checked' : ''}><span></span></span>` : ''}
+      ${f.sw ? `<label class="switch" style="margin-right:4px;"><input type="checkbox" id="bs_${f.sw}" ${C(f.sw) ? 'checked' : ''}><span></span></label>` : ''}
       <input class="text-in" id="bs_${f.k}" type="number" inputmode="decimal" step="${f.step}" value="${C(f.k)}" style="width:84px;text-align:right;padding:9px 10px;font-size:16px;">
       <span class="val" style="width:18px;">${f.unit}</span></div>`).join('');
   const v = C('magVarDeg');
