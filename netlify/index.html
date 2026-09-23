@@ -273,6 +273,39 @@ input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%
 .tide-row.hi b { color:var(--accent); }
 .coming { border:1px dashed var(--line); border-radius:14px; padding:16px; color:var(--muted); font-size:13.5px; text-align:center; }
 
+/* forecast table */
+.fc-controls { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.fc-models { display:flex; gap:5px; overflow-x:auto; flex:1; padding:2px 0; scrollbar-width:none; }
+.fc-models::-webkit-scrollbar { display:none; }
+.mchip { flex:none; background:var(--mbg); color:var(--mfg); font-size:12px; font-weight:700; padding:5px 9px; border-radius:999px; opacity:.55; border:2px solid transparent; letter-spacing:.02em; }
+.mchip.on { opacity:1; border-color:var(--ink); }
+.mchip.off { text-decoration:line-through; }
+.mchip.sm { font-size:10.5px; padding:3px 7px; opacity:1; border-width:0; cursor:pointer; }
+.mchip.sm.on { box-shadow:0 0 0 2px var(--ink); }
+.fc-wrap { margin:0 -16px; overflow-x:auto; -webkit-overflow-scrolling:touch; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--surface); }
+table.fc { border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:13.5px; }
+table.fc th, table.fc td { min-width:38px; height:32px; text-align:center; padding:0 2px; white-space:nowrap; position:relative; }
+table.fc td { color:var(--ink); font-weight:600; }
+table.fc td.e { color:var(--faint); }
+table.fc td small { display:block; font-size:10px; line-height:1.1; font-weight:600; opacity:.9; }
+table.fc tr.tall td { height:52px; line-height:1.15; }
+table.fc tr.fc-day th { height:22px; font-size:12px; text-align:left; font-weight:700; color:var(--ink); }
+table.fc tr.fc-day th span { position:absolute; left:4px; top:4px; white-space:nowrap; z-index:1; }
+table.fc tr.fc-hr th { height:22px; font-size:11px; color:var(--muted); font-weight:500; }
+table.fc .dstart { border-left:1.5px solid var(--muted); }
+table.fc .n { box-shadow:inset 0 0 0 999px rgba(10,20,40,.22); }
+table.fc tr.fc-day .n, table.fc tr.fc-hr .n, table.fc td.e.n { box-shadow:inset 0 0 0 999px rgba(10,20,40,.10); }
+table.fc th.fc-lab { position:sticky; left:0; z-index:3; background:var(--surface); min-width:104px; max-width:104px; text-align:left; padding:0 6px 0 10px; border-right:1px solid var(--line); box-shadow:none; }
+table.fc tr.cat td, table.fc tr.cat th { border-top:1px solid var(--line); }
+table.fc tr.model th.fc-lab { text-align:right; }
+.fc-cat { display:flex; flex-direction:column; align-items:flex-start; width:100%; position:relative; text-align:left; line-height:1.1; }
+.fc-cat b { font-size:13px; color:var(--accent); font-weight:600; }
+.fc-cat small { font-size:10px; color:var(--muted); }
+.fc-cat i { position:absolute; right:-2px; top:50%; font-style:normal; color:var(--accent); transform:translateY(-50%) rotate(90deg); font-size:15px; transition:transform .2s; }
+.fc-cat i.up { transform:translateY(-50%) rotate(-90deg); }
+table.fc tr.cat th .mchip.sm { pointer-events:none; position:absolute; right:22px; top:50%; transform:translateY(-50%) scale(.85); }
+tr.cat th.fc-lab .fc-cat { padding-right:52px; }
+
 /* toast */
 .toast { position:fixed; left:50%; top:calc(70px + env(safe-area-inset-top)); transform:translateX(-50%) translateY(-12px); opacity:0; z-index:900; background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:600; transition:.25s; pointer-events:none; max-width:90vw; text-align:center; }
 .toast.show { opacity:1; transform:translateX(-50%); }
@@ -373,14 +406,20 @@ input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%
     <section class="view scroll" id="view-weather">
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
-      <div class="section-title" id="wxFcTitle">Forecast</div>
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="loadForecast(true)">↻ Refresh</button></div>
+      <div class="fc-controls">
+        <div class="fc-models" id="fcModels"></div>
+        <div class="seg" id="fcDays" style="width:120px;flex:none;"><button data-d="3" onclick="setFcDays(3)">3 d</button><button data-d="7" onclick="setFcDays(7)">7 d</button></div>
+      </div>
+      <div class="fc-wrap" id="fcBox"></div>
+      <p class="note" id="fcMeta" style="margin:8px 4px 0;"></p>
+      <p class="note" style="margin:4px 4px 0;">Tap a model to make it the one shown in collapsed rows (marked by the coloured edge). Tap a row name to expand every model. Shaded columns are night.</p>
+      <div class="section-title" id="wxFcTitle">NWS forecast</div>
       <div class="list" id="wxFc"></div>
       <div class="section-title" id="wxTideTitle">Tides</div>
       <div class="list" id="wxTides"></div>
       <div class="section-title">Sun &amp; moon</div>
       <div class="card pad" id="wxSun"></div>
-      <div class="section-title">Forecast models</div>
-      <div class="coming">Model comparison, GRIB wind maps and routing will live here.</div>
       <p class="note" id="wxAge" style="text-align:center;margin-top:14px;"></p>
     </section>
 
@@ -1516,6 +1555,207 @@ function paintWeather() {
   $('wxAge').innerHTML = `Weather updated ${ago(num(w.updatedAt))}${fa && (Date.now() - fa) > 3 * 3600000 ? ` · <span style="color:var(--warn)">forecast ${ago(fa).replace(' ago', '')} old</span>` : ''} · NWS &amp; NOAA`;
 }
 
+
+// ═══ FORECAST MODELS (Open-Meteo) ══════════════════════════════════
+// One request per model, straight from the phone: free, no key, and a
+// model that is down or out of range only blanks its own row. Laid out
+// like PredictWind's table - hours across, a row per variable, and any
+// variable can be expanded to show every model underneath.
+const MODELS = [
+  { id: 'ecmwf', label: 'ECMWF', bg: '#000000', fg: '#fff', api: ['ecmwf_ifs025', 'ecmwf_ifs'], info: 'ECMWF IFS (European Centre) · 25 km · global · usually the most reliable global model' },
+  { id: 'gfs',   label: 'GFS',   bg: '#15821f', fg: '#fff', api: ['gfs_seamless', 'gfs_global'], info: 'NOAA GFS (US) · 13–25 km · global' },
+  { id: 'ukmo',  label: 'UKMO',  bg: '#dcb44a', fg: '#fff', api: ['ukmo_seamless', 'ukmo_global_deterministic_10km'], info: 'UK Met Office Unified Model · 10 km · global' },
+  { id: 'icon',  label: 'ICON',  bg: '#2f8b9b', fg: '#fff', api: ['icon_seamless', 'icon_global'], info: 'DWD ICON (Germany) · 13 km global' },
+  { id: 'nam',   label: 'NAM',   bg: '#8e4fd6', fg: '#fff', api: ['ncep_nam_conus'], info: 'NOAA NAM · 3 km · North America only · about 2.5 days' },
+  { id: 'hrrr',  label: 'HRRR',  bg: '#5d1675', fg: '#fff', api: ['ncep_hrrr_conus', 'gfs_hrrr'], info: 'NOAA HRRR · 3 km · US waters only · about 2 days · updated hourly' },
+  { id: 'aifs',  label: 'AIFS',  bg: '#e886ef', fg: '#fff', api: ['ecmwf_aifs025_single', 'ecmwf_aifs025'], info: 'ECMWF AIFS — the European Centre\'s AI model · 25 km · global' }
+];
+const FC_VARS = ['weather_code', 'is_day', 'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m', 'precipitation', 'cape', 'cloud_cover', 'temperature_2m', 'pressure_msl'];
+const FC_KEY = 'hw_forecast', FC_UI = 'hw_fc_ui';
+const FCU = Object.assign({ primary: 'ecmwf', days: 3, open: { wind: true } },
+  (() => { try { return JSON.parse(localStorage.getItem(FC_UI) || '{}'); } catch (e) { return {}; } })());
+const saveFcu = () => { try { localStorage.setItem(FC_UI, JSON.stringify(FCU)); } catch (e) {} };
+let FC = (() => { try { return JSON.parse(localStorage.getItem(FC_KEY) || 'null'); } catch (e) { return null; } })();
+let fcLoading = false;
+
+function fcPosition() {
+  if (S.pos) return { lat: S.pos.lat, lon: S.pos.lon };
+  if (S.anchor) return { lat: S.anchor.lat, lon: S.anchor.lon };
+  return { lat: 44.10, lon: -69.10 };
+}
+async function fetchJson(u) {
+  const r = await fetch(u); const j = await r.json().catch(() => null);
+  if (!r.ok || !j || j.error) throw new Error((j && j.reason) || ('HTTP ' + r.status));
+  return j;
+}
+async function fetchModel(m, lat, lon, days) {
+  let last = null;
+  for (const name of m.api) {
+    try {
+      const j = await fetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+        + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit`
+        + `&precipitation_unit=mm&timezone=auto&forecast_days=${days}`);
+      const h = j.hourly || {};
+      const any = (h.wind_speed_10m || []).some(v => v !== null);
+      return { ok: any, api: name, err: any ? '' : 'no coverage here', h, daily: j.daily, off: j.utc_offset_seconds, tz: j.timezone_abbreviation };
+    } catch (e) { last = e; }
+  }
+  return { ok: false, err: String(last && last.message || last || 'failed') };
+}
+async function loadForecast(force) {
+  if (fcLoading) return;
+  const p = fcPosition();
+  const stale = !FC || (Date.now() - FC.at) > 60 * 60000 || FC.days !== FCU.days
+    || haversine(FC.lat, FC.lon, p.lat, p.lon) > 20 * 1852;
+  if (!force && !stale) { paintForecast(); return; }
+  fcLoading = true; paintForecast();
+  const days = FCU.days;
+  const [res, marine] = await Promise.all([
+    Promise.all(MODELS.map(m => fetchModel(m, p.lat, p.lon, days))),
+    fetchJson(`https://marine-api.open-meteo.com/v1/marine?latitude=${p.lat.toFixed(4)}&longitude=${p.lon.toFixed(4)}`
+      + `&hourly=wave_height,wave_direction,wave_period&length_unit=imperial&timezone=auto&forecast_days=${days}`).catch(() => null)
+  ]);
+  fcLoading = false;
+  const models = {}; MODELS.forEach((m, i) => models[m.id] = res[i]);
+  const base = res.find(r => r.h && r.h.time) ;
+  if (!base) { toast('Could not reach the forecast service', 4000); paintForecast(); return; }
+  FC = { at: Date.now(), lat: p.lat, lon: p.lon, days, models, marine: marine && marine.hourly ? marine.hourly : null,
+         time: base.h.time, off: base.off, tz: base.tz, daily: base.daily };
+  try { localStorage.setItem(FC_KEY, JSON.stringify(FC)); }
+  catch (e) { try { localStorage.removeItem(FC_KEY); } catch (e2) {} }
+  paintForecast();
+}
+
+// Colour scales, in the spirit of PredictWind's.
+function windBg(v) {
+  if (v === null || v === undefined) return '';
+  const stops = [[0, '#bfe1f7'], [5, '#6fb5ea'], [10, '#63da6b'], [15, '#f3e53b'], [20, '#f6b73c'], [25, '#ef7a35'], [30, '#dd3f33'], [35, '#b13fa0'], [45, '#6f2d8f']];
+  let c = stops[0][1]; for (const [k, col] of stops) if (v >= k) c = col; return c;
+}
+const darkBg = c => ['#dd3f33', '#b13fa0', '#6f2d8f', '#ef7a35'].includes(c);
+function tempBg(v) { if (v === null) return ''; return v < 32 ? '#8ec5f2' : v < 50 ? '#bfe7c9' : v < 65 ? '#8fe08a' : v < 80 ? '#f3e53b' : v < 90 ? '#f6b73c' : '#ef7a35'; }
+function cloudBg(v) { if (v === null) return ''; const g = Math.round(245 - v * 1.1); return `rgb(${g},${g},${g + 3})`; }
+function rainBg(v) { if (!v || v < .1) return ''; return v < 1 ? '#bfe0fb' : v < 4 ? '#72b6f2' : v < 10 ? '#2f7fd6' : '#1b4ea8'; }
+function capeBg(v) { if (!v || v < 100) return ''; return v < 500 ? '#fbe8a6' : v < 1500 ? '#f6b73c' : '#ef7a35'; }
+function wxEmoji(code, day) {
+  if (code === null || code === undefined) return '';
+  if (code >= 95) return '⛈️';
+  if (code >= 71 && code <= 77 || code === 85 || code === 86) return '🌨️';
+  if (code >= 51) return code >= 61 && code <= 67 || code >= 80 ? '🌧️' : '🌦️';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code === 3) return '☁️';
+  if (code === 2) return day ? '⛅' : '☁️';
+  return day ? (code === 1 ? '🌤️' : '☀️') : '🌙';
+}
+
+// A row is { label, sub, chip, cells: [{t, bg, fg}] }. Every category knows
+// how to render one model; collapsed shows the main model, expanded all.
+const FC_CATS = [
+  { id: 'wx', label: 'Weather', sub: '', cell: (h, i) => ({ t: wxEmoji(h.weather_code[i], h.is_day ? h.is_day[i] : 1) }) },
+  { id: 'wind', label: 'Speed', sub: 'knots', cell: (h, i) => num2(h.wind_speed_10m[i], windBg) },
+  { id: 'gust', label: 'Gusts', sub: 'knots', cell: (h, i) => num2(h.wind_gusts_10m[i], windBg) },
+  { id: 'dir', label: 'Direction', sub: 'true, from', cell: (h, i) => { const v = h.wind_direction_10m[i]; return v === null ? { t: '' } : { t: compass(v), title: Math.round(v) + '°' }; } },
+  { id: 'rain', label: 'Rainfall', sub: 'mm/hr', cell: (h, i) => { const v = h.precipitation[i]; return { t: v && v >= .1 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '', bg: rainBg(v), fg: v >= 4 ? '#fff' : '' }; } },
+  { id: 'cape', label: 'CAPE', sub: 'J/kg · storms', cell: (h, i) => { const v = h.cape ? h.cape[i] : null; return { t: v && v >= 100 ? Math.round(v / 10) * 10 : '', bg: capeBg(v) }; } },
+  { id: 'cloud', label: 'Cloud', sub: 'cover %', cell: (h, i) => { const v = h.cloud_cover[i]; return { t: v === null ? '' : Math.round(v / 10) * 10, bg: cloudBg(v), fg: '#1b2733' }; } },
+  { id: 'temp', label: 'Temp', sub: '°F', cell: (h, i) => { const v = h.temperature_2m[i]; return { t: v === null ? '' : Math.round(v), bg: tempBg(v), fg: '#1b2733' }; } },
+  { id: 'press', label: 'Pressure', sub: 'mb · 3h trend', cell: (h, i) => {
+      const v = h.pressure_msl[i]; if (v === null) return { t: '' };
+      const p3 = i >= 3 ? h.pressure_msl[i - 3] : null;
+      const tr = p3 === null ? '' : v - p3 <= -1 ? '↓' : v - p3 >= 1 ? '↑' : '○';
+      const fast = p3 !== null && Math.abs(v - p3) >= 3;
+      return { t: `${Math.round(v)}<small>${tr}</small>`, small: true, bg: fast ? '#dd3f33' : '#2f7fd6', fg: '#fff', title: fast ? 'Changing 3 mb or more in 3 hours' : '' };
+    } },
+  { id: 'wave', label: 'Waves', sub: 'ft · from · sec', marine: true }
+];
+function num2(v, scale) {
+  if (v === null || v === undefined) return { t: '' };
+  const bg = scale(v); return { t: Math.round(v), bg, fg: darkBg(bg) ? '#fff' : '#14212d' };
+}
+
+function paintForecast() {
+  const box = $('fcBox'); if (!box) return;
+  const meta = $('fcMeta');
+  // model picker
+  $('fcModels').innerHTML = MODELS.map(m => {
+    const r = FC && FC.models[m.id];
+    const off = FC && (!r || !r.ok);
+    return `<button class="mchip ${FCU.primary === m.id ? 'on' : ''} ${off ? 'off' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pickModel('${m.id}')" title="${esc(m.info)}">${m.label}</button>`;
+  }).join('');
+  document.querySelectorAll('#fcDays button').forEach(b => b.classList.toggle('on', +b.dataset.d === FCU.days));
+  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet.'}</div>`; meta.textContent = ''; return; }
+
+  // Columns: from the current hour at the boat, local time there.
+  const nowLocal = new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00';
+  const cols = []; FC.time.forEach((t, i) => { if (t >= nowLocal) cols.push(i); });
+  const sun = {}; if (FC.daily && FC.daily.time) FC.daily.time.forEach((d, k) => sun[d] = [FC.daily.sunrise[k], FC.daily.sunset[k]]);
+  const night = i => { const t = FC.time[i], s = sun[t.slice(0, 10)]; return s ? (t < s[0].slice(0, 13) + ':00' || t > s[1]) : false; };
+  const nightCls = cols.map(i => night(i) ? ' n' : '');
+
+  let head1 = '<tr class="fc-day"><th class="fc-lab"></th>', head2 = '<tr class="fc-hr"><th class="fc-lab"><span class="note">' + esc(FC.tz || 'local') + '</span></th>';
+  let lastDay = '';
+  cols.forEach((i, k) => {
+    const t = FC.time[i], d = t.slice(0, 10);
+    const newDay = d !== lastDay; lastDay = d;
+    const dd = new Date(d + 'T12:00');
+    const lbl = newDay ? dd.toLocaleDateString('en-US', { weekday: 'short' }) + ' ' + dd.getDate() : '';
+    head1 += `<th class="${newDay ? 'dstart' : ''}${nightCls[k]}">${lbl ? `<span>${lbl}</span>` : ''}</th>`;
+    head2 += `<th class="${newDay ? 'dstart' : ''}${nightCls[k]}">${t.slice(11, 13)}</th>`;
+  });
+  let body = '';
+  const primary = FC.models[FCU.primary] && FC.models[FCU.primary].ok ? FCU.primary : (MODELS.find(m => FC.models[m.id] && FC.models[m.id].ok) || {}).id;
+  const pm = MODELS.find(m => m.id === primary);
+  const rowHtml = (labelHtml, cellFn, cls) => {
+    let r = `<tr class="${cls || ''}"><th class="fc-lab">${labelHtml}</th>`;
+    cols.forEach((i, k) => {
+      const c = cellFn(i) || { t: '' };
+      const st = (c.bg ? `background:${c.bg};color:${c.fg || '#14212d'};` : (c.fg ? `color:${c.fg};` : '')) + (c.small ? 'font-size:11.5px;' : '');
+      r += `<td class="${nightCls[k]}${c.t === '' ? ' e' : ''}"${st ? ` style="${st}"` : ''}${c.title ? ` title="${esc(c.title)}"` : ''}>${c.t}</td>`;
+    });
+    return r + '</tr>';
+  };
+  for (const cat of FC_CATS) {
+    const open = !!FCU.open[cat.id] && !cat.marine;
+    const lab = `<button class="fc-cat" onclick="toggleCat('${cat.id}')"><b>${cat.label}</b><small>${cat.sub}</small>${cat.marine ? '' : `<i class="${open ? 'up' : ''}">›</i>`}</button>`;
+    if (cat.marine) {
+      const w = FC.marine;
+      const idx = w ? new Map(w.time.map((t, k) => [t, k])) : new Map();
+      body += rowHtml(lab, i => {
+        const k = idx.get(FC.time[i]); if (k === undefined || w.wave_height[k] === null) return { t: '' };
+        const hgt = w.wave_height[k], dir = w.wave_direction[k], per = w.wave_period[k];
+        const bg = hgt < 2 ? '#7fb8ea' : hgt < 4 ? '#3d8fd9' : hgt < 7 ? '#1f64b8' : '#123f86';
+        return { t: `${hgt.toFixed(1)}<small>${dir === null ? '' : compass(dir)}</small><small>${per === null ? '' : Math.round(per) + 's'}</small>`, bg, fg: '#fff' };
+      }, 'tall');
+      continue;
+    }
+    if (!open) {
+      const r = FC.models[primary];
+      body += rowHtml(lab.replace('class="fc-cat"', `class="fc-cat" style="border-left:4px solid ${pm ? pm.bg : 'transparent'};padding-left:6px;margin-left:-10px;"`), i => r && r.h && r.h[Object.keys(r.h)[0]] ? safeCell(cat, r.h, i) : { t: '' }, 'cat');
+    } else {
+      body += `<tr class="cat catopen"><th class="fc-lab">${lab}</th>${cols.map((_, k) => `<td class="${nightCls[k]} e"></td>`).join('')}</tr>`;
+      for (const m of MODELS) {
+        const r = FC.models[m.id];
+        const chip = `<span class="mchip sm ${m.id === primary ? 'on' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="toast('${esc(m.info).replace(/'/g, '&#39;')}${r && !r.ok ? ' — ' + esc(r.err || 'unavailable') : ''}', 4500)">${m.label}</span>`;
+        body += rowHtml(chip, i => (r && r.ok) ? safeCell(cat, r.h, i) : { t: '' }, 'model');
+      }
+    }
+  }
+  box.innerHTML = `<table class="fc">${head1}</tr>${head2}</tr>${body}</table>`;
+  const failed = MODELS.filter(m => !FC.models[m.id] || !FC.models[m.id].ok).map(m => m.label);
+  meta.innerHTML = `${fcLoading ? 'Refreshing… · ' : ''}Updated ${ago(FC.at)} for ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
+    + (failed.length ? ` · <span style="color:var(--warn)">not available here: ${failed.join(', ')}</span>` : '')
+    + ` · <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a>`;
+}
+function safeCell(cat, h, i) { try { return cat.cell(h, i); } catch (e) { return { t: '' }; } }
+function toggleCat(id) { if (id === 'wave') return; FCU.open[id] = !FCU.open[id]; saveFcu(); paintForecast(); }
+function pickModel(id) {
+  const m = MODELS.find(x => x.id === id);
+  FCU.primary = id; saveFcu(); paintForecast();
+  const r = FC && FC.models[id];
+  toast(m.info + (r && !r.ok ? ' — not available here' : ''), 4000);
+}
+function setFcDays(d) { FCU.days = d; saveFcu(); loadForecast(true); }
+
 // ═══ BOAT ══════════════════════════════════════════════════════════
 const BOAT_FIELDS = [
   { k: 'loaFt', label: 'Length overall', unit: 'ft', step: .5, note: 'Draws the hull on the map' },
@@ -1592,6 +1832,7 @@ function showView(v) {
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
   if (v === 'boat') { paintBoat(); loadFrameMode(); }
+  if (v === 'weather') loadForecast(false);
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v)));
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
