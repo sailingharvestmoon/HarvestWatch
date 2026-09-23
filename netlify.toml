@@ -1,0 +1,5 @@
+# Tells Netlify which folder in this repo is the website.
+# Without this it publishes the repo root, which has no index.html -> "Page not found".
+[build]
+  publish = "netlify"
+  command = ""
