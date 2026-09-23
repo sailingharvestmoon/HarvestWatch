@@ -1,0 +1,13 @@
+# Cloudflare deploy settings for the cloud anchor watcher.
+# Cloudflare Workers Builds reads this on every push to GitHub (root directory: cloudflare-worker).
+name = "harvest-moon-watcher"
+main = "anchor-watcher-worker.js"
+compatibility_date = "2025-09-01"
+
+# Keep the variables set in the Cloudflare dashboard (PROJECT_ID, VESSEL_ID, NTFY_TOPIC, NTFY_TOKEN...).
+# Without this, a deploy from Git would wipe them.
+keep_vars = true
+
+# Run every minute.
+[triggers]
+crons = ["* * * * *"]
