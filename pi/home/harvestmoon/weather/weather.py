@@ -13,6 +13,7 @@ Environment variables (set in weather.service):
   PROJECT_ID    Firebase project     (default harvest-moon-watch)
   VESSEL_ID     short name           (default harvest-moon)
   FETCH_MIN     minutes between pulls (default 30)
+  FC_MIN        minutes between model-forecast pulls (default 60)
   FALLBACK_LAT  used if no position   (default 44.30 - midcoast Maine)
   FALLBACK_LON                         (default -68.31)
   NWS_UA        User-Agent for NWS (they require one identifying the app)
@@ -24,6 +25,7 @@ from datetime import datetime, timezone, timedelta
 PROJECT_ID = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
 VESSEL_ID  = os.environ.get("VESSEL_ID", "harvest-moon").strip()
 FETCH_MIN  = int(os.environ.get("FETCH_MIN", "30"))
+FC_MIN     = int(os.environ.get("FC_MIN", "60"))
 FALLBACK_LAT = float(os.environ.get("FALLBACK_LAT", "44.30"))
 FALLBACK_LON = float(os.environ.get("FALLBACK_LON", "-68.31"))
 NWS_UA = os.environ.get("NWS_UA", "harvest-moon-frame (sailingharvestmoon@gmail.com)")
@@ -452,14 +454,141 @@ def build_and_write():
     except Exception as e:
         print("weather write failed:", e, flush=True)
 
-def run():
-    print(f"weather: {PROJECT_ID}/{VESSEL_ID}, every {FETCH_MIN} min", flush=True)
-    while True:
+# ---- Model forecasts (Open-Meteo) -> weather/<vessel>-forecast ------------
+# Seven models, pulled on the boat and stored in Firestore so the Harvest
+# Watch app only ever READS a finished forecast - nothing is fetched or kept
+# on the phone. Free, no API key. One request per model, so a model that is
+# down or has no coverage here (NAM/HRRR outside US waters) only blanks its
+# own row. Always pulls 7 days; the app chooses how much to show.
+FC_DOC = f"{FS}/weather/{VESSEL_ID}-forecast"
+FC_MODELS = [
+    ("ecmwf", ["ecmwf_ifs025", "ecmwf_ifs"]),
+    ("gfs",   ["gfs_seamless", "gfs_global"]),
+    ("ukmo",  ["ukmo_seamless", "ukmo_global_deterministic_10km"]),
+    ("icon",  ["icon_seamless", "icon_global"]),
+    ("nam",   ["ncep_nam_conus"]),
+    ("hrrr",  ["ncep_hrrr_conus", "gfs_hrrr"]),
+    ("aifs",  ["ecmwf_aifs025_single", "ecmwf_aifs025"]),
+]
+FC_VARS = ["weather_code", "is_day", "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
+           "precipitation", "cape", "cloud_cover", "temperature_2m", "pressure_msl"]
+FC_DAYS = 7
+# Decimal places kept per variable - enough for display, and it keeps the
+# stored document small (it is read by the phone over Starlink / cell).
+FC_ROUND = {"precipitation": 1, "pressure_msl": 1, "wind_speed_10m": 1, "wind_gusts_10m": 1}
+
+def _round_list(vals, nd):
+    out = []
+    for v in vals or []:
+        if v is None: out.append(None)
+        elif nd == 0: out.append(int(round(v)))
+        else: out.append(round(v, nd))
+    return out
+
+def fc_model(apis, lat, lon):
+    last = "failed"
+    for name in apis:
+        url = ("https://api.open-meteo.com/v1/forecast?"
+               f"latitude={lat:.4f}&longitude={lon:.4f}&hourly={','.join(FC_VARS)}"
+               f"&daily=sunrise,sunset&models={name}&wind_speed_unit=kn&temperature_unit=fahrenheit"
+               f"&precipitation_unit=mm&timezone=auto&forecast_days={FC_DAYS}")
         try:
-            build_and_write()
+            j = get_json(url, retries=1)
         except Exception as e:
-            print("cycle error:", e, flush=True)
-        time.sleep(FETCH_MIN*60)
+            last = str(e)[:120]
+            continue
+        if j.get("error"):
+            last = str(j.get("reason", "error"))[:120]
+            continue
+        h = j.get("hourly") or {}
+        ok = any(v is not None for v in h.get("wind_speed_10m") or [])
+        return j, {"api": name, "ok": ok, "err": "" if ok else "no coverage here"}
+    return None, {"ok": False, "err": last}
+
+def build_forecast():
+    lat, lon = get_position()
+    models, base = {}, None
+    for mid, apis in FC_MODELS:
+        j, meta = fc_model(apis, lat, lon)
+        if j is not None:
+            h = j.get("hourly") or {}
+            if base is None and h.get("time"):
+                base = j
+            # Align onto the base time axis in case a model returns a
+            # different span; every model is requested identically, so
+            # normally this is a straight copy.
+            if base is not None and h.get("time") != base["hourly"]["time"]:
+                idx = {t: k for k, t in enumerate(h.get("time") or [])}
+                h = {v: [ (h.get(v) or [None]*len(idx))[idx[t]] if t in idx else None
+                          for t in base["hourly"]["time"] ] for v in FC_VARS}
+            meta["h"] = {v: _round_list(h.get(v), FC_ROUND.get(v, 0)) for v in FC_VARS}
+        models[mid] = meta
+        print(f"forecast {mid}: {meta.get('api', '-')} {'ok' if meta['ok'] else meta['err']}", flush=True)
+    if base is None:
+        print("forecast: no model answered - keeping the previous forecast", flush=True)
+        return False
+    marine = None
+    try:
+        m = get_json("https://marine-api.open-meteo.com/v1/marine?"
+                     f"latitude={lat:.4f}&longitude={lon:.4f}&hourly=wave_height,wave_direction,wave_period"
+                     f"&length_unit=imperial&timezone=auto&forecast_days={FC_DAYS}", retries=1)
+        mh = m.get("hourly") or {}
+        if mh.get("time"):
+            marine = {"time": mh["time"], "wave_height": _round_list(mh.get("wave_height"), 1),
+                      "wave_direction": _round_list(mh.get("wave_direction"), 0),
+                      "wave_period": _round_list(mh.get("wave_period"), 0)}
+    except Exception as e:
+        print("forecast marine failed:", e, flush=True)
+    data = {
+        "at": int(time.time() * 1000), "lat": round(lat, 4), "lon": round(lon, 4),
+        "off": base.get("utc_offset_seconds", 0), "tz": base.get("timezone_abbreviation", ""),
+        "time": base["hourly"]["time"], "daily": base.get("daily"), "models": models, "marine": marine,
+    }
+    blob = json.dumps(data, separators=(",", ":"))
+    # Whole-document write on purpose: it also clears any pending requestAt.
+    body = json.dumps({"fields": {"data": {"stringValue": blob},
+                                  "updatedAt": {"integerValue": str(data["at"])}}}).encode()
+    req = urllib.request.Request(FC_DOC, data=body, method="PATCH",
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            ok_n = sum(1 for m in models.values() if m["ok"])
+            print(f"wrote forecast [{r.status}]: {ok_n}/{len(models)} models, {len(blob)//1024} KB", flush=True)
+            return True
+    except Exception as e:
+        print("forecast write failed:", e, flush=True)
+        return False
+
+def forecast_requested(since):
+    """True if the app has asked for a fresh pull (requestAt) since `since`.
+    Reads only that one field, not the whole forecast."""
+    try:
+        f = get_json(FC_DOC + "?mask.fieldPaths=requestAt", retries=0).get("fields", {})
+        r = num(f.get("requestAt"))
+        return bool(r and r / 1000.0 > since)
+    except Exception:
+        return False
+
+def run():
+    print(f"weather: {PROJECT_ID}/{VESSEL_ID}, weather every {FETCH_MIN} min, forecasts every {FC_MIN} min", flush=True)
+    last_wx = last_fc = 0.0
+    while True:
+        now = time.time()
+        if now - last_wx >= FETCH_MIN * 60:
+            last_wx = now
+            try:
+                build_and_write()
+            except Exception as e:
+                print("cycle error:", e, flush=True)
+        # Hourly, or sooner when the app's Refresh asks - but never more
+        # than once every 5 minutes, whatever the app does.
+        if now - last_fc >= FC_MIN * 60 or (now - last_fc >= 300 and forecast_requested(last_fc)):
+            last_fc = now
+            try:
+                build_forecast()
+            except Exception as e:
+                print("forecast error:", e, flush=True)
+        time.sleep(60)
 
 if __name__ == "__main__":
     run()

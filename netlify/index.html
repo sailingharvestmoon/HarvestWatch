@@ -406,7 +406,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
     <section class="view scroll" id="view-weather">
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
-      <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="loadForecast(true)">↻ Refresh</button></div>
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="requestForecast()">↻ Refresh</button></div>
       <div class="fc-controls">
         <div class="fc-models" id="fcModels"></div>
         <div class="seg" id="fcDays" style="width:120px;flex:none;"><button data-d="3" onclick="setFcDays(3)">3 d</button><button data-d="7" onclick="setFcDays(7)">7 d</button></div>
@@ -557,11 +557,31 @@ const S = {
   lastWrite: 0
 };
 
-// ─── Local prefs (this phone only) ──────────────────────────────────
-const PREF_KEY = 'hw_prefs';
-const P = Object.assign({ theme: 'auto', sound: true, wake: true, poll: 15, warnPct: 80 },
-  (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } })());
-function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(P)); } catch (e) {} }
+// ─── App preferences ────────────────────────────────────────────────
+// Nothing is kept on the phone. Preferences ride along in the alarms
+// document (ui* / fc* fields - the Pi and the worker ignore them), so every
+// device that opens the app sees the same settings.
+try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}   // sweep anything older versions left
+const P = { theme: 'auto', sound: true, wake: true, poll: 15, warnPct: 80 };
+const PREF_FIELDS = { theme: ['uiTheme', 's'], sound: ['uiSound', 'b'], wake: ['uiWake', 'b'], poll: ['uiPoll', 'n'], warnPct: ['uiWarnPct', 'n'] };
+function savePrefs() {
+  const f = {};
+  for (const [k, [field, t]] of Object.entries(PREF_FIELDS)) f[field] = t === 's' ? fS(P[k]) : t === 'b' ? fB(P[k]) : fD(P[k]);
+  writeAlarms(f);
+}
+// Returns true if anything that affects this page's behaviour changed.
+function prefsFromCfg(c) {
+  let changed = false;
+  for (const [k, [field, t]] of Object.entries(PREF_FIELDS)) {
+    if (c[field] === undefined) continue;
+    const v = t === 's' ? str(c[field]) : t === 'b' ? bool(c[field]) : num(c[field]);
+    if (v !== null && v !== '' && v !== P[k]) { P[k] = v; changed = true; }
+  }
+  if (c.fcPrimary) FCU.primary = str(c.fcPrimary);
+  if (c.fcDays) FCU.days = num(c.fcDays) || 3;
+  if (c.fcOpen) { FCU.open = {}; str(c.fcOpen).split(',').filter(Boolean).forEach(x => FCU.open[x] = true); }
+  return changed;
+}
 function applyTheme() {
   if (P.theme === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', P.theme);
@@ -788,17 +808,9 @@ function aisRows() {
 // ─── Trail (whole anchor session, local + cloud) ────────────────────
 const TRAIL_KEY = 'hm_watch_trail', MAX_TRAIL = 12000;
 const sessionKey = () => S.anchor ? S.anchor.lat.toFixed(5) + ',' + S.anchor.lon.toFixed(5) : 'none';
-function saveTrail() {
-  try { localStorage.setItem(TRAIL_KEY, JSON.stringify({ session: sessionKey(), points: S.trail })); }
-  catch (e) { S.trail = S.trail.filter((_, i) => i % 2 === 0); try { localStorage.setItem(TRAIL_KEY, JSON.stringify({ session: sessionKey(), points: S.trail })); } catch (e2) {} }
-}
-function loadTrail() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(TRAIL_KEY) || 'null');
-    if (raw && Array.isArray(raw.points)) { S.trail = raw.points; S.trailSession = raw.session || ''; }
-    else if (Array.isArray(raw)) S.trail = raw;
-  } catch (e) {}
-}
+// The track lives in the cloud (tracks/, written by the worker every
+// minute); this page only holds it in memory.
+function saveTrail() {}
 function trimTrail() {
   if (S.trail.length <= MAX_TRAIL) return;
   const h = Math.floor(S.trail.length / 2);
@@ -869,6 +881,8 @@ function applyAlarmsDoc(f) {
   if ((num(f.updatedAt) || 0) < S.lastWrite) return;
   S.cfg = f;
   S.snoozeUntil = num(f.snoozeUntil) || 0;
+  const pollBefore = P.poll;
+  if (prefsFromCfg(f)) { applyTheme(); paintPrefs(); if (P.poll !== pollBefore) startPolling(); }
   const armed = bool(f.armed), aLat = num(f.anchorLat), aLon = num(f.anchorLon);
   if (armed && aLat !== null && aLon !== null) {
     const moved = !S.anchor || haversine(S.anchor.lat, S.anchor.lon, aLat, aLon) > 1;
@@ -889,7 +903,7 @@ function applyAlarmsDoc(f) {
   }
   saveLocalAnchor();
 }
-function saveLocalAnchor() { try { localStorage.setItem('hw_anchor', JSON.stringify({ anchor: S.anchor, armed: S.armed })); } catch (e) {} }
+function saveLocalAnchor() {}   // the alarms document is the only record of the anchor
 
 // ═══ ALARM (this phone) ════════════════════════════════════════════
 // The boat guard and the cloud watcher send the real pushes. This is the
@@ -1571,59 +1585,41 @@ const MODELS = [
   { id: 'aifs',  label: 'AIFS',  bg: '#e886ef', fg: '#fff', api: ['ecmwf_aifs025_single', 'ecmwf_aifs025'], info: 'ECMWF AIFS — the European Centre\'s AI model · 25 km · global' }
 ];
 const FC_VARS = ['weather_code', 'is_day', 'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m', 'precipitation', 'cape', 'cloud_cover', 'temperature_2m', 'pressure_msl'];
-const FC_KEY = 'hw_forecast', FC_UI = 'hw_fc_ui';
-const FCU = Object.assign({ primary: 'ecmwf', days: 3, open: { wind: true } },
-  (() => { try { return JSON.parse(localStorage.getItem(FC_UI) || '{}'); } catch (e) { return {}; } })());
-const saveFcu = () => { try { localStorage.setItem(FC_UI, JSON.stringify(FCU)); } catch (e) {} };
-let FC = (() => { try { return JSON.parse(localStorage.getItem(FC_KEY) || 'null'); } catch (e) { return null; } })();
-let fcLoading = false;
-
-function fcPosition() {
-  if (S.pos) return { lat: S.pos.lat, lon: S.pos.lon };
-  if (S.anchor) return { lat: S.anchor.lat, lon: S.anchor.lon };
-  return { lat: 44.10, lon: -69.10 };
+const FCU = { primary: 'ecmwf', days: 3, open: { wind: true } };
+function saveFcu() {
+  writeAlarms({ fcPrimary: fS(FCU.primary), fcDays: fI(FCU.days),
+    fcOpen: fS(Object.keys(FCU.open).filter(k => FCU.open[k]).join(',')) });
 }
-async function fetchJson(u) {
-  const r = await fetch(u); const j = await r.json().catch(() => null);
-  if (!r.ok || !j || j.error) throw new Error((j && j.reason) || ('HTTP ' + r.status));
-  return j;
-}
-async function fetchModel(m, lat, lon, days) {
-  let last = null;
-  for (const name of m.api) {
-    try {
-      const j = await fetchJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-        + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit`
-        + `&precipitation_unit=mm&timezone=auto&forecast_days=${days}`);
-      const h = j.hourly || {};
-      const any = (h.wind_speed_10m || []).some(v => v !== null);
-      return { ok: any, api: name, err: any ? '' : 'no coverage here', h, daily: j.daily, off: j.utc_offset_seconds, tz: j.timezone_abbreviation };
-    } catch (e) { last = e; }
-  }
-  return { ok: false, err: String(last && last.message || last || 'failed') };
-}
+// The forecasts are fetched on the Pi (weather.py, hourly) and stored in
+// Firestore at weather/<vessel>-forecast. The phone only reads that.
+let FC = null, fcLoading = false, fcLastRead = 0;
+const FC_URL = `${FSB}/weather/${VESSEL}-forecast`;
 async function loadForecast(force) {
   if (fcLoading) return;
-  const p = fcPosition();
-  const stale = !FC || (Date.now() - FC.at) > 60 * 60000 || FC.days !== FCU.days
-    || haversine(FC.lat, FC.lon, p.lat, p.lon) > 20 * 1852;
-  if (!force && !stale) { paintForecast(); return; }
+  if (!force && FC && Date.now() - fcLastRead < 5 * 60000) { paintForecast(); return; }
   fcLoading = true; paintForecast();
-  const days = FCU.days;
-  const [res, marine] = await Promise.all([
-    Promise.all(MODELS.map(m => fetchModel(m, p.lat, p.lon, days))),
-    fetchJson(`https://marine-api.open-meteo.com/v1/marine?latitude=${p.lat.toFixed(4)}&longitude=${p.lon.toFixed(4)}`
-      + `&hourly=wave_height,wave_direction,wave_period&length_unit=imperial&timezone=auto&forecast_days=${days}`).catch(() => null)
-  ]);
-  fcLoading = false;
-  const models = {}; MODELS.forEach((m, i) => models[m.id] = res[i]);
-  const base = res.find(r => r.h && r.h.time) ;
-  if (!base) { toast('Could not reach the forecast service', 4000); paintForecast(); return; }
-  FC = { at: Date.now(), lat: p.lat, lon: p.lon, days, models, marine: marine && marine.hourly ? marine.hourly : null,
-         time: base.h.time, off: base.off, tz: base.tz, daily: base.daily };
-  try { localStorage.setItem(FC_KEY, JSON.stringify(FC)); }
-  catch (e) { try { localStorage.removeItem(FC_KEY); } catch (e2) {} }
-  paintForecast();
+  try {
+    const r = await fetch(FC_URL, { cache: 'no-store' });
+    if (r.ok) {
+      const f = (await r.json()).fields || {};
+      if (str(f.data)) FC = JSON.parse(str(f.data));
+      FC_REQ = num(f.requestAt) || 0;
+    }
+    fcLastRead = Date.now();
+  } catch (e) { toast('Could not read the forecast', 3000); }
+  fcLoading = false; paintForecast();
+}
+let FC_REQ = 0;
+// Ask the Pi for a fresh pull now rather than waiting for the hour.
+async function requestForecast() {
+  let ok = false;
+  try {
+    const r = await fetch(FC_URL + '?updateMask.fieldPaths=requestAt', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { requestAt: fI(Date.now()) } }) });
+    ok = r.ok;
+  } catch (e) {}
+  toast(ok ? 'Asked the boat for a fresh forecast — about a minute' : 'Could not reach the cloud', 3500);
+  if (ok) { FC_REQ = Date.now(); paintForecast(); setTimeout(() => loadForecast(true), 75000); setTimeout(() => loadForecast(true), 150000); }
 }
 
 // Colour scales, in the spirit of PredictWind's.
@@ -1683,11 +1679,11 @@ function paintForecast() {
     return `<button class="mchip ${FCU.primary === m.id ? 'on' : ''} ${off ? 'off' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pickModel('${m.id}')" title="${esc(m.info)}">${m.label}</button>`;
   }).join('');
   document.querySelectorAll('#fcDays button').forEach(b => b.classList.toggle('on', +b.dataset.d === FCU.days));
-  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet.'}</div>`; meta.textContent = ''; return; }
+  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast from the boat yet. The Pi pulls one every hour once weather.py is updated — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; return; }
 
   // Columns: from the current hour at the boat, local time there.
   const nowLocal = new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00';
-  const cols = []; FC.time.forEach((t, i) => { if (t >= nowLocal) cols.push(i); });
+  const cols = []; FC.time.forEach((t, i) => { if (t >= nowLocal && cols.length < FCU.days * 24) cols.push(i); });
   const sun = {}; if (FC.daily && FC.daily.time) FC.daily.time.forEach((d, k) => sun[d] = [FC.daily.sunrise[k], FC.daily.sunset[k]]);
   const night = i => { const t = FC.time[i], s = sun[t.slice(0, 10)]; return s ? (t < s[0].slice(0, 13) + ':00' || t > s[1]) : false; };
   const nightCls = cols.map(i => night(i) ? ' n' : '');
@@ -1742,7 +1738,8 @@ function paintForecast() {
   }
   box.innerHTML = `<table class="fc">${head1}</tr>${head2}</tr>${body}</table>`;
   const failed = MODELS.filter(m => !FC.models[m.id] || !FC.models[m.id].ok).map(m => m.label);
-  meta.innerHTML = `${fcLoading ? 'Refreshing… · ' : ''}Updated ${ago(FC.at)} for ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
+  const waiting = FC_REQ > FC.at && Date.now() - FC_REQ < 10 * 60000;
+  meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${waiting ? '<b>Fresh forecast requested</b> · ' : ''}Pulled by the boat ${ago(FC.at)} for ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
     + (failed.length ? ` · <span style="color:var(--warn)">not available here: ${failed.join(', ')}</span>` : '')
     + ` · <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a>`;
 }
@@ -1754,7 +1751,7 @@ function pickModel(id) {
   const r = FC && FC.models[id];
   toast(m.info + (r && !r.ok ? ' — not available here' : ''), 4000);
 }
-function setFcDays(d) { FCU.days = d; saveFcu(); loadForecast(true); }
+function setFcDays(d) { FCU.days = d; saveFcu(); paintForecast(); }
 
 // ═══ BOAT ══════════════════════════════════════════════════════════
 const BOAT_FIELDS = [
@@ -1851,11 +1848,6 @@ function startPolling() {
   posTimer = setInterval(pollPosition, Math.max(5, P.poll) * 1000);
 }
 (function init() {
-  try {
-    const a = JSON.parse(localStorage.getItem('hw_anchor') || 'null');
-    if (a && a.anchor) { S.anchor = a.anchor; S.armed = !!a.armed; }
-  } catch (e) {}
-  loadTrail(); recomputeMax();
   drawAnchor(); drawTrail();
   if (S.anchor) map.setView([S.anchor.lat, S.anchor.lon], 17, { animate: false });
   showView(location.hash.slice(1) || 'anchor');

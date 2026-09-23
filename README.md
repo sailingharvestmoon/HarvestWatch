@@ -47,7 +47,7 @@ What each service does:
 
 - **sensors** — reads the Vesper (192.168.1.167:39150) and posts wind/depth/temp/speed/heading to `telemetry/`, and GPS + bow position to `vessels/` every 60 s.
 - **guard** — the main anchor watcher (every 10 s): drag, swing, wind/gust, lying off the wind, AIS; sends ntfy alerts from the boat; runs the dead-man's-switch offline alert.
-- **weather** — NWS forecast/obs, NOAA tides, sun/moon → `weather/` every 30 min.
+- **weather** — NWS forecast/obs, NOAA tides, sun/moon → `weather/` every 30 min; the seven model forecasts (ECMWF, GFS, UKMO, ICON, NAM, HRRR, AIFS, plus waves) from Open-Meteo → `weather/harvest-moon-forecast` every hour, or within a minute when the app's ↻ Refresh asks.
 - **frame** — drives the e-ink display (photos / dashboard / info screen), mode set from `netlify/frame.html`.
 - **harvest-moon-polar** — logs 1 Hz sailing data to `~/polar_logs/` for building polars.
 
@@ -92,6 +92,8 @@ Drag the **whole `netlify/` folder** onto the Netlify site — each deploy repla
 `watch.html`, `instruments.html`, `frame.html` are one-line redirects so old bookmarks still work.
 The previous separate pages are in `archive/netlify-v1-2026-09-23/`.
 
+The app stores nothing on the phone — settings, track and forecasts all live in Firestore.
+
 On the iPhone: open the site in Safari → Share → **Add to Home Screen** for a full-screen app icon.
 
 ## Cloudflare worker
@@ -111,8 +113,8 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 |---|---|---|
 | `vessels/` | sensors | GPS + bow position |
 | `telemetry/` | sensors | wind, depth, temp, speed, heading |
-| `weather/` | weather | forecast, tides, sun/moon |
-| `alarms/` | Harvest Watch | anchor, radius, every alert setting, snooze |
+| `weather/` | weather | forecast, tides, sun/moon; `harvest-moon-forecast` holds the model table |
+| `alarms/` | Harvest Watch | anchor, radius, every alert setting, snooze, app preferences (`ui*`, `fc*`) |
 | `state/` | worker + guard | shared alert latches |
 | `tracks/` | worker | swing track |
 | `health/` | worker + guard | heartbeats, push results, ntfy quota |
