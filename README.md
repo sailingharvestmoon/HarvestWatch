@@ -75,16 +75,24 @@ The 9/23 copy was of the home folder only, so a few things that live in `/etc` a
 
 ---
 
-## Netlify (web pages)
+## Netlify — the Harvest Watch app
 
-Drag the **whole `netlify/` folder** onto the Netlify site — each deploy replaces the site, so every page must be in it.
+Drag the **whole `netlify/` folder** onto the Netlify site — each deploy replaces the site, so every file must be in it.
 
-| Page | Purpose |
+`index.html` **is the app** — one page with five tabs:
+
+| Tab | What it does |
 |---|---|
-| `index.html` | landing page |
-| `watch.html` | anchor watch: map, drag circle, set anchor, all alert settings, health, scope calculator |
-| `instruments.html` | live wind rose + instruments |
-| `frame.html` | switch the e-ink frame mode |
+| Anchor | map, drag circle, swing track, AIS targets; set / adjust / end the anchor watch |
+| Instruments | wind rose, wind, depth, temp, speed, heading, scope, tide |
+| Alerts | every alert (Off / Ready / Active / Snoozed / Triggered), snooze, watcher health |
+| Weather | conditions, 3-day forecast, tides, sun & moon (forecast models to come) |
+| Boat | cabin display mode, boat setup (bow offset, roller, transducer, variation), phone settings, backup GPS |
+
+`watch.html`, `instruments.html`, `frame.html` are one-line redirects so old bookmarks still work.
+The previous separate pages are in `archive/netlify-v1-2026-09-23/`.
+
+On the iPhone: open the site in Safari → Share → **Add to Home Screen** for a full-screen app icon.
 
 ## Cloudflare worker
 
@@ -104,12 +112,12 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 | `vessels/` | sensors | GPS + bow position |
 | `telemetry/` | sensors | wind, depth, temp, speed, heading |
 | `weather/` | weather | forecast, tides, sun/moon |
-| `alarms/` | watch.html | anchor, radius, every alert setting, snooze |
+| `alarms/` | Harvest Watch | anchor, radius, every alert setting, snooze |
 | `state/` | worker + guard | shared alert latches |
 | `tracks/` | worker | swing track |
 | `health/` | worker + guard | heartbeats, push results, ntfy quota |
 | `ais/` | guard | nearby AIS targets |
-| `modes/` | frame.html | e-ink display mode |
+| `modes/` | Harvest Watch (Boat tab) | e-ink display mode |
 
 ## Wix
 
@@ -125,4 +133,5 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 | `archive/pi-backup-2026-09-07-v4.0/` (+ `.zip`) | The 9/7 V4.0 backup. |
 | `archive/cloudflare-worker-older/` | Superseded worker version. |
 | `archive/docs-older/` | July setup notes (sensors only). |
+| `archive/netlify-v1-2026-09-23/` | The separate watch / instruments / frame / index pages before Harvest Watch. |
 | `archive/retired/` | `transmit.html` (the Pi replaced it), `dashboard.py` and `slideshow.py` (early frame programs `frame.py` replaced). |

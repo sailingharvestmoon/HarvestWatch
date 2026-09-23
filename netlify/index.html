@@ -1,70 +1,1620 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Harvest Moon</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg:#f6f4ef; --surface:#ffffff; --border:#e5e0d6;
-      --blue:#2f6f95; --green:#2e7d5b; --ink:#1f2d3d; --muted:#6b7c8c; --label:#93a1ad;
-    }
-    body {
-      background: var(--bg); color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px;
-    }
-    .icon { font-size: 40px; margin-bottom: 10px; color: var(--blue); }
-    .kicker { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
-    .title { font-size: 28px; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; margin-bottom: 30px; }
-    .cards { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 14px; }
-    a.card {
-      display: block; text-decoration: none; color: inherit;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px;
-      box-shadow: 0 1px 3px rgba(0,0,0,.04); transition: transform 0.1s, box-shadow 0.15s, border-color 0.15s;
-    }
-    a.card:active { transform: scale(0.99); }
-    a.card:hover { border-color: var(--blue); box-shadow: 0 3px 10px rgba(0,0,0,.06); }
-    .card-icon { font-size: 24px; margin-bottom: 10px; }
-    .card-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
-    .card-device { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--green); margin-bottom: 8px; }
-    .card-desc { font-size: 13px; color: var(--muted); line-height: 1.55; }
-    .go { margin-top: 12px; font-size: 12px; color: var(--blue); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
-    .footer { margin-top: 28px; font-size: 12px; color: var(--label); text-align: center; max-width: 360px; line-height: 1.6; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b1620">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Harvest Watch">
+<title>Harvest Watch</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* ═══ TOKENS ═══════════════════════════════════════════════════ */
+:root {
+  --bg:#f3f1ec; --surface:#ffffff; --surface2:#f7f5f0; --line:#e2ddd2; --ink:#14212d;
+  --muted:#5f6f80; --faint:#93a1ad; --accent:#1f6f9a; --accent-ink:#ffffff;
+  --ok:#2c8a5c; --warn:#c2841b; --bad:#c6372c; --teal:#23868a; --amber:#c47f2a;
+  --shadow:0 6px 24px rgba(20,33,45,.14); --tabbar:#ffffff;
+  --map-filter:none; color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#0b1620; --surface:#122231; --surface2:#172a3b; --line:#22384b; --ink:#e6eef5;
+    --muted:#91a6b8; --faint:#61778a; --accent:#4fa3d6; --accent-ink:#06121c;
+    --ok:#3fbf7f; --warn:#e2a63c; --bad:#f0584c; --teal:#46b8bc; --amber:#e2a63c;
+    --shadow:0 6px 24px rgba(0,0,0,.45); --tabbar:#0f1d2a;
+    --map-filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0b1620; --surface:#122231; --surface2:#172a3b; --line:#22384b; --ink:#e6eef5;
+  --muted:#91a6b8; --faint:#61778a; --accent:#4fa3d6; --accent-ink:#06121c;
+  --ok:#3fbf7f; --warn:#e2a63c; --bad:#f0584c; --teal:#46b8bc; --amber:#e2a63c;
+  --shadow:0 6px 24px rgba(0,0,0,.45); --tabbar:#0f1d2a;
+  --map-filter:invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); color-scheme: dark;
+}
+
+* { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; }
+body {
+  background:var(--bg); color:var(--ink); overflow:hidden;
+  font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size:15px; line-height:1.4;
+}
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+input, select { font:inherit; color:inherit; }
+.num { font-variant-numeric:tabular-nums; }
+
+/* ═══ SHELL ════════════════════════════════════════════════════ */
+.app { position:fixed; inset:0; display:grid; grid-template-rows:auto 1fr auto; }
+.appbar {
+  display:flex; align-items:center; gap:10px; padding:calc(env(safe-area-inset-top) + 8px) 16px 8px;
+  background:var(--surface); border-bottom:1px solid var(--line); z-index:500;
+}
+.appbar .brand { display:flex; flex-direction:column; line-height:1.1; }
+.appbar .brand b { font-size:16px; letter-spacing:.01em; }
+.appbar .brand span { font-size:11px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; }
+.appbar .grow { flex:1; }
+.pill {
+  display:inline-flex; align-items:center; gap:6px; padding:5px 10px; border-radius:999px;
+  background:var(--surface2); border:1px solid var(--line); font-size:12px; color:var(--muted); white-space:nowrap;
+}
+.dot { width:8px; height:8px; border-radius:50%; background:var(--faint); flex:none; }
+.dot.ok { background:var(--ok); box-shadow:0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.warn { background:var(--warn); }
+.dot.bad { background:var(--bad); }
+
+.alarm-banner {
+  display:none; position:absolute; left:0; right:0; top:100%; z-index:600;
+  background:var(--bad); color:#fff; padding:12px 16px; font-weight:700; letter-spacing:.02em;
+  align-items:center; gap:12px; animation:pulse 1s infinite alternate;
+}
+.alarm-banner.show { display:flex; }
+.alarm-banner button { margin-left:auto; background:rgba(255,255,255,.2); color:#fff; padding:8px 12px; border-radius:8px; font-weight:700; }
+@keyframes pulse { from { opacity:1; } to { opacity:.8; } }
+
+main { position:relative; overflow:hidden; }
+.view { position:absolute; inset:0; overflow-y:auto; display:none; -webkit-overflow-scrolling:touch; }
+.view.active { display:block; }
+.view.scroll { padding:16px 16px 32px; }
+
+.tabbar {
+  display:grid; grid-template-columns:repeat(5,1fr); background:var(--tabbar);
+  border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); z-index:500;
+}
+.tab { display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 0 7px; color:var(--faint); font-size:10.5px; letter-spacing:.02em; position:relative; }
+.tab svg { width:24px; height:24px; }
+.tab.active { color:var(--accent); }
+.tab .badge { position:absolute; top:5px; left:calc(50% + 6px); min-width:9px; height:9px; border-radius:50%; background:var(--bad); display:none; }
+.tab .badge.show { display:block; }
+
+/* ═══ CARDS / LISTS ════════════════════════════════════════════ */
+.section-title { font-size:11.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin:22px 4px 8px; }
+.section-title:first-child { margin-top:4px; }
+.card { background:var(--surface); border:1px solid var(--line); border-radius:14px; }
+.card.pad { padding:14px 16px; }
+.list { background:var(--surface); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+.row { display:flex; align-items:center; gap:12px; padding:13px 14px; border-top:1px solid var(--line); min-height:54px; width:100%; text-align:left; }
+.row:first-child { border-top:0; }
+.row .ico { width:34px; height:34px; border-radius:9px; background:var(--surface2); display:grid; place-items:center; font-size:18px; flex:none; }
+.row .txt { flex:1; min-width:0; }
+.row .txt b { display:block; font-weight:600; }
+.row .txt small { display:block; color:var(--muted); font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.row .chev { color:var(--faint); font-size:20px; }
+.row .val { color:var(--muted); font-size:14px; }
+
+.chip { font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:4px 8px; border-radius:6px; white-space:nowrap; }
+.chip.off { background:var(--surface2); color:var(--faint); }
+.chip.ready { background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); }
+.chip.active { background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
+.chip.snoozed { background:color-mix(in srgb, var(--warn) 18%, transparent); color:var(--warn); }
+.chip.triggered { background:var(--bad); color:#fff; }
+
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:13px 16px; border-radius:12px; font-weight:600; background:var(--surface2); border:1px solid var(--line); }
+.btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.btn.danger { color:var(--bad); }
+.btn.block { width:100%; }
+.btn:disabled { opacity:.45; }
+.btn-row { display:flex; gap:8px; }
+.btn-row .btn { flex:1; }
+.link { color:var(--accent); font-weight:600; padding:6px 2px; }
+
+.note { font-size:12.5px; color:var(--muted); line-height:1.5; }
+.note.warn { color:var(--warn); }
+.note.bad { color:var(--bad); }
+
+/* switch */
+.switch { position:relative; width:51px; height:31px; flex:none; }
+.switch input { opacity:0; width:0; height:0; }
+.switch span { position:absolute; inset:0; background:var(--line); border-radius:31px; transition:.2s; }
+.switch span::after { content:''; position:absolute; left:2px; top:2px; width:27px; height:27px; border-radius:50%; background:#fff; box-shadow:0 2px 4px rgba(0,0,0,.25); transition:.2s; }
+.switch input:checked + span { background:var(--ok); }
+.switch input:checked + span::after { transform:translateX(20px); }
+.switch input:disabled + span { opacity:.5; }
+
+/* sliders */
+.field { padding:14px 16px; border-top:1px solid var(--line); }
+.field:first-child { border-top:0; }
+.field-head { display:flex; justify-content:space-between; align-items:baseline; gap:10px; margin-bottom:10px; }
+.field-head label { font-size:14px; color:var(--muted); }
+.field-head output { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+.field-head output small { font-size:13px; color:var(--muted); font-weight:500; margin-left:3px; }
+input[type=range] { width:100%; -webkit-appearance:none; appearance:none; height:6px; border-radius:6px; background:var(--line); outline:none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; width:28px; height:28px; border-radius:50%; background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(0,0,0,.3); }
+input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%; background:#fff; border:1px solid var(--line); box-shadow:0 2px 6px rgba(0,0,0,.3); }
+.range-ends { display:flex; justify-content:space-between; font-size:11px; color:var(--faint); margin-top:6px; }
+
+.text-in {
+  width:100%; background:var(--surface2); border:1px solid var(--line); border-radius:10px;
+  padding:12px 12px; font-size:17px; font-variant-numeric:tabular-nums;
+}
+.text-in:focus { outline:none; border-color:var(--accent); }
+.text-in.bad { border-color:var(--bad); }
+.in-label { font-size:12px; color:var(--muted); margin:10px 2px 6px; display:block; }
+
+.seg { display:flex; background:var(--surface2); border:1px solid var(--line); border-radius:10px; padding:3px; gap:3px; }
+.seg button { flex:1; padding:9px 6px; border-radius:8px; font-size:13.5px; color:var(--muted); font-weight:600; }
+.seg button.on { background:var(--surface); color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.12); }
+
+/* ═══ ANCHOR VIEW ══════════════════════════════════════════════ */
+#view-anchor { overflow:hidden; }
+#map { position:absolute; inset:0; background:var(--bg); }
+.base-tiles { filter:var(--map-filter); }
+.leaflet-container { background:var(--bg); font:inherit; }
+.map-top { position:absolute; top:10px; left:10px; right:10px; z-index:400; display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
+.map-top .pill { pointer-events:auto; background:color-mix(in srgb, var(--surface) 92%, transparent); box-shadow:var(--shadow); color:var(--ink); font-weight:600; }
+.map-top .pill small { color:var(--muted); font-weight:500; }
+.map-btns { position:absolute; right:10px; bottom:220px; z-index:400; display:flex; flex-direction:column; gap:8px; }
+.fab { width:44px; height:44px; border-radius:12px; background:var(--surface); border:1px solid var(--line); box-shadow:var(--shadow); display:grid; place-items:center; color:var(--ink); }
+.fab.on { color:var(--accent); }
+.fab svg { width:20px; height:20px; }
+
+.anchor-card {
+  position:absolute; left:10px; right:10px; bottom:10px; z-index:450; background:var(--surface);
+  border:1px solid var(--line); border-radius:16px; box-shadow:var(--shadow); padding:12px 14px 14px;
+}
+.ac-head { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.ac-head b { font-size:16px; }
+.ac-head .grow { flex:1; }
+.anchor-card .btn { padding:10px 12px; }
+.metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:6px 10px; margin-bottom:12px; }
+.metric small { display:block; font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.metric b { font-size:20px; font-variant-numeric:tabular-nums; }
+.metric b i { font-style:normal; font-size:12px; color:var(--muted); font-weight:500; margin-left:2px; }
+.metric.big b { font-size:28px; }
+.metric b.ok { color:var(--ok); } .metric b.warn { color:var(--warn); } .metric b.bad { color:var(--bad); }
+.meter { height:6px; border-radius:6px; background:var(--surface2); overflow:hidden; margin:-4px 0 12px; }
+.meter i { display:block; height:100%; background:var(--ok); border-radius:6px; transition:width .4s; }
+
+.crosshair { position:absolute; left:50%; top:50%; width:38px; height:38px; margin:-19px 0 0 -19px; z-index:420; pointer-events:none; display:none; }
+.crosshair.show { display:block; }
+
+/* bottom sheet */
+.sheet {
+  position:absolute; left:0; right:0; bottom:0; z-index:700; background:var(--surface);
+  border-radius:18px 18px 0 0; box-shadow:0 -8px 30px rgba(0,0,0,.25); max-height:68%;
+  display:flex; flex-direction:column; transform:translateY(105%); transition:transform .28s ease;
+}
+.sheet.open { transform:none; }
+.sheet .grab { width:40px; height:5px; border-radius:5px; background:var(--line); margin:8px auto 2px; flex:none; }
+.sheet-head { display:flex; align-items:center; gap:10px; padding:6px 16px 10px; flex:none; }
+.sheet-head b { font-size:17px; flex:1; }
+.sheet-head .steps { font-size:12px; color:var(--muted); }
+.sheet-body { overflow-y:auto; padding:0 16px 16px; flex:1; }
+.sheet-foot { padding:10px 16px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); flex:none; }
+.x-btn { width:30px; height:30px; border-radius:50%; background:var(--surface2); color:var(--muted); font-size:16px; display:grid; place-items:center; }
+
+.coord-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.coord-grid label { font-size:12px; color:var(--muted); display:block; margin:0 2px 5px; }
+.preview { margin-top:12px; padding:10px 12px; border-radius:10px; background:var(--surface2); font-size:13.5px; }
+.other-ways { display:flex; gap:8px; flex-wrap:wrap; margin-top:14px; }
+.other-ways button { padding:8px 11px; border-radius:9px; border:1px solid var(--line); font-size:13px; color:var(--muted); font-weight:600; background:var(--surface); }
+.other-ways button.on { border-color:var(--accent); color:var(--accent); }
+.method-box { margin-top:10px; }
+
+.chains { display:grid; grid-template-columns:repeat(5,1fr); gap:6px; }
+.chains button { padding:8px 2px 6px; border-radius:9px; border:1px solid var(--line); background:var(--surface2); display:flex; flex-direction:column; align-items:center; gap:4px; font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+.chains button i { width:22px; height:8px; border-radius:3px; border:1px solid rgba(0,0,0,.18); }
+.chains button.on { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+.chains button.need { outline:2px dashed var(--warn); outline-offset:1px; }
+.kv { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; font-size:13.5px; }
+.kv span { color:var(--muted); }
+.kv b { text-align:right; font-weight:600; font-variant-numeric:tabular-nums; }
+
+/* ═══ FULL PAGE (alert detail) ═════════════════════════════════ */
+.page {
+  position:fixed; inset:0; z-index:800; background:var(--bg); display:flex; flex-direction:column;
+  transform:translateX(100%); transition:transform .25s ease;
+}
+.page.open { transform:none; }
+.page-head { display:flex; align-items:center; gap:8px; padding:calc(env(safe-area-inset-top) + 8px) 12px 8px; background:var(--surface); border-bottom:1px solid var(--line); }
+.page-head b { flex:1; font-size:17px; }
+.back { display:flex; align-items:center; gap:2px; color:var(--accent); font-weight:600; padding:6px 4px; }
+.page-body { flex:1; overflow-y:auto; padding:16px 16px 24px; }
+.page-foot { padding:10px 16px calc(12px + env(safe-area-inset-bottom)); background:var(--surface); border-top:1px solid var(--line); }
+
+/* ═══ INSTRUMENTS ══════════════════════════════════════════════ */
+.rose-wrap { display:flex; flex-direction:column; align-items:center; padding:10px 0 4px; }
+.rose { width:250px; height:250px; }
+.rose .ring { fill:none; stroke:var(--line); stroke-width:2; }
+.rose .tick { stroke:var(--line); stroke-width:1.5; }
+.rose .card-lbl { font-size:13px; font-weight:700; fill:var(--muted); }
+.rose .boat { fill:var(--faint); opacity:.55; }
+.rose .rot { transition:transform .6s ease; transform-origin:125px 125px; }
+.rose .awa { fill:var(--amber); }
+.rose .twd { fill:var(--teal); }
+.rose .cval { fill:var(--ink); font-weight:700; font-size:34px; }
+.rose .csub { fill:var(--muted); font-size:12px; }
+.legend { display:flex; gap:16px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.legend span::before { content:'●'; margin-right:5px; }
+.legend .a::before { color:var(--amber); } .legend .t::before { color:var(--teal); }
+.tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.tile { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:12px 14px; }
+.tile small { display:block; font-size:10.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--muted); }
+.tile b { display:block; font-size:28px; font-variant-numeric:tabular-nums; line-height:1.15; margin-top:4px; }
+.tile b i { font-style:normal; font-size:13px; color:var(--muted); font-weight:500; margin-left:3px; }
+.tile span { display:block; font-size:12px; color:var(--muted); margin-top:2px; }
+.tile.teal b { color:var(--teal); }
+.stale-note { display:none; margin-bottom:10px; padding:10px 12px; border-radius:10px; background:color-mix(in srgb, var(--warn) 15%, transparent); color:var(--warn); font-size:13px; }
+.stale-note.show { display:block; }
+
+/* ═══ WEATHER ══════════════════════════════════════════════════ */
+.wx-now { display:flex; align-items:center; gap:16px; }
+.wx-now .t { font-size:48px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; }
+.wx-now .d { color:var(--muted); font-size:14px; }
+.wx-now .d b { color:var(--ink); display:block; font-size:16px; }
+.fc-row { display:grid; grid-template-columns:48px 1fr auto; gap:10px; padding:11px 14px; border-top:1px solid var(--line); align-items:center; }
+.fc-row:first-child { border-top:0; }
+.fc-row b { font-variant-numeric:tabular-nums; }
+.tide-row { display:flex; justify-content:space-between; padding:10px 14px; border-top:1px solid var(--line); font-variant-numeric:tabular-nums; }
+.tide-row:first-child { border-top:0; }
+.tide-row.hi b { color:var(--accent); }
+.coming { border:1px dashed var(--line); border-radius:14px; padding:16px; color:var(--muted); font-size:13.5px; text-align:center; }
+
+/* toast */
+.toast { position:fixed; left:50%; top:calc(70px + env(safe-area-inset-top)); transform:translateX(-50%) translateY(-12px); opacity:0; z-index:900; background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:600; transition:.25s; pointer-events:none; max-width:90vw; text-align:center; }
+.toast.show { opacity:1; transform:translateX(-50%); }
+
+/* leaflet bits */
+.boat-dot { width:14px; height:14px; border-radius:50%; background:var(--accent); border:2.5px solid #fff; box-shadow:0 0 6px rgba(0,0,0,.4); transform:translate(-50%,-50%); }
+.anchor-ico { font-size:18px; line-height:18px; transform:translate(-50%,-50%); filter:drop-shadow(0 0 3px rgba(0,0,0,.5)); }
+.ais-ico { transform:translate(-50%,-50%); }
+.leaflet-tooltip { font:inherit; font-size:12px; }
+</style>
 </head>
 <body>
-  <div class="icon">⚓</div>
-  <div class="kicker">Harvest Moon</div>
-  <div class="title">Boat Tools</div>
+<div class="app">
+  <header class="appbar" style="position:relative;">
+    <div class="brand"><b>Harvest Watch</b><span id="viewName">Anchor</span></div>
+    <div class="grow"></div>
+    <div class="pill" id="linkPill"><span class="dot" id="linkDot"></span><span id="linkTxt">Connecting…</span></div>
+    <div class="alarm-banner" id="alarmBanner">
+      <span id="alarmTxt">⚠ ANCHOR DRAGGING</span>
+      <button onclick="silenceAlarm()">Silence 5 min</button>
+    </div>
+  </header>
 
-  <div class="cards">
-    <a class="card" href="instruments.html">
-      <div class="card-icon">🌬️</div>
-      <div class="card-device">Any device · when the Vesper is on</div>
-      <div class="card-title">Instruments</div>
-      <div class="card-desc">Live wind, depth, water temp, and speed from the boat's sensors, wherever you are.</div>
-      <div class="go">Open instruments →</div>
-    </a>
+  <main>
+    <!-- ANCHOR -->
+    <section class="view active" id="view-anchor">
+      <div id="map"></div>
+      <svg class="crosshair" id="crosshair" viewBox="0 0 38 38"><circle cx="19" cy="19" r="8" fill="none" stroke="#c6372c" stroke-width="2.5"/><path d="M19 0v12M19 26v12M0 19h12M26 19h12" stroke="#c6372c" stroke-width="2.5"/></svg>
+      <div class="map-top" id="mapTop"></div>
+      <div class="map-btns" id="mapBtns">
+        <button class="fab" id="btnFollow" onclick="followBoat()" title="Centre on boat" aria-label="Centre on boat">
+          <svg viewBox="0 0 24 24"><path d="M21 3L3 10.5l7.5 3L13.5 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="fab" onclick="fitAll()" title="Fit anchor and track" aria-label="Fit anchor and track">
+          <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="anchor-card" id="anchorCard"></div>
 
-    <a class="card" href="frame.html">
-      <div class="card-icon">🖼️</div>
-      <div class="card-device">Any device · controls the cabin frame</div>
-      <div class="card-title">Frame Display</div>
-      <div class="card-desc">Switch the e-ink frame between the photo slideshow and the live sailing dashboard.</div>
-      <div class="go">Open frame control →</div>
-    </a>
+      <!-- set-anchor sheet -->
+      <div class="sheet" id="setSheet">
+        <div class="grab"></div>
+        <div class="sheet-head"><b id="setTitle">Set anchor</b><span class="steps" id="setSteps"></span><button class="x-btn" onclick="closeSetup()" aria-label="Close">✕</button></div>
+        <div class="sheet-body" id="setBody"></div>
+        <div class="sheet-foot" id="setFoot"></div>
+      </div>
+    </section>
 
-    <a class="card" href="watch.html">
-      <div class="card-icon">🗺️</div>
-      <div class="card-device">Your phone · ashore or at the nav station</div>
-      <div class="card-title">Anchor Watch</div>
-      <div class="card-desc">Live map, swing trail, and the drag alarm. Set the anchor, tune the radius, and (if needed) use this phone as the tracker.</div>
-      <div class="go">Open anchor watch →</div>
-    </a>
+    <!-- INSTRUMENTS -->
+    <section class="view scroll" id="view-instruments">
+      <div class="stale-note" id="telStale">The Vesper looks to be off — showing the last values received.</div>
+      <div class="card rose-wrap">
+        <svg class="rose" viewBox="0 0 250 250">
+          <circle class="ring" cx="125" cy="125" r="108"/>
+          <g id="roseTicks"></g>
+          <text class="card-lbl" x="125" y="12" text-anchor="middle" dominant-baseline="middle">N</text>
+          <text class="card-lbl" x="125" y="240" text-anchor="middle" dominant-baseline="middle">S</text>
+          <text class="card-lbl" x="240" y="126" text-anchor="middle" dominant-baseline="middle">E</text>
+          <text class="card-lbl" x="10" y="126" text-anchor="middle" dominant-baseline="middle">W</text>
+          <g class="rot" id="roseBoat"><path class="boat" d="M125 72 C136 92 137 130 133 172 L117 172 C113 130 114 92 125 72Z"/></g>
+          <g class="rot" id="roseAwa"><polygon class="awa" points="125,18 134,46 116,46"/></g>
+          <g class="rot" id="roseTwd"><polygon class="twd" points="125,30 132,52 118,52"/></g>
+          <text class="cval num" x="125" y="126" text-anchor="middle" id="roseVal">--</text>
+          <text class="csub" x="125" y="146" text-anchor="middle" id="roseSub">kn true</text>
+        </svg>
+        <div class="legend"><span class="a">Apparent</span><span class="t">True</span></div>
+        <div class="note" id="roseMode" style="margin:6px 0 4px;">North up</div>
+      </div>
+      <div class="section-title">Wind</div>
+      <div class="tiles">
+        <div class="tile teal"><small>True wind</small><b id="iTws">--</b><span id="iTwd">—</span></div>
+        <div class="tile teal"><small>Apparent</small><b id="iAws">--</b><span id="iAwa">—</span></div>
+      </div>
+      <div class="section-title">Water &amp; motion</div>
+      <div class="tiles">
+        <div class="tile"><small>Depth</small><b id="iDepth">--</b><span id="iDepthSub">below surface</span></div>
+        <div class="tile"><small>Water temp</small><b id="iTemp">--</b><span>&nbsp;</span></div>
+        <div class="tile"><small>SOG</small><b id="iSog">--</b><span id="iSogSub">&nbsp;</span></div>
+        <div class="tile"><small>Heading</small><b id="iHdg">--</b><span id="iHdgSub">&nbsp;</span></div>
+        <div class="tile"><small>Scope</small><b id="iScope">--</b><span id="iScopeSub">&nbsp;</span></div>
+        <div class="tile"><small>Tide</small><b id="iTide">--</b><span id="iTideSub">&nbsp;</span></div>
+      </div>
+      <p class="note" id="telAge" style="text-align:center;margin-top:14px;">No data yet.</p>
+    </section>
+
+    <!-- ALERTS -->
+    <section class="view scroll" id="view-alerts">
+      <div class="card pad" id="watchStatus"></div>
+      <div class="section-title">Alerts</div>
+      <div class="list" id="alertList"></div>
+      <div class="section-title">Who's watching</div>
+      <div class="list" id="healthList"></div>
+      <p class="note" style="margin:10px 4px 0;">The boat guard (on the Pi) and the cloud watcher each send alerts independently, so either can fail without leaving the boat unwatched. Alerts arrive through the ntfy app.</p>
+    </section>
+
+    <!-- WEATHER -->
+    <section class="view scroll" id="view-weather">
+      <div class="section-title" id="wxPlace">Now</div>
+      <div class="card pad" id="wxNow"></div>
+      <div class="section-title" id="wxFcTitle">Forecast</div>
+      <div class="list" id="wxFc"></div>
+      <div class="section-title" id="wxTideTitle">Tides</div>
+      <div class="list" id="wxTides"></div>
+      <div class="section-title">Sun &amp; moon</div>
+      <div class="card pad" id="wxSun"></div>
+      <div class="section-title">Forecast models</div>
+      <div class="coming">Model comparison, GRIB wind maps and routing will live here.</div>
+      <p class="note" id="wxAge" style="text-align:center;margin-top:14px;"></p>
+    </section>
+
+    <!-- BOAT -->
+    <section class="view scroll" id="view-boat">
+      <div class="section-title">Cabin display</div>
+      <div class="seg" id="frameSeg">
+        <button data-m="auto">Auto</button><button data-m="dashboard">Instruments</button><button data-m="info">Weather</button><button data-m="photo">Photos</button>
+      </div>
+      <p class="note" id="frameNote" style="margin:8px 4px 0;">Auto shows instruments while the Vesper is on, and photos with the weather screen when it's off. Changes reach the frame within about a minute.</p>
+
+      <div class="section-title">Boat setup</div>
+      <div class="list" id="boatSetup"></div>
+      <div style="margin-top:10px;"><button class="btn primary block" id="btnSaveBoat" onclick="saveBoat()">Save boat setup</button></div>
+
+      <div class="section-title">This phone</div>
+      <div class="list">
+        <div class="row"><div class="txt"><b>Appearance</b></div>
+          <div class="seg" id="themeSeg" style="width:190px;"><button data-t="auto">Auto</button><button data-t="light">Light</button><button data-t="dark">Dark</button></div></div>
+        <label class="row"><div class="txt"><b>Alarm sound</b><small>Siren on this phone when the boat drags</small></div><span class="switch"><input type="checkbox" id="prefSound"><span></span></span></label>
+        <label class="row"><div class="txt"><b>Keep screen awake</b><small>While the anchor watch is on</small></div><span class="switch"><input type="checkbox" id="prefWake"><span></span></span></label>
+        <div class="row"><div class="txt"><b>Refresh position every</b></div>
+          <div class="seg" id="pollSeg" style="width:170px;"><button data-p="10">10s</button><button data-p="15">15s</button><button data-p="30">30s</button></div></div>
+        <button class="row" onclick="testAlarm()"><div class="ico">🔔</div><div class="txt"><b>Test alarm on this phone</b><small>Siren, banner and vibration</small></div><span class="chev">›</span></button>
+      </div>
+      <p class="note" style="margin:8px 4px 0;">An iPhone's mute switch can silence the in-page siren. The ntfy app is the alarm you can count on.</p>
+
+      <div class="section-title">Backup GPS</div>
+      <div class="list">
+        <label class="row"><div class="txt"><b>Use this phone as the boat's GPS</b><small>Only if the Pi or Vesper is down</small></div><span class="switch"><input type="checkbox" id="phoneGps"><span></span></span></label>
+      </div>
+      <p class="note" style="margin:8px 4px 0;">Sends this phone's position as the boat's. Leave it off whenever the Pi is running, or the two will fight.</p>
+      <p class="note" style="text-align:center;margin-top:24px;">Harvest Watch · DataHub · harvest-moon-watch</p>
+    </section>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tab active" data-v="anchor"><span class="badge" id="badgeAnchor"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2.2"/><path d="M12 7.2V21M8 11h8M4.5 14.5c0 3.6 3.4 6.5 7.5 6.5s7.5-2.9 7.5-6.5"/></svg>Anchor</button>
+    <button class="tab" data-v="instruments">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 12l4-5M12 3v2M21 12h-2M3 12h2"/></svg>Instruments</button>
+    <button class="tab" data-v="alerts"><span class="badge" id="badgeAlerts"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></svg>Alerts</button>
+    <button class="tab" data-v="weather">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 0 1-.5-8A5.5 5.5 0 0 1 17 8.5 4.5 4.5 0 0 1 17.5 18z"/></svg>Weather</button>
+    <button class="tab" data-v="boat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M12 3l6 10h-6M4 17h16l-2 3H6z"/></svg>Boat</button>
+  </nav>
+</div>
+
+<!-- alert detail page -->
+<div class="page" id="alertPage">
+  <div class="page-head">
+    <button class="back" onclick="closeAlertPage()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M15 5l-7 7 7 7"/></svg>Alerts</button>
+    <b id="apTitle"></b>
+    <span class="switch" id="apSwitchWrap"><input type="checkbox" id="apSwitch"><span></span></span>
   </div>
+  <div class="page-body" id="apBody"></div>
+  <div class="page-foot"><button class="btn primary block" id="apSave" onclick="saveAlertPage()">Save</button></div>
+</div>
 
-  <div class="footer">Each page connects over the internet to the same boat. Open these from the https:// links — a downloaded file won't have GPS.</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════════════
+//  HARVEST WATCH — one app for the DataHub: anchor, instruments,
+//  alerts, weather, boat. Reads and writes the same Firestore documents
+//  as guard.py (Pi) and the Cloudflare worker, so all three stay in step.
+// ═══════════════════════════════════════════════════════════════════
+
+const PROJECT = 'harvest-moon-watch', VESSEL = 'harvest-moon';
+const FSB = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents`;
+const FT = 3.28084, M_PER_FT = 0.3048;
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ─── Firestore ──────────────────────────────────────────────────────
+async function fsGet(coll) {
+  try {
+    const r = await fetch(`${FSB}/${coll}/${VESSEL}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    return (await r.json()).fields || {};
+  } catch (e) { return null; }
+}
+// Field-masked PATCH: the Pi and the worker write these same documents,
+// so every writer touches only its own fields. A masked field that is
+// absent from the body is DELETED - that is how ending a watch clears the
+// anchor coordinates.
+async function fsPatch(coll, fields, mask) {
+  mask = mask || Object.keys(fields);
+  const q = mask.map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+  try {
+    const r = await fetch(`${FSB}/${coll}/${VESSEL}?${q}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields })
+    });
+    return r.ok;
+  } catch (e) { return false; }
+}
+const fD = v => ({ doubleValue: Number(v) });
+const fI = v => ({ integerValue: String(Math.round(v)) });
+const fB = v => ({ booleanValue: !!v });
+const fS = v => ({ stringValue: String(v) });
+const num = f => f ? (f.doubleValue !== undefined ? Number(f.doubleValue)
+                   : (f.integerValue !== undefined ? parseInt(f.integerValue) : null)) : null;
+const bool = f => !!(f && f.booleanValue);
+const str = f => (f && f.stringValue !== undefined) ? f.stringValue : '';
+
+// Defaults mirror guard.py / the worker, so the app shows what the boat
+// will actually do for any setting nobody has touched yet.
+const DEF = {
+  radius: 150, confirmN: 2, rodeOutFt: 0, targetScope: 5, minScope: 4, bowRollerFt: 5,
+  transducerOffsetFt: 2, minDepthFt: 8, scopeEnabled: false, depthEnabled: false,
+  swingEnabled: false, swingRateDeg: 90, swingRateMin: 20,
+  windEnabled: false, windSustainedKn: 25, gustKn: 35,
+  awaEnabled: false, awaMaxDeg: 70, awaSustainMin: 5,
+  aisEnabled: false, aisWarnM: 50, aisCollisionM: 5, aisSpeedKn: 3, aisTcpaMin: 20,
+  deadmanEnabled: true, deadmanDelayMin: 30, dailyPingEnabled: false, dailyPingHour: 8,
+  bowOffsetEnabled: true, bowOffsetFt: 30, loaFt: 38, magVarDeg: 0
+};
+function C(k) {
+  const f = S.cfg[k];
+  if (typeof DEF[k] === 'boolean') return f === undefined ? DEF[k] : bool(f);
+  const v = num(f);
+  return v === null ? DEF[k] : v;
+}
+
+// ─── App state ──────────────────────────────────────────────────────
+const S = {
+  cfg: {}, st: {}, tel: null, wx: null, health: null, ais: null,
+  pos: null, lastTs: null, linkOk: false,
+  anchor: null, armed: false, snoozeUntil: 0,
+  trail: [], maxDist: 0, breach: 0, alarm: false, silenceUntil: 0,
+  lastWrite: 0
+};
+
+// ─── Local prefs (this phone only) ──────────────────────────────────
+const PREF_KEY = 'hw_prefs';
+const P = Object.assign({ theme: 'auto', sound: true, wake: true, poll: 15, warnPct: 80 },
+  (() => { try { return JSON.parse(localStorage.getItem(PREF_KEY) || '{}'); } catch (e) { return {}; } })());
+function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(P)); } catch (e) {} }
+function applyTheme() {
+  if (P.theme === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', P.theme);
+}
+applyTheme();
+
+// ─── Small utils ────────────────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000, r = Math.PI / 180;
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2 +
+    Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lon2 - lon1) * r / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function bearing(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180, p1 = lat1 * r, p2 = lat2 * r, dl = (lon2 - lon1) * r;
+  const y = Math.sin(dl) * Math.cos(p2);
+  const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+function destPoint(lat, lon, brgDeg, distM) {
+  const R = 6371000, r = Math.PI / 180, br = brgDeg * r, d = distM / R;
+  const la1 = lat * r, lo1 = lon * r;
+  const la2 = Math.asin(Math.sin(la1) * Math.cos(d) + Math.cos(la1) * Math.sin(d) * Math.cos(br));
+  const lo2 = lo1 + Math.atan2(Math.sin(br) * Math.sin(d) * Math.cos(la1), Math.cos(d) - Math.sin(la1) * Math.sin(la2));
+  return { lat: la2 / r, lon: ((lo2 / r) + 540) % 360 - 180 };
+}
+function compass(d) {
+  return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d / 22.5) % 16];
+}
+function fmtCoord(v, isLat) {
+  if (v === null || v === undefined || isNaN(v)) return '—';
+  const h = isLat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W');
+  const a = Math.abs(v); let d = Math.floor(a), m = (a - d) * 60;
+  if (m >= 59.9995) { m = 0; d += 1; }
+  return `${h} ${d}° ${m.toFixed(3)}'`;
+}
+function ago(ms) {
+  if (!ms) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+  if (s < 60) return s + 's ago';
+  if (s < 3600) return Math.floor(s / 60) + 'm ago';
+  if (s < 86400) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm ago';
+  return Math.floor(s / 86400) + 'd ago';
+}
+const ageMin = ms => ms ? (Date.now() - ms) / 60000 : null;
+function toast(msg, ms) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms || 2600);
+}
+const snoozed = () => Date.now() < (S.snoozeUntil || 0);
+
+// Coordinates, as typed, pasted, or texted across from another phone.
+// Handles "N 44 29.489", "44° 29.489' N", "44°29′29″N", "44.491486", "-68.48".
+function parseCoord(text, isLat) {
+  if (!text) return null;
+  let s = String(text).trim().toUpperCase();
+  if (!s) return null;
+  if (/[A-Z]/.test(s.replace(/[NSEW]/g, ''))) return null;
+  let sign = 1;
+  if (/[SW]/.test(s) || /^\s*-/.test(s)) sign = -1;
+  s = s.replace(/[NSEW]/g, ' ').replace(/[^0-9.\s]/g, ' ');
+  const parts = s.split(/\s+/).filter(Boolean).map(Number);
+  if (!parts.length || parts.length > 3 || parts.some(isNaN)) return null;
+  let v = parts[0] + (parts[1] || 0) / 60 + (parts[2] || 0) / 3600;
+  if (parts.length > 1 && (parts[1] >= 60 || (parts[2] || 0) >= 60)) return null;
+  v *= sign;
+  return (isFinite(v) && Math.abs(v) <= (isLat ? 90 : 180)) ? v : null;
+}
+// A whole position in one string - what you get when you paste a text
+// message or a copied map pin into the latitude box.
+function parsePair(text) {
+  if (!text) return null;
+  const t = String(text).trim().toUpperCase().replace(/\s+/g, ' ');
+  let a = null, b = null;
+  if (t.includes(',')) {
+    const p = t.split(','); if (p.length === 2) { a = p[0]; b = p[1]; }
+  }
+  if (a === null) {
+    const iEW = t.search(/[EW]/), iNS = t.search(/[NS]/);
+    if (iEW > 0 && iNS >= 0) {
+      if (iNS === 0) { a = t.slice(0, iEW); b = t.slice(iEW); }        // N 44 29.4 W 68 28.9
+      else if (iNS < iEW) { a = t.slice(0, iNS + 1); b = t.slice(iNS + 1); } // 44 29.4N 68 28.9W
+    }
+  }
+  if (a === null) {
+    const tok = t.split(' ');
+    const neg = tok.findIndex((x, i) => i > 0 && x.startsWith('-'));
+    if (neg > 0) { a = tok.slice(0, neg).join(' '); b = tok.slice(neg).join(' '); }
+    else if (tok.length >= 4 && tok.length % 2 === 0) { a = tok.slice(0, tok.length / 2).join(' '); b = tok.slice(tok.length / 2).join(' '); }
+  }
+  if (a === null) return null;
+  const lat = parseCoord(a, true), lon = parseCoord(b, false);
+  return (lat !== null && lon !== null) ? { lat, lon } : null;
+}
+
+// ─── Chain ──────────────────────────────────────────────────────────
+const CHAIN = [
+  { ft: 25, name: 'red', css: '#c0392b' }, { ft: 50, name: 'orange', css: '#e07b39' },
+  { ft: 75, name: 'yellow', css: '#e8c33a' }, { ft: 100, name: 'green', css: '#2e7d5b' },
+  { ft: 125, name: 'blue', css: '#2f6f95' }, { ft: 150, name: 'purple', css: '#7d5ba6' },
+  { ft: 175, name: 'lt green', css: '#8fce6f' }, { ft: 200, name: 'white', css: '#ffffff' },
+  { ft: 225, name: 'pink', css: '#f2a0c0' }, { ft: 250, name: 'lt blue', css: '#7fc4e8' }
+];
+const CHAIN_TOTAL = 250;
+
+// Depth geometry shared by the setup flow, the instruments and the alerts.
+// Returns null without a fresh sounding.
+function depthNow() {
+  if (!S.tel) return null;
+  const a = ageMin(num(S.tel.updatedAt));
+  const d = num(S.tel.depthFt);
+  if (d === null || a === null || a > 10) return null;
+  const water = d + C('transducerOffsetFt');
+  const rise = S.wx ? (num(S.wx.tideRiseToMaxFt) || 0) : 0;
+  const fall = S.wx ? (num(S.wx.tideFallToMinFt) || 0) : 0;
+  return {
+    water, rise, fall, roller: C('bowRollerFt'),
+    high: water + rise, low: Math.max(0.5, water - fall),
+    hiAt: S.wx ? str(S.wx.tideMaxAt) : '', loAt: S.wx ? str(S.wx.tideMinAt) : ''
+  };
+}
+// Worst-case horizontal reach of the bow: chain bar-taut at LOW water,
+// where the vertical leg is shortest and the circle therefore biggest.
+function suggestRadius(rode) {
+  const g = depthNow(), margin = 25;
+  if (!rode) return null;
+  if (!g) return Math.ceil((rode + margin) / 5) * 5;
+  const v = g.low + g.roller;
+  if (rode <= v) return null;
+  return Math.ceil((Math.sqrt(rode * rode - v * v) + margin) / 5) * 5;
+}
+
+// ═══ MAP ═══════════════════════════════════════════════════════════
+const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([44.1, -69.0], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(map);
+L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, opacity: .9 }).addTo(map);
+
+const L_ = {};  // layers
+const icon = html => L.divIcon({ html, iconSize: [0, 0], iconAnchor: [0, 0], className: '' });
+const boatIcon = () => icon('<div class="boat-dot"></div>');
+const anchorIcon = (op) => icon(`<div class="anchor-ico" style="opacity:${op || 1}">⚓</div>`);
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+let following = false;
+function followBoat() {
+  const p = measurePoint();
+  if (!p) { toast('No position from the boat yet'); return; }
+  following = true; $('btnFollow').classList.add('on');
+  map.setView([p.lat, p.lon], Math.max(map.getZoom(), 17), { animate: false });
+}
+map.on('dragstart', () => { following = false; $('btnFollow').classList.remove('on'); });
+function fitAll() {
+  let b = null;
+  if (L_.circle) b = L_.circle.getBounds();
+  if (S.trail.length) { const t = L.latLngBounds(S.trail.map(p => [p[0], p[1]])); b = b ? b.extend(t) : t; }
+  const p = measurePoint();
+  if (p) b = b ? b.extend([p.lat, p.lon]) : L.latLngBounds([[p.lat, p.lon], [p.lat, p.lon]]);
+  // Keep the fit clear of the card (or sheet) covering the bottom of the map.
+  const cover = setup.open ? window.innerHeight * .6 : ($('anchorCard').offsetHeight || 0);
+  if (b) map.fitBounds(b, { paddingTopLeft: [40, 64], paddingBottomRight: [60, cover + 30], maxZoom: 18, animate: false });
+}
+
+// The point drag is judged from: the bow when the boat publishes it.
+function measurePoint() {
+  if (!S.pos) return null;
+  if (S.pos.bowLat !== null && S.pos.bowLon !== null) return { lat: S.pos.bowLat, lon: S.pos.bowLon, bow: true };
+  return { lat: S.pos.lat, lon: S.pos.lon, bow: false };
+}
+
+function drawBoat() {
+  const p = measurePoint(); if (!p) return;
+  if (!L_.boat) L_.boat = L.marker([p.lat, p.lon], { icon: boatIcon(), zIndexOffset: 500 }).addTo(map);
+  else L_.boat.setLatLng([p.lat, p.lon]);
+  if (p.bow) {
+    // Hull from the bow aft, heading taken from the GPS-to-bow vector.
+    const hdg = bearing(S.pos.lat, S.pos.lon, p.lat, p.lon);
+    const stern = destPoint(p.lat, p.lon, (hdg + 180) % 360, C('loaFt') * M_PER_FT);
+    const seg = [[p.lat, p.lon], [stern.lat, stern.lon]];
+    if (!L_.hull) L_.hull = L.polyline(seg, { color: css('--accent'), weight: 6, opacity: .45, lineCap: 'round' }).addTo(map);
+    else L_.hull.setLatLngs(seg);
+  } else if (L_.hull) { map.removeLayer(L_.hull); L_.hull = null; }
+  if (following) map.panTo([p.lat, p.lon], { animate: true });
+}
+function drawAnchor() {
+  ['anchorM', 'circle', 'warnC'].forEach(k => { if (L_[k]) { map.removeLayer(L_[k]); L_[k] = null; } });
+  if (!S.anchor) return;
+  const r = C('radius') * M_PER_FT;
+  L_.anchorM = L.marker([S.anchor.lat, S.anchor.lon], { icon: anchorIcon(), zIndexOffset: 400 }).addTo(map);
+  L_.circle = L.circle([S.anchor.lat, S.anchor.lon], { radius: r, color: css('--bad'), weight: 2, fillOpacity: .06, fillColor: css('--bad') }).addTo(map);
+  L_.warnC = L.circle([S.anchor.lat, S.anchor.lon], { radius: r * P.warnPct / 100, color: css('--warn'), weight: 1, dashArray: '5 6', fill: false }).addTo(map);
+}
+function drawTrail() {
+  ['trail', 'trailGlow'].forEach(k => { if (L_[k]) { map.removeLayer(L_[k]); L_[k] = null; } });
+  if (!S.trail.length) return;
+  const ll = S.trail.map(p => [p[0], p[1]]);
+  L_.trailGlow = L.polyline(ll, { color: css('--accent'), weight: 8, opacity: .13, lineJoin: 'round' }).addTo(map);
+  L_.trail = L.polyline(ll, { color: css('--accent'), weight: 1.6, opacity: .9, lineJoin: 'round' }).addTo(map);
+}
+// AIS targets: guard.py publishes range and bearing from the GPS, so place
+// them relative to the GPS position.
+function drawAis() {
+  if (L_.ais) { map.removeLayer(L_.ais); L_.ais = null; }
+  if (!S.ais || !S.pos) return;
+  const a = ageMin(num(S.ais.updatedAt));
+  if (a === null || a > 5) return;
+  const g = L.layerGroup();
+  for (const t of aisRows()) {
+    const p = destPoint(S.pos.lat, S.pos.lon, t.brg, t.rng);
+    const svg = `<svg class="ais-ico" width="18" height="18" viewBox="0 0 18 18"><path d="M9 1l6 16-6-4-6 4z" fill="${css('--teal')}" stroke="#fff" stroke-width="1.2"/></svg>`;
+    L.marker([p.lat, p.lon], { icon: icon(svg) })
+      .bindTooltip(`${esc(t.who)} · ${t.rng} m${t.sog ? ' · ' + t.sog + ' kn' : ''}`, { direction: 'top', offset: [0, -8] })
+      .addTo(g);
+  }
+  L_.ais = g.addTo(map);
+}
+function aisRows() {
+  const raw = S.ais ? str(S.ais.targets) : '';
+  return raw.split(';').filter(Boolean).map(r => {
+    const [mmsi, name, rng, brg, sog, cpa] = r.split('|');
+    return { mmsi, who: name || ('MMSI ' + mmsi), rng: +rng, brg: +brg, sog, cpa };
+  }).filter(t => isFinite(t.rng) && isFinite(t.brg));
+}
+
+// ─── Trail (whole anchor session, local + cloud) ────────────────────
+const TRAIL_KEY = 'hm_watch_trail', MAX_TRAIL = 12000;
+const sessionKey = () => S.anchor ? S.anchor.lat.toFixed(5) + ',' + S.anchor.lon.toFixed(5) : 'none';
+function saveTrail() {
+  try { localStorage.setItem(TRAIL_KEY, JSON.stringify({ session: sessionKey(), points: S.trail })); }
+  catch (e) { S.trail = S.trail.filter((_, i) => i % 2 === 0); try { localStorage.setItem(TRAIL_KEY, JSON.stringify({ session: sessionKey(), points: S.trail })); } catch (e2) {} }
+}
+function loadTrail() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(TRAIL_KEY) || 'null');
+    if (raw && Array.isArray(raw.points)) { S.trail = raw.points; S.trailSession = raw.session || ''; }
+    else if (Array.isArray(raw)) S.trail = raw;
+  } catch (e) {}
+}
+function trimTrail() {
+  if (S.trail.length <= MAX_TRAIL) return;
+  const h = Math.floor(S.trail.length / 2);
+  S.trail = S.trail.slice(0, h).filter((_, i) => i % 2 === 0).concat(S.trail.slice(h));
+}
+function resetTrail() {
+  S.trail = []; S.trailSession = sessionKey(); S.maxDist = 0; saveTrail(); drawTrail();
+  fsPatch('tracks', { pts: fS(''), session: fS(sessionKey()), count: fI(0), updatedAt: fI(Date.now()) });
+}
+async function loadCloudTrack() {
+  const f = await fsGet('tracks'); if (!f) return;
+  const session = str(f.session);
+  if (!S.anchor || (session && session !== sessionKey())) return;
+  const pts = str(f.pts).split(';').filter(Boolean).map(c => {
+    const a = c.split(','); return [parseFloat(a[0]), parseFloat(a[1]), (parseInt(a[2]) || 0) * 1000];
+  }).filter(p => isFinite(p[0]) && isFinite(p[1]));
+  if (!pts.length) return;
+  const bySec = new Map();
+  for (const p of S.trail.concat(pts)) { const k = Math.round((p[2] || 0) / 1000); if (!bySec.has(k)) bySec.set(k, p); }
+  const merged = [...bySec.values()].sort((a, b) => (a[2] || 0) - (b[2] || 0));
+  if (merged.length !== S.trail.length) { S.trail = merged; trimTrail(); saveTrail(); drawTrail(); recomputeMax(); paintAnchorCard(); }
+}
+function recomputeMax() {
+  if (!S.anchor) return;
+  S.maxDist = S.trail.reduce((m, p) => Math.max(m, haversine(S.anchor.lat, S.anchor.lon, p[0], p[1]) * FT), 0);
+}
+
+// ═══ POLLING ═══════════════════════════════════════════════════════
+async function pollPosition() {
+  const f = await fsGet('vessels');
+  if (!f) { S.linkOk = false; paintLink(); return; }
+  S.linkOk = true;
+  const lat = num(f.lat), lon = num(f.lon);
+  if (lat === null || lon === null) { paintLink(); return; }
+  const ts = num(f.timestamp) || 0;
+  S.pos = { lat, lon, ts, acc: num(f.accuracy), bowLat: num(f.bowLat), bowLon: num(f.bowLon) };
+  if (ts !== S.lastTs) {
+    const first = S.lastTs === null;
+    S.lastTs = ts;
+    onFix();
+    if (first) { if (S.anchor) fitAll(); else map.setView([lat, lon], 16, { animate: false }); }
+  }
+  paintLink(); paintAnchorCard(); paintMapTop();
+}
+function onFix() {
+  const p = measurePoint();
+  drawBoat();
+  if (!S.anchor) return;
+  const fresh = (Date.now() - S.pos.ts) < 5 * 60000;
+  S.trail.push([p.lat, p.lon, S.pos.ts]); trimTrail(); saveTrail(); drawTrail();
+  const d = haversine(S.anchor.lat, S.anchor.lon, p.lat, p.lon) * FT;
+  if (d > S.maxDist) S.maxDist = d;
+  if (S.armed && fresh) evaluateAlarm(d);
+}
+
+async function slowPoll() {
+  const [tel, wx, health, ais, alarms, st] = await Promise.all(
+    ['telemetry', 'weather', 'health', 'ais', 'alarms', 'state'].map(fsGet));
+  S.tel = tel; S.wx = wx; S.health = health; S.ais = ais; S.st = st || {};
+  if (alarms) applyAlarmsDoc(alarms);
+  drawAis();
+  paintAll();
+}
+// The alarms document is shared with every other phone that has this app
+// open. A doc older than our own last write is a read that crossed with it
+// in flight, so it is ignored rather than allowed to undo what we just did.
+function applyAlarmsDoc(f) {
+  if ((num(f.updatedAt) || 0) < S.lastWrite) return;
+  S.cfg = f;
+  S.snoozeUntil = num(f.snoozeUntil) || 0;
+  const armed = bool(f.armed), aLat = num(f.anchorLat), aLon = num(f.anchorLon);
+  if (armed && aLat !== null && aLon !== null) {
+    const moved = !S.anchor || haversine(S.anchor.lat, S.anchor.lon, aLat, aLon) > 1;
+    S.anchor = { lat: aLat, lon: aLon }; S.armed = true;
+    // Keep a stored track that belongs to this same anchor (a reload, or
+    // the track the old watch page saved); start fresh for a new one.
+    if (moved) {
+      if (S.trailSession !== sessionKey()) { S.trail = []; saveTrail(); drawTrail(); }
+      S.trailSession = sessionKey(); recomputeMax(); loadCloudTrack();
+      drawAnchor(); setTimeout(fitAll, 100);
+    }
+    drawAnchor();
+  } else if (S.anchor && aLat === null) {
+    // Ended from another phone.
+    S.anchor = null; S.armed = false; clearAlarm(); drawAnchor(); S.trail = []; saveTrail(); drawTrail();
+  } else {
+    S.armed = armed;
+  }
+  saveLocalAnchor();
+}
+function saveLocalAnchor() { try { localStorage.setItem('hw_anchor', JSON.stringify({ anchor: S.anchor, armed: S.armed })); } catch (e) {} }
+
+// ═══ ALARM (this phone) ════════════════════════════════════════════
+// The boat guard and the cloud watcher send the real pushes. This is the
+// local siren for when you are aboard with the app open.
+let audioCtx = null, sirenT = null, silentEl = null;
+function silentWavUrl() {
+  const n = 4000, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, 8000, true); v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, n * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+function unlockAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const b = audioCtx.createBuffer(1, 1, 22050), s = audioCtx.createBufferSource();
+    s.buffer = b; s.connect(audioCtx.destination); s.start(0);
+    // A looping silent <audio> routes Web Audio through the media channel,
+    // so the siren is not killed by the iPhone ringer switch.
+    if (!silentEl) { silentEl = new Audio(silentWavUrl()); silentEl.loop = true; silentEl.setAttribute('playsinline', ''); }
+    silentEl.play().catch(() => {});
+    return audioCtx.state === 'running';
+  } catch (e) { return false; }
+}
+function beep(f, ms, at) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime + (at || 0), o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = 'square'; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(.6, t + .01);
+  g.gain.exponentialRampToValueAtTime(.0001, t + ms / 1000);
+  o.connect(g); g.connect(audioCtx.destination); o.start(t); o.stop(t + ms / 1000 + .02);
+}
+function sirenBurst() {
+  if (!P.sound) return;
+  unlockAudio(); beep(880, 180, 0); beep(1180, 180, .22); beep(880, 180, .44);
+  if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 400]);
+}
+function startSiren() { if (!sirenT) { sirenBurst(); sirenT = setInterval(sirenBurst, 1500); } }
+function stopSiren() { clearInterval(sirenT); sirenT = null; if (navigator.vibrate) navigator.vibrate(0); }
+
+function evaluateAlarm(d) {
+  const r = C('radius');
+  S.breach = d > r ? S.breach + 1 : 0;
+  if (S.breach >= C('confirmN')) {
+    if (!S.alarm) { S.alarm = true; $('alarmBanner').classList.add('show'); $('alarmTxt').textContent = `⚠ DRAGGING — ${Math.round(d)} ft from anchor`; }
+    if (Date.now() > S.silenceUntil) startSiren(); else stopSiren();
+  } else if (S.alarm && d < r * .9) clearAlarm();
+}
+function clearAlarm() { S.alarm = false; S.breach = 0; S.silenceUntil = 0; stopSiren(); $('alarmBanner').classList.remove('show'); }
+function silenceAlarm() { S.silenceUntil = Date.now() + 5 * 60000; stopSiren(); toast('Siren silenced for 5 min — still watching'); }
+function testAlarm() {
+  const ok = unlockAudio();
+  $('alarmTxt').textContent = '⚠ TEST — this is the drag alarm';
+  $('alarmBanner').classList.add('show');
+  sirenBurst(); let n = 0; const t = setInterval(() => { sirenBurst(); if (++n >= 2) { clearInterval(t); if (!S.alarm) $('alarmBanner').classList.remove('show'); } }, 1500);
+  if (!ok) toast('The browser blocked sound — check the ringer switch, or rely on ntfy', 4000);
+}
+
+// Wake lock while watching.
+let wakeLock = null;
+async function syncWake() {
+  const want = P.wake && S.armed && document.visibilityState === 'visible';
+  try {
+    if (want && !wakeLock && 'wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    if (!want && wakeLock) { wakeLock.release(); wakeLock = null; }
+  } catch (e) {}
+}
+document.addEventListener('visibilitychange', syncWake);
+
+// ═══ PAINT: header + anchor view ═══════════════════════════════════
+function fixAgeMin() { return S.pos ? ageMin(S.pos.ts) : null; }
+function paintLink() {
+  const a = fixAgeMin();
+  let cls = 'bad', txt = 'Offline';
+  if (!S.linkOk) { cls = 'bad'; txt = 'No connection'; }
+  else if (a === null) { cls = 'warn'; txt = 'No position'; }
+  else if (a < 3) { cls = 'ok'; txt = 'Live'; }
+  else if (a < 10) { cls = 'warn'; txt = `Fix ${Math.round(a)}m old`; }
+  else { cls = 'bad'; txt = `Fix ${ago(S.pos.ts).replace(' ago', '')} old`; }
+  if (S.alarm) { cls = 'bad'; txt = 'ALARM'; }
+  $('linkDot').className = 'dot ' + cls; $('linkTxt').textContent = txt;
+}
+function paintMapTop() {
+  const out = [];
+  if (S.tel && ageMin(num(S.tel.updatedAt)) < 10) {
+    const tws = num(S.tel.windSpeedTrueKn), twd = num(S.tel.windDirTrueDeg);
+    if (tws !== null) out.push(`<span class="pill">💨 ${tws.toFixed(0)} kn <small>${twd !== null ? compass(twd) : ''}</small></span>`);
+    const g = depthNow();
+    if (g) out.push(`<span class="pill">🌊 ${g.water.toFixed(1)} ft</span>`);
+  }
+  if (snoozed()) out.push(`<span class="pill" style="color:var(--warn)">😴 Snoozed ${Math.ceil((S.snoozeUntil - Date.now()) / 60000)}m</span>`);
+  $('mapTop').innerHTML = out.join('');
+}
+function paintAnchorCard() {
+  const el = $('anchorCard');
+  if (setup.open) { el.style.display = 'none'; $('mapBtns').style.bottom = 'calc(68% + 10px)'; return; }
+  el.style.display = '';
+  if (!S.anchor) {
+    const p = S.pos;
+    el.innerHTML = `
+      <div class="ac-head"><b>No anchor set</b><div class="grow"></div><span class="chip off">Off</span></div>
+      <p class="note" style="margin-bottom:12px;">${p ? `Boat at ${fmtCoord(p.lat, true)} &nbsp;${fmtCoord(p.lon, false)} · ${ago(p.ts)}` : 'Waiting for a position from the boat…'}</p>
+      <button class="btn primary block" onclick="openSetup()">⚓ Set anchor</button>`;
+  } else {
+    const p = measurePoint(), r = C('radius');
+    let d = null, brg = null;
+    if (p) { d = haversine(S.anchor.lat, S.anchor.lon, p.lat, p.lon) * FT; brg = bearing(S.anchor.lat, S.anchor.lon, p.lat, p.lon); }
+    const pct = d === null ? 0 : d / r;
+    const cls = pct >= 1 ? 'bad' : pct >= P.warnPct / 100 ? 'warn' : 'ok';
+    const g = depthNow(), rode = C('rodeOutFt');
+    const scope = (g && rode > 0) ? rode / (g.water + g.roller) : null;
+    const status = S.alarm ? '<span class="chip triggered">Dragging</span>'
+      : snoozed() ? '<span class="chip snoozed">Snoozed</span>'
+      : S.armed ? '<span class="chip active">Watching</span>' : '<span class="chip ready">Not armed</span>';
+    el.innerHTML = `
+      <div class="ac-head"><b>Anchor watch</b><div class="grow"></div>${status}</div>
+      <div class="metrics">
+        <div class="metric big"><small>From anchor</small><b class="${cls}">${d === null ? '—' : Math.round(d)}<i>ft</i></b></div>
+        <div class="metric big"><small>Radius</small><b>${Math.round(r)}<i>ft</i></b></div>
+        <div class="metric big"><small>Max swing</small><b>${S.maxDist ? Math.round(S.maxDist) : '—'}<i>ft</i></b></div>
+      </div>
+      <div class="meter"><i style="width:${Math.min(100, pct * 100)}%;background:var(--${cls})"></i></div>
+      <div class="metrics" style="margin-bottom:12px;">
+        <div class="metric"><small>Bearing</small><b>${brg === null ? '—' : Math.round(brg) + '°'}<i>${brg === null ? '' : compass(brg)}</i></b></div>
+        <div class="metric"><small>Scope</small><b>${scope ? scope.toFixed(1) + ':1' : '—'}</b></div>
+        <div class="metric"><small>Fix</small><b style="font-size:15px">${S.pos ? ago(S.pos.ts) : '—'}</b></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="openSetup('adjust')">Adjust</button>
+        <button class="btn" onclick="openSnooze()">${snoozed() ? 'Resume' : 'Snooze'}</button>
+        <button class="btn danger" onclick="endWatch()">End</button>
+      </div>`;
+  }
+  requestAnimationFrame(() => { $('mapBtns').style.bottom = (el.offsetHeight + 20) + 'px'; });
+}
+
+// ═══ SET-ANCHOR FLOW ═══════════════════════════════════════════════
+// 1  Where is it?   typed / pasted lat-lon first (marked on another phone
+//                   at the bow), with the other methods one tap away
+// 2  Chain & radius chain-mark chips, suggested radius from live depth + tide
+// 3  Start          review, then arm
+const setup = { open: false, mode: 'new', step: 1, method: 'coords', lat: null, lon: null, rode: 0, radius: 150, radiusTouched: false, latTxt: '', lonTxt: '', brg: 0, dist: 100 };
+let previewM = null, previewC = null;
+
+function openSetup(mode) {
+  Object.assign(setup, { open: true, mode: mode || 'new', step: mode === 'adjust' ? 2 : 1, method: 'coords', radiusTouched: mode === 'adjust' });
+  if (mode === 'adjust' && S.anchor) { setup.lat = S.anchor.lat; setup.lon = S.anchor.lon; setup.radius = C('radius'); }
+  else { setup.lat = null; setup.lon = null; setup.latTxt = ''; setup.lonTxt = ''; setup.radius = C('radius'); }
+  setup.rode = C('rodeOutFt') || 0;
+  $('setSheet').classList.add('open');
+  renderSetup(); paintAnchorCard();
+}
+function closeSetup() {
+  setup.open = false; $('setSheet').classList.remove('open'); $('crosshair').classList.remove('show');
+  clearPreview(); paintAnchorCard();
+}
+function clearPreview() {
+  if (previewM) { map.removeLayer(previewM); previewM = null; }
+  if (previewC) { map.removeLayer(previewC); previewC = null; }
+}
+function updatePreview(pan) {
+  clearPreview();
+  if (setup.lat === null) return;
+  previewM = L.marker([setup.lat, setup.lon], { icon: anchorIcon(.85), zIndexOffset: 600 }).addTo(map);
+  if (setup.step >= 2) previewC = L.circle([setup.lat, setup.lon], { radius: setup.radius * M_PER_FT, color: css('--accent'), weight: 2, dashArray: '6 6', fillOpacity: .05 }).addTo(map);
+  if (pan) {
+    const b = L.latLngBounds([[setup.lat, setup.lon], [setup.lat, setup.lon]]);
+    const p = measurePoint(); if (p) b.extend([p.lat, p.lon]);
+    if (previewC) b.extend(previewC.getBounds());
+    // leave room for the sheet over the bottom of the map
+    map.fitBounds(b, { paddingTopLeft: [40, 60], paddingBottomRight: [40, Math.round(window.innerHeight * .6)], maxZoom: 18, animate: false });
+  }
+}
+function relToBoat(lat, lon) {
+  const p = measurePoint(); if (!p) return '';
+  const d = haversine(p.lat, p.lon, lat, lon) * FT, b = bearing(p.lat, p.lon, lat, lon);
+  let s = `${Math.round(d)} ft from the ${p.bow ? 'bow' : 'GPS'}, bearing ${Math.round(b)}°T (${compass(b)})`;
+  if (d > 600) s += `<div class="note warn" style="margin-top:4px;">That's a long way from the boat — double-check the numbers.</div>`;
+  return s;
+}
+
+function renderSetup() {
+  const adj = setup.mode === 'adjust';
+  $('setTitle').textContent = adj ? 'Adjust chain & radius' : ['Where is the anchor?', 'Chain & radius', 'Start watch'][setup.step - 1];
+  $('setSteps').textContent = adj ? '' : `Step ${setup.step} of 3`;
+  const body = $('setBody'), foot = $('setFoot');
+  $('crosshair').classList.toggle('show', setup.step === 1 && setup.method === 'map');
+
+  if (setup.step === 1) {
+    const m = setup.method;
+    let box = '';
+    if (m === 'coords') {
+      box = `
+        <div class="coord-grid">
+          <div><label for="inLat">Latitude</label><input class="text-in" id="inLat" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="N 44 29.489" value="${esc(setup.latTxt)}"></div>
+          <div><label for="inLon">Longitude</label><input class="text-in" id="inLon" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="W 68 28.954" value="${esc(setup.lonTxt)}"></div>
+        </div>
+        <p class="note" style="margin-top:8px;">Any format works — 44 29.489, 44°29′29″N, 44.49148. Paste a whole position into the first box and it splits itself.</p>`;
+    } else if (m === 'here') {
+      const p = measurePoint();
+      box = `<p class="note">${p ? (p.bow ? `Marks the anchor at the bow's position right now (${Math.round(C('bowOffsetFt'))} ft ahead of the GPS).` : `The boat isn't publishing a bow position, so this marks the GPS — about ${Math.round(C('bowOffsetFt'))} ft aft of the bow.`) : 'No position from the boat yet.'}</p>`;
+    } else if (m === 'brg') {
+      box = `
+        <div class="coord-grid">
+          <div><label for="inBrg">Bearing from you (°T)</label><input class="text-in" id="inBrg" type="number" inputmode="decimal" value="${setup.brg}"></div>
+          <div><label for="inDist">Distance (ft)</label><input class="text-in" id="inDist" type="number" inputmode="decimal" value="${setup.dist}"></div>
+        </div>
+        <button class="btn block" style="margin-top:8px;" id="btnCompass" onclick="compassTap()">🧭 Use phone compass</button>
+        <p class="note" style="margin-top:6px;">Measured from the boat's GPS antenna.</p>`;
+    } else if (m === 'map') {
+      box = `<p class="note">Pan the map until the red crosshair sits on the anchor.</p>`;
+    }
+    body.innerHTML = `
+      <div class="method-box">${box}</div>
+      <div class="preview" id="pv">${setup.lat !== null ? `<b>${fmtCoord(setup.lat, true)} &nbsp;${fmtCoord(setup.lon, false)}</b><br>${relToBoat(setup.lat, setup.lon)}` : '<span class="note">Enter a position to see it on the map.</span>'}</div>
+      <div class="other-ways">
+        <button class="${m === 'coords' ? 'on' : ''}" onclick="setMethod('coords')">Lat / lon</button>
+        <button class="${m === 'here' ? 'on' : ''}" onclick="setMethod('here')">At the bow now</button>
+        <button class="${m === 'brg' ? 'on' : ''}" onclick="setMethod('brg')">Bearing &amp; distance</button>
+        <button class="${m === 'map' ? 'on' : ''}" onclick="setMethod('map')">Pick on map</button>
+      </div>`;
+    foot.innerHTML = m === 'map'
+      ? `<button class="btn primary block" onclick="useMapCentre()">Use crosshair position</button>`
+      : `<button class="btn primary block" ${setup.lat === null ? 'disabled' : ''} onclick="setupNext()">Next — chain &amp; radius</button>`;
+    if (m === 'coords') {
+      const onIn = (e) => {
+        setup.latTxt = $('inLat').value; setup.lonTxt = $('inLon').value;
+        const pair = parsePair(setup.latTxt);
+        if (e && e.target.id === 'inLat' && pair && !setup.lonTxt.trim()) {
+          setup.latTxt = fmtCoord(pair.lat, true); setup.lonTxt = fmtCoord(pair.lon, false);
+          $('inLat').value = setup.latTxt; $('inLon').value = setup.lonTxt;
+        }
+        const la = parseCoord(setup.latTxt, true), lo = parseCoord(setup.lonTxt, false);
+        $('inLat').classList.toggle('bad', !!setup.latTxt.trim() && la === null);
+        $('inLon').classList.toggle('bad', !!setup.lonTxt.trim() && lo === null);
+        const had = setup.lat !== null;
+        if (la !== null && lo !== null) { setup.lat = la; setup.lon = lo; } else { setup.lat = null; setup.lon = null; }
+        refreshStep1(!had && setup.lat !== null);
+      };
+      $('inLat').addEventListener('input', onIn); $('inLon').addEventListener('input', onIn);
+      $('inLon').addEventListener('change', () => updatePreview(true));
+    }
+    if (m === 'brg') {
+      const onB = () => {
+        setup.brg = parseFloat($('inBrg').value) || 0; setup.dist = parseFloat($('inDist').value) || 0;
+        if (S.pos) { const d = destPoint(S.pos.lat, S.pos.lon, setup.brg, setup.dist * M_PER_FT); setup.lat = d.lat; setup.lon = d.lon; }
+        refreshStep1(true);
+      };
+      $('inBrg').addEventListener('input', onB); $('inDist').addEventListener('input', onB); onB();
+    }
+    updatePreview(false);
+  }
+
+  if (setup.step === 2) {
+    const g = depthNow();
+    if (!setup.radiusTouched) { const s = suggestRadius(setup.rode); if (s) setup.radius = Math.min(600, Math.max(30, s)); }
+    const tgt = C('targetScope');
+    const needed = g ? Math.min(CHAIN_TOTAL, Math.ceil(tgt * (g.high + g.roller) / 25) * 25) : null;
+    const chips = CHAIN.map(c => `<button class="${setup.rode === c.ft ? 'on' : ''} ${needed === c.ft && setup.rode !== c.ft ? 'need' : ''}" onclick="pickRode(${c.ft})"><i style="background:${c.css}"></i>${c.ft}</button>`).join('');
+    let geo = '<p class="note">No depth from the Vesper right now — the suggested radius assumes the chain could lie flat.</p>';
+    if (g) {
+      const sNow = setup.rode ? (setup.rode / (g.water + g.roller)).toFixed(1) + ':1' : '—';
+      const sHi = setup.rode ? (setup.rode / (g.high + g.roller)).toFixed(1) + ':1' : '—';
+      geo = `<div class="kv">
+        <span>Depth now</span><b>${g.water.toFixed(1)} ft</b>
+        ${g.rise > .05 ? `<span>High water${g.hiAt ? ' · ' + esc(g.hiAt) : ''}</span><b>${g.high.toFixed(1)} ft</b>` : ''}
+        ${g.fall > .05 ? `<span>Low water${g.loAt ? ' · ' + esc(g.loAt) : ''}</span><b>${g.low.toFixed(1)} ft</b>` : ''}
+        <span>Scope now</span><b>${sNow}</b>
+        ${g.rise > .05 ? `<span>Scope at high water</span><b>${sHi}</b>` : ''}
+      </div>
+      ${needed ? `<p class="note" style="margin-top:8px;">For ${tgt}:1 at high water let out to <b>${needed} ft</b>${needed >= CHAIN_TOTAL ? ' (all of it — consider shallower water)' : ` (${CHAIN.find(c => c.ft === needed)?.name || ''})`}.</p>` : ''}`;
+    }
+    const sug = suggestRadius(setup.rode);
+    body.innerHTML = `
+      <label class="in-label">Chain out — tap the mark at the roller</label>
+      <div class="chains">${chips}</div>
+      <div class="card pad" style="margin-top:12px;">${geo}</div>
+      <div class="card" style="margin-top:12px;">
+        <div class="field">
+          <div class="field-head"><label>Alarm radius</label><output><span id="radOut">${setup.radius}</span><small>ft</small></output></div>
+          <input type="range" id="radIn" min="30" max="600" step="5" value="${setup.radius}">
+          <div class="range-ends"><span>30</span><span>${sug ? `Suggested ${sug} ft` : ''}</span><span>600</span></div>
+        </div>
+      </div>
+      <p class="note" style="margin-top:8px;">Suggested = the furthest the bow can reach with the chain bar-taut at low water, plus 25 ft for GPS scatter.</p>`;
+    $('radIn').addEventListener('input', e => { setup.radius = +e.target.value; setup.radiusTouched = true; $('radOut').textContent = setup.radius; updatePreview(false); });
+    foot.innerHTML = setup.mode === 'adjust'
+      ? `<button class="btn primary block" onclick="saveAdjust()">Save</button>`
+      : `<div class="btn-row"><button class="btn" onclick="setupBack()">Back</button><button class="btn primary" style="flex:2" onclick="setupNext()">Next</button></div>`;
+    updatePreview(true);
+  }
+
+  if (setup.step === 3) {
+    const on = ALERTS.filter(a => a.id !== 'drag' && a.en && C(a.en)).map(a => a.name);
+    body.innerHTML = `
+      <div class="kv" style="font-size:14.5px;">
+        <span>Anchor</span><b>${fmtCoord(setup.lat, true)}<br>${fmtCoord(setup.lon, false)}</b>
+        <span>Chain out</span><b>${setup.rode ? setup.rode + ' ft' : 'not set'}</b>
+        <span>Alarm radius</span><b>${setup.radius} ft</b>
+      </div>
+      <div class="card pad" style="margin-top:12px;">
+        <b style="font-size:14px;">Alerts that go live</b>
+        <p class="note" style="margin-top:4px;">Drag alarm${on.length ? ', ' + on.join(', ') : ''}.</p>
+        <button class="link" onclick="closeSetup();showView('alerts')">Change alerts…</button>
+      </div>
+      <p class="note" style="margin-top:10px;">Starting clears the old swing track. The boat guard picks this up within 30 seconds.</p>`;
+    foot.innerHTML = `<div class="btn-row"><button class="btn" onclick="setupBack()">Back</button><button class="btn primary" style="flex:2" onclick="startWatch()">⚓ Start anchor watch</button></div>`;
+    updatePreview(false);
+  }
+}
+function refreshStep1(pan) {
+  const pv = $('pv');
+  if (pv) pv.innerHTML = setup.lat !== null ? `<b>${fmtCoord(setup.lat, true)} &nbsp;${fmtCoord(setup.lon, false)}</b><br>${relToBoat(setup.lat, setup.lon)}` : '<span class="note">Enter a position to see it on the map.</span>';
+  const nb = $('setFoot').querySelector('.btn.primary'); if (nb && setup.method !== 'map') nb.disabled = setup.lat === null;
+  updatePreview(pan);
+}
+function setMethod(m) {
+  setup.method = m;
+  if (m === 'here') { const p = measurePoint(); if (p) { setup.lat = p.lat; setup.lon = p.lon; } }
+  if (m === 'coords') {
+    const la = parseCoord(setup.latTxt, true), lo = parseCoord(setup.lonTxt, false);
+    if (la !== null && lo !== null) { setup.lat = la; setup.lon = lo; }
+    else if (setup.lat !== null) { setup.latTxt = fmtCoord(setup.lat, true); setup.lonTxt = fmtCoord(setup.lon, false); }
+  }
+  if (m === 'map') { const p = setup.lat !== null ? { lat: setup.lat, lon: setup.lon } : measurePoint(); if (p) map.setView([p.lat, p.lon], Math.max(map.getZoom(), 18), { animate: false }); clearPreview(); }
+  renderSetup();
+  if (m === 'here') updatePreview(true);
+}
+function useMapCentre() {
+  // The crosshair sits in the middle of the map element; the sheet covers
+  // the lower part, which is fine - the map centre is still the crosshair.
+  const c = map.getCenter(); setup.lat = c.lat; setup.lon = c.lng;
+  setup.latTxt = fmtCoord(c.lat, true); setup.lonTxt = fmtCoord(c.lng, false);
+  setup.method = 'coords'; renderSetup(); updatePreview(false);
+}
+function pickRode(ft) { setup.rode = ft; renderSetup(); }
+function setupNext() { if (setup.lat === null) return; setup.step++; renderSetup(); }
+function setupBack() { setup.step--; renderSetup(); }
+
+async function startWatch() {
+  const ok = await writeAlarms({
+    anchorLat: fD(setup.lat), anchorLon: fD(setup.lon), radius: fI(setup.radius),
+    rodeOutFt: fD(setup.rode), armed: fB(true), snoozeUntil: fI(0), staleMin: fI(8),
+    confirmN: fI(C('confirmN'))
+  });
+  if (!ok) { toast('Could not reach the cloud — not armed. Try again.', 4000); return; }
+  S.anchor = { lat: setup.lat, lon: setup.lon }; S.armed = true; S.snoozeUntil = 0;
+  S.cfg.radius = fI(setup.radius); S.cfg.rodeOutFt = fD(setup.rode);
+  clearAlarm(); resetTrail(); saveLocalAnchor();
+  closeSetup(); drawAnchor(); fitAll(); paintAll(); syncWake(); unlockAudio();
+  toast('Anchor watch is on');
+}
+async function saveAdjust() {
+  const ok = await writeAlarms({ radius: fI(setup.radius), rodeOutFt: fD(setup.rode) });
+  if (!ok) { toast('Could not reach the cloud — not saved', 4000); return; }
+  S.cfg.radius = fI(setup.radius); S.cfg.rodeOutFt = fD(setup.rode);
+  closeSetup(); drawAnchor(); paintAll(); toast('Radius and chain updated');
+}
+async function endWatch() {
+  if (!confirm('End the anchor watch? This clears the anchor and disarms the boat guard and cloud watcher.')) return;
+  // anchorLat/anchorLon are in the mask but not the body, so Firestore deletes them.
+  const ok = await writeAlarms({ armed: fB(false), snoozeUntil: fI(0) }, ['anchorLat', 'anchorLon']);
+  S.anchor = null; S.armed = false; clearAlarm(); drawAnchor(); S.trail = []; saveTrail(); drawTrail(); saveLocalAnchor(); syncWake();
+  paintAll();
+  if (!ok) alert('Could not reach the cloud. This phone is cleared, but the boat may still be armed and alerting. Try again when you have signal.');
+  else toast('Anchor watch ended');
+}
+async function writeAlarms(fields, extraMask) {
+  const now = Date.now();
+  fields = Object.assign({}, fields, { updatedAt: fI(now) });
+  const ok = await fsPatch('alarms', fields, Object.keys(fields).concat(extraMask || []));
+  if (ok) S.lastWrite = now;
+  return ok;
+}
+
+// Compass (bearing method).
+let compassOn = false, lastHeading = null;
+function onOrient(e) {
+  let h = null;
+  if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
+  else if (e.absolute && typeof e.alpha === 'number') h = (360 - e.alpha) % 360;
+  if (h === null) return;
+  // Phone compass is magnetic; the boat works in true.
+  lastHeading = (h + C('magVarDeg') + 360) % 360;
+  const b = $('btnCompass'); if (b) b.textContent = `📌 Capture ${Math.round(lastHeading)}°T`;
+}
+async function compassTap() {
+  if (!compassOn) {
+    try {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        if (await DeviceOrientationEvent.requestPermission() !== 'granted') { toast('Compass permission denied'); return; }
+      }
+    } catch (e) { toast('No compass on this device'); return; }
+    window.addEventListener('deviceorientationabsolute', onOrient, true);
+    window.addEventListener('deviceorientation', onOrient, true);
+    compassOn = true; toast('Hold the phone flat, top edge at the anchor, then tap Capture'); return;
+  }
+  if (lastHeading === null) { toast('No compass reading yet'); return; }
+  $('inBrg').value = Math.round(lastHeading); $('inBrg').dispatchEvent(new Event('input'));
+}
+
+// ─── Snooze ─────────────────────────────────────────────────────────
+// One tap = 30 min from the map; the Alerts tab has 15 / 30 / 60.
+function openSnooze() { setSnooze(snoozed() ? 0 : 30); }
+async function setSnooze(mins) {
+  const until = mins ? Date.now() + mins * 60000 : 0;
+  const ok = await writeAlarms({ snoozeUntil: fI(until) });
+  if (!ok) { toast('Could not reach the cloud'); return; }
+  S.snoozeUntil = until; paintAll();
+  toast(mins ? `Alerts snoozed for ${mins} min` : 'Alerts resumed');
+}
+
+// ═══ ALERTS ════════════════════════════════════════════════════════
+const ALERTS = [
+  { id: 'drag', icon: '⚓', name: 'Anchor drag', en: null, latch: 'dragAlerted',
+    desc: 'Always on while the anchor watch runs. The boat guard checks every 10 seconds and alerts after the bow has been outside the radius for a minute; the cloud watcher backs it up every minute.',
+    fields: [
+      { k: 'radius', label: 'Alarm radius', min: 30, max: 600, step: 5, unit: 'ft', int: true },
+      { k: 'warnPct', local: true, label: 'Early-warning ring (this phone)', min: 50, max: 95, step: 5, unit: '% of radius' },
+      { k: 'confirmN', label: 'Cloud watcher: fixes outside before alarm', min: 1, max: 6, step: 1, unit: '', int: true }],
+    summary: () => `${Math.round(C('radius'))} ft radius` },
+  { id: 'wind', icon: '💨', name: 'Wind & gusts', en: 'windEnabled',
+    desc: 'The alert that reaches you before the anchor starts to drag. Sustained is a 5-minute average of true wind; gust is the peak of the last 10 minutes.',
+    fields: [
+      { k: 'windSustainedKn', label: 'Sustained wind over', min: 5, max: 60, step: 1, unit: 'kn' },
+      { k: 'gustKn', label: 'Gust over', min: 10, max: 80, step: 1, unit: 'kn' }],
+    summary: () => `${C('windSustainedKn')} kn sustained · ${C('gustKn')} kn gust`,
+    now: () => { const t = S.tel && num(S.tel.windSpeedTrueKn); return t !== null && t !== undefined ? `True wind now ${t.toFixed(1)} kn` : ''; } },
+  { id: 'swing', icon: '🌀', name: 'Swing', en: 'swingEnabled',
+    desc: 'A wind or tide shift that swings you across the anchorage while you are still inside the radius — exactly when you want to look at what you are now swinging towards.',
+    fields: [
+      { k: 'swingRateDeg', label: 'Bearing from anchor changes by', min: 30, max: 180, step: 5, unit: '°' },
+      { k: 'swingRateMin', label: 'Within', min: 5, max: 120, step: 5, unit: 'min' }],
+    summary: () => `${C('swingRateDeg')}° in ${C('swingRateMin')} min` },
+  { id: 'awa', icon: '🧭', name: 'Lying off the wind', en: 'awaEnabled',
+    desc: 'At anchor she should lie roughly head to wind. Sitting well off it for a while means current against wind, a fouled rode, or a bridle problem. Ignored below 5 kn.',
+    fields: [
+      { k: 'awaMaxDeg', label: 'Apparent wind more than', min: 30, max: 150, step: 5, unit: '° off bow' },
+      { k: 'awaSustainMin', label: 'For at least', min: 1, max: 60, step: 1, unit: 'min' }],
+    summary: () => `>${C('awaMaxDeg')}° for ${C('awaSustainMin')} min`,
+    now: () => { const a = S.tel && num(S.tel.windAngleApparentDeg); return a !== null && a !== undefined ? `Apparent wind now ${Math.round(Math.abs(((a + 180) % 360) - 180))}° off the bow` : ''; } },
+  { id: 'scope', icon: '⛓️', name: 'Scope', en: 'scopeEnabled', latch: 'scopeAlerted',
+    desc: 'Chain out ÷ (water depth + bow roller). A rising tide quietly cuts your scope while you are ashore; this tells you when to let out more. Uses the chain you set when anchoring.',
+    fields: [
+      { k: 'minScope', label: 'Alert when scope drops below', min: 2, max: 10, step: .5, unit: ':1' },
+      { k: 'targetScope', label: 'Target scope (for chain suggestions)', min: 3, max: 12, step: .5, unit: ':1' }],
+    summary: () => `below ${C('minScope')}:1`,
+    now: () => { const g = depthNow(), r = C('rodeOutFt'); return g && r ? `Now ${(r / (g.water + g.roller)).toFixed(1)}:1 with ${r} ft out` : (r ? '' : 'Set the chain out when you anchor'); } },
+  { id: 'depth', icon: '🌊', name: 'Shallow water', en: 'depthEnabled', latch: 'depthAlerted',
+    desc: 'Water depth below the surface (sounder reading plus transducer offset). Useful on a falling tide.',
+    fields: [{ k: 'minDepthFt', label: 'Alert below', min: 2, max: 60, step: .5, unit: 'ft' }],
+    summary: () => `below ${C('minDepthFt')} ft`,
+    now: () => { const g = depthNow(); return g ? `Depth now ${g.water.toFixed(1)} ft${g.fall > .05 ? `, ${g.low.toFixed(1)} ft at low water` : ''}` : ''; } },
+  { id: 'ais', icon: '🚢', name: 'AIS proximity', en: 'aisEnabled',
+    desc: 'Anything inside the collision zone alerts regardless. Inside the warning zone, only slow targets closing on you count — a vessel making way is presumed to be steering. Your own MMSI is ignored.',
+    fields: [
+      { k: 'aisWarnM', label: 'Warning zone', min: 10, max: 500, step: 5, unit: 'm' },
+      { k: 'aisCollisionM', label: 'Collision zone', min: 2, max: 100, step: 1, unit: 'm' },
+      { k: 'aisSpeedKn', label: 'Ignore targets faster than', min: 1, max: 15, step: .5, unit: 'kn' },
+      { k: 'aisTcpaMin', label: 'Only if closing within', min: 2, max: 90, step: 1, unit: 'min' }],
+    summary: () => `${C('aisWarnM')} m warning · ${C('aisCollisionM')} m collision`,
+    now: () => { const n = aisRows().length; return S.ais ? `${n} target${n === 1 ? '' : 's'} within 2 km` : ''; } },
+  { id: 'offline', icon: '🔌', name: 'Boat offline', en: 'deadmanEnabled', latch: 'staleAlerted',
+    desc: 'The boat schedules this alert ahead of time and keeps pushing it back while it is alive. If the Pi, the Vesper or the internet dies, it arrives on its own — nothing needs to be working for it to reach you.',
+    fields: [{ k: 'deadmanDelayMin', label: 'Alert after silence of', min: 15, max: 180, step: 5, unit: 'min' }],
+    summary: () => `after ${C('deadmanDelayMin')} min` },
+  { id: 'daily', icon: '✅', name: 'Daily all-clear', en: 'dailyPingEnabled',
+    desc: 'Silence means either all is well or the alert chain is broken. A morning "all watchers healthy" push makes a missing one noticeable.',
+    fields: [{ k: 'dailyPingHour', label: 'Send at', min: 0, max: 23, step: 1, unit: ':00' }],
+    summary: () => `at ${String(C('dailyPingHour')).padStart(2, '0')}:00` }
+];
+function alertStatus(a) {
+  const enabled = a.en ? C(a.en) : true;
+  if (!enabled) return ['off', 'Off'];
+  if (a.latch && bool(S.st[a.latch]) && S.armed) return ['triggered', 'Triggered'];
+  if (!S.armed) return ['ready', 'Ready'];
+  if (snoozed()) return ['snoozed', 'Snoozed'];
+  return ['active', 'Active'];
+}
+function paintAlerts() {
+  $('alertList').innerHTML = ALERTS.map(a => {
+    const [cls, lbl] = alertStatus(a);
+    const nowTxt = a.now ? a.now() : '';
+    return `<button class="row" onclick="openAlertPage('${a.id}')">
+      <div class="ico">${a.icon}</div>
+      <div class="txt"><b>${a.name}</b><small>${esc(a.summary())}${nowTxt ? ' · ' + esc(nowTxt) : ''}</small></div>
+      <span class="chip ${cls}">${lbl}</span><span class="chev">›</span></button>`;
+  }).join('');
+  const trig = ALERTS.some(a => alertStatus(a)[0] === 'triggered');
+  $('badgeAlerts').classList.toggle('show', trig);
+  $('badgeAnchor').classList.toggle('show', S.alarm);
+
+  const ws = $('watchStatus');
+  if (!S.anchor) ws.innerHTML = `<div class="ac-head" style="margin:0 0 6px;"><b>Watch is off</b><div class="grow"></div><span class="chip off">Off</span></div><p class="note">Alerts marked Ready go live when you set the anchor.</p><button class="btn primary block" style="margin-top:10px;" onclick="showView('anchor');openSetup()">⚓ Set anchor</button>`;
+  else {
+    const sn = snoozed();
+    ws.innerHTML = `<div class="ac-head" style="margin:0 0 6px;"><b>${sn ? 'Alerts snoozed' : 'Watching the boat'}</b><div class="grow"></div><span class="chip ${sn ? 'snoozed' : 'active'}">${sn ? Math.ceil((S.snoozeUntil - Date.now()) / 60000) + ' min' : 'Armed'}</span></div>
+      <p class="note">${sn ? 'Pushed alerts are paused. The drag siren on this phone still sounds.' : 'Pushed alerts go to the ntfy app on your phone.'}</p>
+      <div class="btn-row" style="margin-top:10px;">${sn ? `<button class="btn" onclick="setSnooze(0)">Resume now</button>` : `<span class="note" style="align-self:center;flex:none;">Snooze</span><button class="btn" onclick="setSnooze(15)">15 min</button><button class="btn" onclick="setSnooze(30)">30 min</button><button class="btn" onclick="setSnooze(60)">1 hr</button>`}</div>`;
+  }
+
+  const h = S.health, rows = [];
+  const hRow = (ico, name, a, okMax, warnMax, extra) => {
+    let cls = 'bad', t = 'no report';
+    if (a !== null) { t = a < 1.5 ? 'live' : Math.round(a) + ' min ago'; cls = a < okMax ? 'ok' : a < warnMax ? 'warn' : 'bad'; }
+    return `<div class="row"><div class="ico">${ico}</div><div class="txt"><b>${name}</b><small>${esc(extra || '')}</small></div><span class="pill"><span class="dot ${cls}"></span>${t}</span></div>`;
+  };
+  rows.push(hRow('🛥️', 'Boat guard', h ? ageMin(num(h.guardLastRun)) : null, 3, 10, 'Pi · checks every 10 s'));
+  rows.push(hRow('☁️', 'Cloud watcher', h ? ageMin(num(h.workerLastRun)) : null, 3, 15, 'Cloudflare · every minute'));
+  const rem = h ? num(h.ntfyRemaining) : null;
+  const err = h ? str(h.guardLastPushError) || str(h.lastPushError) : '';
+  const lastFail = h ? Math.max(num(h.guardLastPushFailTs) || 0, num(h.lastPushFailTs) || 0) : 0;
+  const lastOk = h ? Math.max(num(h.guardLastPushOkTs) || 0, num(h.lastPushOkTs) || 0) : 0;
+  const pushBad = lastFail && lastFail > lastOk;
+  rows.push(`<div class="row"><div class="ico">📲</div><div class="txt"><b>Push alerts (ntfy)</b><small>${pushBad ? 'Last push failed: ' + esc(err) : lastOk ? 'Last delivered ' + ago(lastOk) : 'No push recorded yet'}</small></div>
+    <span class="pill"><span class="dot ${rem === null ? '' : rem > 100 ? 'ok' : rem > 30 ? 'warn' : 'bad'}"></span>${rem === null ? 'budget ?' : rem + ' left'}</span></div>`);
+  $('healthList').innerHTML = rows.join('');
+}
+
+let apCur = null;
+function openAlertPage(id) {
+  const a = ALERTS.find(x => x.id === id); apCur = a;
+  $('apTitle').textContent = a.name;
+  const sw = $('apSwitch');
+  sw.checked = a.en ? C(a.en) : true; sw.disabled = !a.en;
+  const nowTxt = a.now ? a.now() : '';
+  const [cls, lbl] = alertStatus(a);
+  const fields = a.fields.map(f => {
+    const v = f.local ? P[f.k] : C(f.k);
+    const dv = f.k === 'dailyPingHour' ? String(v).padStart(2, '0') : v;
+    return `<div class="field">
+      <div class="field-head"><label for="ap_${f.k}">${f.label}</label><output><span id="apo_${f.k}">${dv}</span><small>${f.unit}</small></output></div>
+      <input type="range" id="ap_${f.k}" min="${f.min}" max="${f.max}" step="${f.step}" value="${v}">
+      <div class="range-ends"><span>${f.min}</span><span>${f.max}</span></div></div>`;
+  }).join('');
+  let extra = '';
+  if (a.id === 'ais') {
+    const t = aisRows();
+    extra = `<div class="section-title">Targets near the boat</div><div class="list">${t.length ? t.map(x => `<div class="row"><div class="txt"><b>${esc(x.who)}</b><small>${x.rng} m · bearing ${x.brg}°${x.sog ? ' · ' + esc(x.sog) + ' kn' : ''}${x.cpa ? ' · closest ' + esc(x.cpa) + ' m' : ''}</small></div></div>`).join('') : '<div class="row"><div class="txt"><small>None within 2 km</small></div></div>'}</div>`;
+  }
+  $('apBody').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span class="chip ${cls}">${lbl}</span><span class="note">${esc(nowTxt)}</span></div>
+    <div class="card">${fields}</div>
+    <p class="note" style="margin:12px 4px 0;">${a.desc}</p>${extra}`;
+  a.fields.forEach(f => $('ap_' + f.k).addEventListener('input', e => {
+    const v = +e.target.value;
+    $('apo_' + f.k).textContent = f.k === 'dailyPingHour' ? String(v).padStart(2, '0') : v;
+    if (f.k === 'radius' && L_.circle) L_.circle.setRadius(v * M_PER_FT);
+  }));
+  $('alertPage').classList.add('open');
+}
+function closeAlertPage() { $('alertPage').classList.remove('open'); drawAnchor(); }
+async function saveAlertPage() {
+  const a = apCur; if (!a) return;
+  const fields = {};
+  if (a.en) fields[a.en] = fB($('apSwitch').checked);
+  for (const f of a.fields) {
+    const v = +$('ap_' + f.k).value;
+    if (f.local) { P[f.k] = v; savePrefs(); continue; }
+    fields[f.k] = f.int ? fI(v) : fD(v);
+  }
+  const b = $('apSave'); b.disabled = true; b.textContent = 'Saving…';
+  const ok = Object.keys(fields).length ? await writeAlarms(fields) : true;
+  b.disabled = false; b.textContent = 'Save';
+  if (!ok) { toast('Could not reach the cloud — not saved', 4000); return; }
+  Object.assign(S.cfg, fields);
+  closeAlertPage(); paintAll();
+  toast('Saved — the boat picks it up within 30 s');
+}
+
+// ═══ INSTRUMENTS ═══════════════════════════════════════════════════
+(function ticks() {
+  const g = $('roseTicks');
+  for (let a = 0; a < 360; a += 30) {
+    const r = (a - 90) * Math.PI / 180, l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('class', 'tick');
+    l.setAttribute('x1', 125 + Math.cos(r) * 108); l.setAttribute('y1', 125 + Math.sin(r) * 108);
+    l.setAttribute('x2', 125 + Math.cos(r) * 98); l.setAttribute('y2', 125 + Math.sin(r) * 98);
+    g.appendChild(l);
+  }
+})();
+function setTile(id, v, unit, sub, subId) {
+  $(id).innerHTML = v === null || v === undefined ? '--' : `${v}<i>${unit || ''}</i>`;
+  if (subId) $(subId).textContent = sub || ' ';
+}
+function paintInstruments() {
+  const f = S.tel || {};
+  const n = k => num(f[k]);
+  const aws = n('windSpeedApparentKn'), awa = n('windAngleApparentDeg'), tws = n('windSpeedTrueKn'), twd = n('windDirTrueDeg');
+  const hT = n('headingTrueDeg'), hM = n('headingMagDeg'), hdg = hT !== null ? hT : hM;
+  $('roseVal').textContent = tws !== null ? tws.toFixed(1) : (aws !== null ? aws.toFixed(1) : '--');
+  $('roseSub').textContent = tws !== null ? 'kn true' : 'kn apparent';
+  const rot = (id, deg) => { const e = $(id); if (deg === null) e.style.display = 'none'; else { e.style.display = ''; e.style.transform = `rotate(${deg}deg)`; } };
+  rot('roseBoat', hdg); rot('roseAwa', awa !== null && hdg !== null ? (hdg + awa) % 360 : null); rot('roseTwd', twd);
+  $('roseMode').textContent = hdg === null ? 'North up — no heading, boat not shown' : (hT !== null ? 'True north up' : 'Magnetic north up');
+  setTile('iTws', tws !== null ? tws.toFixed(1) : null, 'kn', twd !== null ? `from ${compass(twd)} ${twd}°` : '', 'iTwd');
+  setTile('iAws', aws !== null ? aws.toFixed(1) : null, 'kn', awa !== null ? `${awa}° off bow` : '', 'iAwa');
+  const g = depthNow();
+  setTile('iDepth', g ? g.water.toFixed(1) : (n('depthFt') !== null ? n('depthFt').toFixed(1) : null), 'ft', g ? 'below surface' : 'below transducer', 'iDepthSub');
+  setTile('iTemp', n('waterTempF'), '°F');
+  const sog = n('sogKn'), stw = n('boatSpeedKn'), cog = n('cogDeg');
+  setTile('iSog', sog !== null ? sog.toFixed(1) : null, 'kn', stw !== null ? `through water ${stw.toFixed(1)} kn` : '', 'iSogSub');
+  setTile('iHdg', hdg !== null ? Math.round(hdg) : null, hT !== null ? '°T' : '°M', cog !== null ? `COG ${cog}°` : '', 'iHdgSub');
+  const r = C('rodeOutFt');
+  setTile('iScope', g && r ? (r / (g.water + g.roller)).toFixed(1) : null, ':1', r ? `${r} ft of chain` : 'set chain when anchoring', 'iScopeSub');
+  const tn = S.wx ? num(S.wx.tideNowFt) : null, rise = S.wx ? num(S.wx.tideRiseToMaxFt) : null;
+  setTile('iTide', tn !== null ? tn.toFixed(1) : null, 'ft', rise !== null && rise > .05 ? `↑ ${rise.toFixed(1)} ft by ${str(S.wx.tideMaxAt)}` : (S.wx && num(S.wx.tideFallToMinFt) > .05 ? `↓ ${num(S.wx.tideFallToMinFt).toFixed(1)} ft by ${str(S.wx.tideMinAt)}` : ''), 'iTideSub');
+  const up = n('updatedAt');
+  const off = !up || (Date.now() - up) > 150000;
+  $('telStale').classList.toggle('show', !!up && off);
+  $('telAge').textContent = up ? `Updated ${ago(up)}` : 'No data from the boat yet.';
+}
+
+// ═══ WEATHER ═══════════════════════════════════════════════════════
+function wxIcon(sky) {
+  const s = (sky || '').toLowerCase();
+  if (/thunder|storm/.test(s)) return '⛈️'; if (/snow|sleet|flurr/.test(s)) return '🌨️';
+  if (/rain|shower|drizzle/.test(s)) return '🌧️'; if (/fog|haze|mist|smoke/.test(s)) return '🌫️';
+  if (/partly|few|mostly sunny/.test(s)) return '⛅'; if (/overcast|cloud/.test(s)) return '☁️';
+  if (/sunny|clear|fair/.test(s)) return '☀️'; return '🌤️';
+}
+function paintWeather() {
+  const w = S.wx;
+  if (!w) { $('wxNow').innerHTML = '<p class="note">No weather from the boat yet.</p>'; return; }
+  const place = str(w.city) ? `${str(w.city)}${str(w.state) ? ', ' + str(w.state) : ''}` : 'Now';
+  $('wxPlace').textContent = place;
+  const t = num(w.nowTemp), pr = num(w.pressureMb), tr = str(w.pressureTrend);
+  const arrow = { rising: '↑', falling: '↓', steady: '→' }[tr] || '';
+  $('wxNow').innerHTML = `<div class="wx-now"><div style="font-size:44px">${wxIcon(str(w.nowSky))}</div>
+    <div class="t">${t !== null ? t + '°' : '--'}</div>
+    <div class="d"><b>${esc(str(w.nowSky))}</b>${esc(str(w.nowWind))}${pr !== null ? `<br>${pr.toFixed(0)} mb ${arrow} ${esc(tr)}` : ''}</div></div>`;
+  const src = str(w.forecastFrom);
+  $('wxFcTitle').textContent = 'Forecast' + (src && src !== 'boat position' ? ' · ' + src : '');
+  const days = str(w.forecast).split(' | ').filter(Boolean);
+  $('wxFc').innerHTML = days.length ? days.map(d => {
+    const m = d.match(/^(\w+):\s*(-?\d+)°\s*(.*)$/);
+    if (!m) return `<div class="fc-row"><span></span><span>${esc(d)}</span><span></span></div>`;
+    const rest = m[3], wm = rest.match(/^([NESW]{0,3})\s*(\d+)kt\s*(.*)$/);
+    return `<div class="fc-row"><b>${esc(m[1])}</b><span>${wxIcon(wm ? wm[3] : rest)} ${esc(wm ? wm[3] : rest)}<br><span class="note">${wm ? esc(wm[1] + ' ' + wm[2] + ' kn') : ''}</span></span><b>${m[2]}°</b></div>`;
+  }).join('') : '<div class="fc-row"><span></span><span class="note">No forecast</span><span></span></div>';
+  const fa = num(w.forecastAt);
+  const stn = str(w.tideStation), nm = num(w.tideStationNm);
+  $('wxTideTitle').textContent = 'Tides' + (stn ? ' · ' + stn.replace(/\b\w/g, c => c.toUpperCase()).replace(/\B\w+/g, x => x.toLowerCase()) : '') + (nm !== null ? ` (${nm < 1 ? 'here' : nm.toFixed(0) + ' nm'})` : '');
+  const tides = str(w.tides).split(' / ').filter(Boolean);
+  const tn = num(w.tideNowFt), rise = num(w.tideRiseToMaxFt);
+  $('wxTides').innerHTML = (tn !== null ? `<div class="tide-row"><span>Now</span><b>${tn.toFixed(1)} ft${rise > .05 ? ` · rising ${rise.toFixed(1)} ft more` : ''}</b></div>` : '') +
+    tides.map(x => { const hi = /^HIGH/i.test(x); const p = x.split(' '); return `<div class="tide-row ${hi ? 'hi' : ''}"><span>${hi ? 'High' : 'Low'} · ${esc(p[1] || '')}</span><b>${esc(p[2] || '')}</b></div>`; }).join('');
+  $('wxSun').innerHTML = `<div class="kv"><span>Sunrise</span><b>${esc(str(w.sunrise) || '--')}</b><span>Sunset</span><b>${esc(str(w.sunset) || '--')}</b><span>Moon</span><b>${esc(str(w.moon) || '--')}</b></div>`;
+  $('wxAge').innerHTML = `Weather updated ${ago(num(w.updatedAt))}${fa && (Date.now() - fa) > 3 * 3600000 ? ` · <span style="color:var(--warn)">forecast ${ago(fa).replace(' ago', '')} old</span>` : ''} · NWS &amp; NOAA`;
+}
+
+// ═══ BOAT ══════════════════════════════════════════════════════════
+const BOAT_FIELDS = [
+  { k: 'loaFt', label: 'Length overall', unit: 'ft', step: .5, note: 'Draws the hull on the map' },
+  { k: 'bowOffsetFt', label: 'GPS antenna to bow roller', unit: 'ft', step: 1, note: 'Drag is measured from the bow', sw: 'bowOffsetEnabled' },
+  { k: 'bowRollerFt', label: 'Bow roller above water', unit: 'ft', step: .5, note: 'Used for scope' },
+  { k: 'transducerOffsetFt', label: 'Depth transducer below water', unit: 'ft', step: .5, note: 'Added to the sounder reading' },
+  { k: 'magVarDeg', label: 'Magnetic variation', unit: '°', step: .5, note: 'West is negative (midcoast Maine ≈ −15.5). Used when the GPS sends none.' }
+];
+function paintBoat() {
+  const el = $('boatSetup');
+  if (el.contains(document.activeElement)) return;   // don't fight the keyboard
+  el.innerHTML = BOAT_FIELDS.map(f => `
+    <div class="row"><div class="txt"><b>${f.label}</b><small>${f.note}</small></div>
+      ${f.sw ? `<span class="switch" style="margin-right:4px;"><input type="checkbox" id="bs_${f.sw}" ${C(f.sw) ? 'checked' : ''}><span></span></span>` : ''}
+      <input class="text-in" id="bs_${f.k}" type="number" inputmode="decimal" step="${f.step}" value="${C(f.k)}" style="width:84px;text-align:right;padding:9px 10px;font-size:16px;">
+      <span class="val" style="width:18px;">${f.unit}</span></div>`).join('');
+  const v = C('magVarDeg');
+  if (!S.cfg.magVarDeg || v === 0) {
+    const fromGps = S.tel && bool(S.tel.variationFromGps);
+    if (!fromGps) el.insertAdjacentHTML('beforeend', `<div class="row"><div class="txt"><small style="white-space:normal;color:var(--warn)">The GPS isn't sending variation and none is set, so the bow position is being projected along magnetic heading.</small></div></div>`);
+  }
+}
+async function saveBoat() {
+  const fields = {};
+  for (const f of BOAT_FIELDS) {
+    const v = parseFloat($('bs_' + f.k).value);
+    if (isFinite(v)) fields[f.k] = fD(v);
+    if (f.sw) fields[f.sw] = fB($('bs_' + f.sw).checked);
+  }
+  const ok = await writeAlarms(fields);
+  if (!ok) { toast('Could not reach the cloud — not saved', 4000); return; }
+  Object.assign(S.cfg, fields); document.activeElement && document.activeElement.blur(); paintAll();
+  toast('Boat setup saved');
+}
+// Frame mode (modes/ doc read by frame.py)
+async function loadFrameMode() { const f = await fsGet('modes'); paintFrame(f ? str(f.mode) || 'auto' : 'auto'); }
+function paintFrame(m) { document.querySelectorAll('#frameSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === m)); }
+document.querySelectorAll('#frameSeg button').forEach(b => b.addEventListener('click', async () => {
+  paintFrame(b.dataset.m);
+  const ok = await fsPatch('modes', { mode: fS(b.dataset.m), updatedAt: fI(Date.now()) });
+  toast(ok ? 'Sent — the frame switches within a minute' : 'Could not reach the cloud');
+}));
+// This phone
+function paintPrefs() {
+  document.querySelectorAll('#themeSeg button').forEach(b => b.classList.toggle('on', b.dataset.t === P.theme));
+  document.querySelectorAll('#pollSeg button').forEach(b => b.classList.toggle('on', +b.dataset.p === +P.poll));
+  $('prefSound').checked = P.sound; $('prefWake').checked = P.wake;
+}
+document.querySelectorAll('#themeSeg button').forEach(b => b.addEventListener('click', () => { P.theme = b.dataset.t; savePrefs(); applyTheme(); paintPrefs(); drawAnchor(); drawTrail(); }));
+document.querySelectorAll('#pollSeg button').forEach(b => b.addEventListener('click', () => { P.poll = +b.dataset.p; savePrefs(); paintPrefs(); startPolling(); }));
+$('prefSound').addEventListener('change', e => { P.sound = e.target.checked; savePrefs(); if (P.sound) unlockAudio(); });
+$('prefWake').addEventListener('change', e => { P.wake = e.target.checked; savePrefs(); syncWake(); });
+// Backup GPS
+let phoneWatch = null;
+$('phoneGps').addEventListener('change', e => {
+  if (e.target.checked) {
+    if (!navigator.geolocation) { toast('No GPS on this device'); e.target.checked = false; return; }
+    phoneWatch = navigator.geolocation.watchPosition(p => {
+      const c = p.coords;
+      fsPatch('vessels', { lat: fD(c.latitude), lon: fD(c.longitude), accuracy: fD(c.accuracy || 10), timestamp: fI(Date.now()) },
+        ['lat', 'lon', 'accuracy', 'timestamp', 'bowLat', 'bowLon', 'bowOffsetFt']);
+    }, err => { toast('GPS error: ' + (err.message || err.code)); e.target.checked = false; }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    toast('This phone is now the boat\'s GPS');
+  } else if (phoneWatch !== null) { navigator.geolocation.clearWatch(phoneWatch); phoneWatch = null; }
+});
+
+// ═══ NAV ═══════════════════════════════════════════════════════════
+const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', boat: 'Boat' };
+function showView(v) {
+  if (!VIEW_NAMES[v]) v = 'anchor';
+  document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
+  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === v));
+  $('viewName').textContent = VIEW_NAMES[v];
+  if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
+  if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
+  if (v === 'boat') { paintBoat(); loadFrameMode(); }
+}
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v)));
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+
+function paintAll() {
+  paintLink(); paintMapTop(); paintAnchorCard(); paintAlerts(); paintInstruments(); paintWeather(); paintPrefs();
+  if ($('view-boat').classList.contains('active')) paintBoat();
+  syncWake();
+}
+
+// ═══ START ═════════════════════════════════════════════════════════
+let posTimer = null;
+function startPolling() {
+  clearInterval(posTimer);
+  pollPosition();
+  posTimer = setInterval(pollPosition, Math.max(5, P.poll) * 1000);
+}
+(function init() {
+  try {
+    const a = JSON.parse(localStorage.getItem('hw_anchor') || 'null');
+    if (a && a.anchor) { S.anchor = a.anchor; S.armed = !!a.armed; }
+  } catch (e) {}
+  loadTrail(); recomputeMax();
+  drawAnchor(); drawTrail();
+  if (S.anchor) map.setView([S.anchor.lat, S.anchor.lon], 17, { animate: false });
+  showView(location.hash.slice(1) || 'anchor');
+  paintAll();
+  startPolling();
+  slowPoll(); setInterval(slowPoll, 30000);
+  setTimeout(loadCloudTrack, 1500); setInterval(loadCloudTrack, 180000);
+  setInterval(() => { paintLink(); paintAnchorCard(); paintMapTop(); }, 15000);
+  const prime = () => { unlockAudio(); window.removeEventListener('touchend', prime); window.removeEventListener('click', prime); };
+  window.addEventListener('touchend', prime); window.addEventListener('click', prime);
+})();
+
+</script>
 </body>
 </html>
