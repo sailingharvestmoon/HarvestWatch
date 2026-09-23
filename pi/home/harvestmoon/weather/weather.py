@@ -463,9 +463,13 @@ def build_and_write():
 FC_DOC = f"{FS}/weather/{VESSEL_ID}-forecast"
 FC_MODELS = [
     ("ecmwf", ["ecmwf_ifs025", "ecmwf_ifs"]),
-    ("gfs",   ["gfs_seamless", "gfs_global"]),
-    ("ukmo",  ["ukmo_seamless", "ukmo_global_deterministic_10km"]),
-    ("icon",  ["icon_seamless", "icon_global"]),
+    # The pure global runs, not Open-Meteo's "seamless" blends. gfs_seamless
+    # splices HRRR into the first two days near the US (which is why GFS and
+    # HRRR came out identical), icon_seamless splices in ICON-EU/D2. The
+    # plain runs match what PredictWind labels GFS / ICON / UKMO.
+    ("gfs",   ["gfs_global", "gfs_seamless"]),
+    ("ukmo",  ["ukmo_global_deterministic_10km", "ukmo_seamless"]),
+    ("icon",  ["icon_global", "icon_seamless"]),
     ("nam",   ["ncep_nam_conus"]),
     ("hrrr",  ["ncep_hrrr_conus", "gfs_hrrr"]),
     ("aifs",  ["ecmwf_aifs025_single", "ecmwf_aifs025"]),

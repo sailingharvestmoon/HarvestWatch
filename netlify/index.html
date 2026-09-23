@@ -1577,9 +1577,9 @@ function paintWeather() {
 // variable can be expanded to show every model underneath.
 const MODELS = [
   { id: 'ecmwf', label: 'ECMWF', bg: '#000000', fg: '#fff', api: ['ecmwf_ifs025', 'ecmwf_ifs'], info: 'ECMWF IFS (European Centre) · 25 km · global · usually the most reliable global model' },
-  { id: 'gfs',   label: 'GFS',   bg: '#15821f', fg: '#fff', api: ['gfs_seamless', 'gfs_global'], info: 'NOAA GFS (US) · 13–25 km · global' },
+  { id: 'gfs',   label: 'GFS',   bg: '#15821f', fg: '#fff', api: ['gfs_seamless', 'gfs_global'], info: 'NOAA GFS (US) · 25 km · global' },
   { id: 'ukmo',  label: 'UKMO',  bg: '#dcb44a', fg: '#fff', api: ['ukmo_seamless', 'ukmo_global_deterministic_10km'], info: 'UK Met Office Unified Model · 10 km · global' },
-  { id: 'icon',  label: 'ICON',  bg: '#2f8b9b', fg: '#fff', api: ['icon_seamless', 'icon_global'], info: 'DWD ICON (Germany) · 13 km global' },
+  { id: 'icon',  label: 'ICON',  bg: '#2f8b9b', fg: '#fff', api: ['icon_seamless', 'icon_global'], info: 'DWD ICON (Germany) · 13 km · global' },
   { id: 'nam',   label: 'NAM',   bg: '#8e4fd6', fg: '#fff', api: ['ncep_nam_conus'], info: 'NOAA NAM · 3 km · North America only · about 2.5 days' },
   { id: 'hrrr',  label: 'HRRR',  bg: '#5d1675', fg: '#fff', api: ['ncep_hrrr_conus', 'gfs_hrrr'], info: 'NOAA HRRR · 3 km · US waters only · about 2 days · updated hourly' },
   { id: 'aifs',  label: 'AIFS',  bg: '#e886ef', fg: '#fff', api: ['ecmwf_aifs025_single', 'ecmwf_aifs025'], info: 'ECMWF AIFS — the European Centre\'s AI model · 25 km · global' }
