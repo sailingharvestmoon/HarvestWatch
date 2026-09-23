@@ -9,3 +9,7 @@ For Netlify/
 # Secrets - never commit
 *.env
 !*.env.example
+
+# Python byproducts
+__pycache__/
+*.pyc
