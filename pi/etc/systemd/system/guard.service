@@ -1,0 +1,23 @@
+[Unit]
+Description=Harvest Moon anchor guard (fast drag/swing/wind/AIS watcher)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=XB_HOST=192.168.1.167
+Environment=XB_PORT=39150
+Environment=PROJECT_ID=harvest-moon-watch
+Environment=VESSEL_ID=harvest-moon
+Environment=TICK_SEC=10
+# NTFY_TOPIC and NTFY_TOKEN live in a separate root-owned file so the token is
+# not sitting in a world-readable unit file. Create it as described in SETUP.
+EnvironmentFile=/etc/harvest-moon/ntfy.env
+User=harvestmoon
+WorkingDirectory=/home/harvestmoon/sensors
+ExecStart=/usr/bin/python3 /home/harvestmoon/sensors/guard.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

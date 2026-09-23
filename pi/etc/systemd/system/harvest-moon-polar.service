@@ -1,0 +1,17 @@
+[Unit]
+Description=Harvest Moon polar data logger
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=harvestmoon
+WorkingDirectory=/home/harvestmoon/polar
+ExecStart=/usr/bin/python3 /home/harvestmoon/polar/polar_logger.py --log-dir /home/harvestmoon/polar_logs
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

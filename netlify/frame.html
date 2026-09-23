@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harvest Moon · Frame</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#f6f4ef; --surface:#ffffff; --border:#e5e0d6; --blue:#2f6f95;
+      --green:#2e7d5b; --ink:#1f2d3d; --muted:#6b7c8c; --label:#93a1ad;
+    }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px;
+    }
+    .icon { font-size: 38px; margin-bottom: 8px; }
+    .kicker { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+    .current { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    .current b { color: var(--green); }
+    .panel { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 12px; }
+    button.mode {
+      display: flex; align-items: center; gap: 14px; text-align: left;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 20px;
+      cursor: pointer; font-family: inherit; color: var(--ink); transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    button.mode:active { transform: scale(0.99); }
+    button.mode:hover { border-color: var(--blue); }
+    button.mode.active { border-color: var(--green); box-shadow: 0 0 0 2px rgba(46,125,91,0.2); }
+    .m-icon { font-size: 26px; }
+    .m-text { flex: 1; }
+    .m-title { font-size: 16px; font-weight: 700; }
+    .m-desc { font-size: 12px; color: var(--muted); margin-top: 2px; line-height: 1.45; }
+    .m-check { font-size: 18px; color: var(--green); opacity: 0; }
+    button.mode.active .m-check { opacity: 1; }
+    .foot { margin-top: 26px; font-size: 12px; color: var(--label); text-align: center; max-width: 360px; line-height: 1.6; }
+    .saving { font-size: 12px; color: var(--blue); margin-top: 12px; height: 16px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="icon">🖼️</div>
+  <div class="kicker">Harvest Moon</div>
+  <div class="title">Frame Display</div>
+  <div class="current" id="current">Loading…</div>
+
+  <div class="panel">
+    <button class="mode" data-mode="photo" onclick="setMode('photo')">
+      <span class="m-icon">🌅</span>
+      <span class="m-text"><span class="m-title">Photos</span><span class="m-desc">Show the photo slideshow, even while the Vesper is on.</span></span>
+      <span class="m-check">✓</span>
+    </button>
+    <button class="mode" data-mode="dashboard" onclick="setMode('dashboard')">
+      <span class="m-icon">🧭</span>
+      <span class="m-text"><span class="m-title">Dashboard</span><span class="m-desc">Show live sailing instruments (needs the Vesper on).</span></span>
+      <span class="m-check">✓</span>
+    </button>
+    <button class="mode" data-mode="auto" onclick="setMode('auto')">
+      <span class="m-icon">🔄</span>
+      <span class="m-text"><span class="m-title">Auto</span><span class="m-desc">Dashboard when the Vesper is on, photos when it's off.</span></span>
+      <span class="m-check">✓</span>
+    </button>
+  </div>
+
+  <div class="saving" id="saving"></div>
+  <div class="foot">Changes reach the frame within about a minute (the screen refreshes slowly to protect the panel).</div>
+
+  <script>
+    const PROJECT_ID = "harvest-moon-watch";
+    const VESSEL_ID  = "harvest-moon";
+    const URL = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/modes/${VESSEL_ID}`;
+
+    function paint(mode) {
+      document.querySelectorAll('button.mode').forEach(b =>
+        b.classList.toggle('active', b.dataset.mode === mode));
+      const label = { photo:'Photos', dashboard:'Dashboard', auto:'Auto' }[mode] || '—';
+      document.getElementById('current').innerHTML = 'Frame is set to: <b>' + label + '</b>';
+    }
+
+    async function load() {
+      try {
+        const r = await fetch(URL);
+        if (r.ok) {
+          const d = await r.json();
+          const m = d.fields && d.fields.mode && d.fields.mode.stringValue;
+          paint(m || 'auto');
+        } else { paint('auto'); }
+      } catch (e) { paint('auto'); }
+    }
+
+    async function setMode(mode) {
+      paint(mode);
+      const s = document.getElementById('saving'); s.textContent = 'Saving…';
+      const body = { fields: {
+        mode:      { stringValue: mode },
+        updatedAt: { integerValue: String(Date.now()) }
+      }};
+      try {
+        const r = await fetch(URL, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        s.textContent = r.ok ? 'Saved — the frame will switch shortly.' : 'Could not save (check connection).';
+      } catch (e) { s.textContent = 'Could not save (check connection).'; }
+      setTimeout(() => { s.textContent = ''; }, 4000);
+    }
+
+    load();
+    setInterval(load, 10000);
+  </script>
+</body>
+</html>

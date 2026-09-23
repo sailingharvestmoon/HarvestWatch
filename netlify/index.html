@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harvest Moon</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#f6f4ef; --surface:#ffffff; --border:#e5e0d6;
+      --blue:#2f6f95; --green:#2e7d5b; --ink:#1f2d3d; --muted:#6b7c8c; --label:#93a1ad;
+    }
+    body {
+      background: var(--bg); color: var(--ink);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 24px;
+    }
+    .icon { font-size: 40px; margin-bottom: 10px; color: var(--blue); }
+    .kicker { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+    .title { font-size: 28px; font-weight: 700; color: var(--ink); letter-spacing: 0.01em; margin-bottom: 30px; }
+    .cards { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 14px; }
+    a.card {
+      display: block; text-decoration: none; color: inherit;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04); transition: transform 0.1s, box-shadow 0.15s, border-color 0.15s;
+    }
+    a.card:active { transform: scale(0.99); }
+    a.card:hover { border-color: var(--blue); box-shadow: 0 3px 10px rgba(0,0,0,.06); }
+    .card-icon { font-size: 24px; margin-bottom: 10px; }
+    .card-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
+    .card-device { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--green); margin-bottom: 8px; }
+    .card-desc { font-size: 13px; color: var(--muted); line-height: 1.55; }
+    .go { margin-top: 12px; font-size: 12px; color: var(--blue); letter-spacing: 0.04em; text-transform: uppercase; font-weight: 600; }
+    .footer { margin-top: 28px; font-size: 12px; color: var(--label); text-align: center; max-width: 360px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="icon">⚓</div>
+  <div class="kicker">Harvest Moon</div>
+  <div class="title">Boat Tools</div>
+
+  <div class="cards">
+    <a class="card" href="instruments.html">
+      <div class="card-icon">🌬️</div>
+      <div class="card-device">Any device · when the Vesper is on</div>
+      <div class="card-title">Instruments</div>
+      <div class="card-desc">Live wind, depth, water temp, and speed from the boat's sensors, wherever you are.</div>
+      <div class="go">Open instruments →</div>
+    </a>
+
+    <a class="card" href="frame.html">
+      <div class="card-icon">🖼️</div>
+      <div class="card-device">Any device · controls the cabin frame</div>
+      <div class="card-title">Frame Display</div>
+      <div class="card-desc">Switch the e-ink frame between the photo slideshow and the live sailing dashboard.</div>
+      <div class="go">Open frame control →</div>
+    </a>
+
+    <a class="card" href="watch.html">
+      <div class="card-icon">🗺️</div>
+      <div class="card-device">Your phone · ashore or at the nav station</div>
+      <div class="card-title">Anchor Watch</div>
+      <div class="card-desc">Live map, swing trail, and the drag alarm. Set the anchor, tune the radius, and (if needed) use this phone as the tracker.</div>
+      <div class="go">Open anchor watch →</div>
+    </a>
+  </div>
+
+  <div class="footer">Each page connects over the internet to the same boat. Open these from the https:// links — a downloaded file won't have GPS.</div>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Mac clutter
+.DS_Store
+
+# Not code / too big / not live
+archive/
+data/
+For Netlify/
+
+# Secrets - never commit
+*.env
+!*.env.example

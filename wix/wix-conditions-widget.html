@@ -1,0 +1,122 @@
+<!-- ============================================================
+     Harvest Moon - "Conditions at the boat" widget for Wix
+     Paste this ENTIRE block into a Wix  Embed Code  element
+     (Add -> Embed Code -> Embed HTML -> Enter Code).
+     Self-contained: no libraries, no dependencies. HTTPS only.
+     ============================================================ -->
+<div id="hm-conditions">
+  <style>
+    #hm-conditions{
+      --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#0e7490; --bg:#ffffff;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      max-width:560px; margin:0 auto; color:var(--ink);
+      background:var(--bg); border:1px solid var(--line); border-radius:14px;
+      padding:20px 22px; box-shadow:0 1px 3px rgba(0,0,0,.05);
+    }
+    #hm-conditions .hm-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
+    #hm-conditions .hm-title{font-size:15px; font-weight:700; letter-spacing:.01em;}
+    #hm-conditions .hm-status{display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);}
+    #hm-conditions .hm-dot{width:8px; height:8px; border-radius:50%; background:#cbd5e1;}
+    #hm-conditions .hm-dot.live{background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,.15);}
+    #hm-conditions .hm-dot.off{background:#94a3b8;}
+    #hm-conditions .hm-row{display:flex; flex-wrap:wrap; gap:14px;}
+    #hm-conditions .hm-cell{flex:1 1 120px; border:1px solid var(--line); border-radius:10px; padding:14px 16px;}
+    #hm-conditions .hm-label{font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px;}
+    #hm-conditions .hm-value{font-size:26px; font-weight:700; line-height:1.05;}
+    #hm-conditions .hm-value .hm-unit{font-size:14px; font-weight:600; color:var(--muted); margin-left:3px;}
+    #hm-conditions .hm-sub{font-size:12px; color:var(--muted); margin-top:3px;}
+    #hm-conditions .hm-offline{padding:22px 8px; text-align:center; color:var(--muted); font-size:15px; line-height:1.5;}
+    #hm-conditions .hm-offline strong{color:var(--ink);}
+    #hm-conditions .hm-foot{margin-top:14px; font-size:11px; color:var(--muted); text-align:right;}
+    #hm-conditions a{color:var(--accent); text-decoration:none;}
+  </style>
+
+  <div class="hm-head">
+    <div class="hm-title">Conditions aboard Harvest Moon</div>
+    <div class="hm-status"><span class="hm-dot" id="hm-dot"></span><span id="hm-state">Loading…</span></div>
+  </div>
+
+  <div id="hm-body"><div class="hm-row" id="hm-cells"></div></div>
+
+  <div class="hm-foot" id="hm-foot"></div>
+
+  <script>
+  (function(){
+    // ---- config (already set for your boat) -------------------------------
+    var PROJECT_ID = "harvest-moon-watch";
+    var VESSEL_ID  = "harvest-moon";
+    var POLL_MS    = 60000;      // refresh once a minute
+    var OFFLINE_S  = 150;        // no update in 2.5 min => boat offline
+
+    var URL = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID +
+              "/databases/(default)/documents/telemetry/" + VESSEL_ID;
+
+    var root  = document.getElementById("hm-conditions");
+    var $ = function(id){ return root.querySelector ? document.getElementById(id) : null; };
+    var dot=document.getElementById("hm-dot"), state=document.getElementById("hm-state"),
+        cells=document.getElementById("hm-cells"), body=document.getElementById("hm-body"),
+        foot=document.getElementById("hm-foot");
+
+    function numF(f){ return f && f.doubleValue!==undefined ? f.doubleValue
+                    : f && f.integerValue!==undefined ? parseInt(f.integerValue,10) : null; }
+    function compass(deg){
+      var d=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+      return d[Math.round(deg/22.5)%16];
+    }
+    function cell(label,value,unit,sub){
+      return '<div class="hm-cell"><div class="hm-label">'+label+'</div>'+
+             '<div class="hm-value">'+value+(unit?'<span class="hm-unit">'+unit+'</span>':'')+'</div>'+
+             (sub?'<div class="hm-sub">'+sub+'</div>':'')+'</div>';
+    }
+    function showOffline(){
+      dot.className="hm-dot off"; state.textContent="Offline";
+      body.innerHTML='<div class="hm-offline"><strong>Harvest Moon is offline right now.</strong><br>'+
+                     'Live conditions appear here when we are aboard and the instruments are on.</div>';
+      foot.textContent="";
+    }
+
+    function render(f){
+      var updatedAt = numF(f.updatedAt);
+      var ageS = updatedAt ? Math.floor((Date.now()-updatedAt)/1000) : 99999;
+      if(!updatedAt || ageS>OFFLINE_S){ showOffline(); return; }
+
+      dot.className="hm-dot live"; state.textContent="Live";
+
+      var tws=numF(f.windSpeedTrueKn), twd=numF(f.windDirTrueDeg), aws=numF(f.windSpeedApparentKn);
+      var depth=numF(f.depthFt), temp=numF(f.waterTempF), sog=numF(f.sogKn);
+
+      var html="";
+      // Wind
+      if(tws!=null){
+        html+=cell("Wind", Math.round(tws), "kt", twd!=null ? ("from "+compass(twd)+" ("+twd+"\u00B0)") : "true");
+      } else if(aws!=null){
+        html+=cell("Wind", Math.round(aws), "kt", "apparent");
+      }
+      // Water temp
+      if(temp!=null) html+=cell("Water", temp, "\u00B0F", "");
+      // Depth
+      if(depth!=null) html+=cell("Depth", Math.round(depth), "ft", "");
+      // Speed (GPS speed over ground, always shown)
+      if(sog!=null) html+=cell("Speed", sog.toFixed(1), "kt", "over ground");
+      // Heading (magnetic)
+      var hdg=numF(f.headingMagDeg);
+      if(hdg!=null) html+=cell("Heading", hdg, "\u00B0", compass(hdg)+" (magnetic)");
+
+      if(!html){ showOffline(); return; }
+      body.innerHTML='<div class="hm-row">'+html+'</div>';
+
+      var ageStr = ageS<90 ? "just now" : ageS<3600 ? ("about "+Math.floor(ageS/60)+" min ago")
+                                                    : ("about "+Math.floor(ageS/3600)+" h ago");
+      foot.textContent="Updated "+ageStr;
+    }
+
+    function poll(){
+      fetch(URL).then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){ if(d && d.fields) render(d.fields); else showOffline(); })
+        .catch(function(){ showOffline(); });
+    }
+    poll();
+    setInterval(poll, POLL_MS);
+  })();
+  </script>
+</div>

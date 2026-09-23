@@ -1,0 +1,22 @@
+[Unit]
+Description=Harvest Moon sensor telemetry (NMEA -> Firebase)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=XB_HOST=192.168.1.167
+Environment=XB_PORT=39150
+Environment=PROJECT_ID=harvest-moon-watch
+Environment=VESSEL_ID=harvest-moon
+Environment=PUSH_SEC=60
+# Runs as the normal user - this service only reads a socket and writes to the
+# network, so unlike the frame it does NOT need root/GPIO.
+User=harvestmoon
+WorkingDirectory=/home/harvestmoon/sensors
+ExecStart=/usr/bin/python3 /home/harvestmoon/sensors/sensors.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

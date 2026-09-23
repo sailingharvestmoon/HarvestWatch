@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Harvest Moon · Instruments</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#f6f4ef; --surface:#ffffff; --border:#e5e0d6; --blue:#2f6f95; --teal:#2b8a8a;
+      --green:#2e7d5b; --amber:#c47f2a; --red:#c0392b; --text:#1f2d3d; --muted:#6b7c8c; --label:#93a1ad;
+    }
+    html, body { height:100%; background:var(--bg); color:var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    .nav { background:var(--bg); border-bottom:1px solid var(--border); padding:12px 16px;
+           display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; z-index:10; }
+    .nav-left { display:flex; align-items:center; gap:10px; }
+    .nav-icon { font-size:22px; }
+    .nav-title { font-size:14px; font-weight:bold; letter-spacing:0.05em; }
+    .nav-sub { font-size:10px; color:var(--muted); letter-spacing:0.1em; text-transform:uppercase; }
+    .badge { display:flex; align-items:center; gap:6px; font-size:10px; letter-spacing:0.1em; text-transform:uppercase;
+             color:var(--muted); background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:5px 12px; }
+    .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+    .dot.live { background:var(--green); box-shadow:0 0 6px var(--green); }
+    .dot.stale { background:var(--amber); box-shadow:0 0 6px var(--amber); }
+
+    .offline-note { display:none; background:#fbf1df; color:#9a6414; border-bottom:1px solid #ecd9ae;
+                    padding:10px 16px; text-align:center; font-size:12px; }
+
+    .wind { display:flex; flex-direction:column; align-items:center; padding:20px 16px 6px; }
+    .rose { width:230px; height:230px; }
+    .rose-label { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; fill:var(--label); }
+    .rose-ring { fill:none; stroke:var(--border); stroke-width:2; }
+    .rose-tick { stroke:var(--border); stroke-width:1; }
+    .boat { fill:var(--muted); opacity:0.5; }
+    .boat-rot { transition:transform 0.6s ease; transform-origin:115px 115px; }
+    .rose-label.card { font-size:12px; font-weight:700; fill:var(--muted); letter-spacing:0; }
+    .rose-mode { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--label); margin-top:2px; }
+    .awa-arrow { fill:var(--amber); transition:transform 0.6s ease; transform-origin:115px 115px; }
+    .twd-arrow { fill:var(--teal); transition:transform 0.6s ease; transform-origin:115px 115px; }
+    .rose-center-val { fill:var(--text); font-weight:bold; }
+    .rose-center-sub { fill:var(--muted); }
+
+    .legend { display:flex; gap:18px; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
+    .legend span::before { content:'●'; margin-right:5px; }
+    .legend .app::before { color:var(--amber); }
+    .legend .tru::before { color:var(--teal); }
+
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border);
+            border-top:1px solid var(--border); border-bottom:1px solid var(--border); margin-top:14px; }
+    .cell { background:var(--surface); padding:16px; display:flex; flex-direction:column; gap:4px; }
+    .cell-label { font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--label); }
+    .cell-value { font-size:26px; font-weight:bold; color:var(--text); line-height:1; }
+    .cell-value.teal { color:var(--teal); }
+    .cell-unit { font-size:10px; color:var(--muted); }
+
+    .foot { padding:14px 16px; font-size:11px; color:var(--muted); text-align:center; }
+    details { border-top:1px solid var(--border); }
+    summary { list-style:none; cursor:pointer; padding:14px 16px; font-size:10px; letter-spacing:0.15em;
+              text-transform:uppercase; color:var(--muted); }
+    summary::-webkit-details-marker { display:none; }
+    summary:before { content:'▸ '; }
+    details[open] summary:before { content:'▾ '; }
+    .cfg { padding:0 16px 16px; }
+    .cfg label { font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--label); display:block; margin-bottom:6px; }
+    .cfg input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:5px; padding:10px 12px;
+                 color:var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size:12px; margin-bottom:12px; }
+    .cfg input:focus { outline:none; border-color:var(--blue); }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <div class="nav-left">
+      <div class="nav-icon">🌬️</div>
+      <div><div class="nav-title">Harvest Moon</div><div class="nav-sub">Instruments</div></div>
+    </div>
+    <div class="badge"><div class="dot" id="dot"></div><span id="badgeLabel">Connecting…</span></div>
+  </div>
+
+  <div class="offline-note" id="offlineNote">Vesper appears to be off — showing last known values.</div>
+
+  <div class="wind">
+    <svg class="rose" viewBox="0 0 230 230" id="rose">
+      <circle class="rose-ring" cx="115" cy="115" r="100"></circle>
+      <!-- ticks every 30° -->
+      <g id="ticks"></g>
+      <text class="rose-label card" x="115" y="20" text-anchor="middle">N</text>
+      <text class="rose-label card" x="115" y="220" text-anchor="middle">S</text>
+      <text class="rose-label card" x="214" y="119" text-anchor="end">E</text>
+      <text class="rose-label card" x="16" y="119" text-anchor="start">W</text>
+      <!-- boat silhouette, rotated to the boat's heading (north is up) -->
+      <g class="boat-rot" id="boatRot"><polygon class="boat" points="115,70 126,150 104,150"></polygon></g>
+      <!-- apparent wind arrow (points FROM wind direction toward center) -->
+      <g class="awa-arrow" id="awaArrow"><polygon points="115,18 123,44 107,44"></polygon></g>
+      <!-- true wind direction arrow -->
+      <g class="twd-arrow" id="twdArrow" style="display:none"><polygon points="115,30 121,50 109,50"></polygon></g>
+      <text class="rose-center-val" x="115" y="112" text-anchor="middle" font-size="30" id="roseSpeed">--</text>
+      <text class="rose-center-sub" x="115" y="132" text-anchor="middle" font-size="12" id="roseUnit">kn AWS</text>
+    </svg>
+    <div class="legend"><span class="app">Apparent</span><span class="tru">True</span></div>
+    <div class="rose-mode" id="roseMode">North up</div>
+  </div>
+
+  <div class="grid">
+    <div class="cell"><div class="cell-label">Apparent Wind</div><div class="cell-value teal" id="aws">--</div><div class="cell-unit" id="awsSub">kn</div></div>
+    <div class="cell"><div class="cell-label">True Wind</div><div class="cell-value teal" id="tws">--</div><div class="cell-unit" id="twsSub">kn</div></div>
+    <div class="cell"><div class="cell-label">Depth</div><div class="cell-value" id="depth">--</div><div class="cell-unit">feet</div></div>
+    <div class="cell"><div class="cell-label">Water Temp</div><div class="cell-value" id="temp">--</div><div class="cell-unit">°F</div></div>
+    <div class="cell"><div class="cell-label">Speed / SOG</div><div class="cell-value" id="sog">--</div><div class="cell-unit" id="sogSub">kn</div></div>
+    <div class="cell"><div class="cell-label">Heading / COG</div><div class="cell-value" id="hdg">--</div><div class="cell-unit" id="hdgSub">°</div></div>
+  </div>
+
+  <div class="foot" id="foot">No data yet.</div>
+
+  <details>
+    <summary>Settings</summary>
+    <div class="cfg">
+      <label>Firebase Project ID</label>
+      <input id="cfgProject" value="harvest-moon-watch" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <label>Vessel ID</label>
+      <input id="cfgVessel" value="harvest-moon" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    </div>
+  </details>
+
+  <script>
+    // ticks
+    (function () {
+      const g = document.getElementById('ticks');
+      for (let a = 0; a < 360; a += 30) {
+        const rad = (a - 90) * Math.PI / 180;
+        const x1 = 115 + Math.cos(rad) * 100, y1 = 115 + Math.sin(rad) * 100;
+        const x2 = 115 + Math.cos(rad) * 92,  y2 = 115 + Math.sin(rad) * 92;
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'rose-tick');
+        line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+        line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+        g.appendChild(line);
+      }
+    })();
+
+    const $ = id => document.getElementById(id);
+    let pollTimer = null;
+
+    function telemetryUrl() {
+      const p = $('cfgProject').value.trim(), v = $('cfgVessel').value.trim();
+      if (!p || !v) return null;
+      return `https://firestore.googleapis.com/v1/projects/${p}/databases/(default)/documents/telemetry/${v}`;
+    }
+    const numF = f => f && f.doubleValue !== undefined ? f.doubleValue
+                    : f && f.integerValue !== undefined ? parseInt(f.integerValue) : null;
+
+    async function poll() {
+      const url = telemetryUrl();
+      if (!url) return;
+      try {
+        const res = await fetch(url);
+        if (!res.ok) { setState('stale', 'No data'); return; }
+        const data = await res.json();
+        render(data.fields || {});
+      } catch (e) { setState('stale', 'Offline'); }
+    }
+
+    function setState(cls, label) {
+      $('dot').className = 'dot ' + (cls === 'live' ? 'live' : cls === 'stale' ? 'stale' : '');
+      $('badgeLabel').textContent = label;
+    }
+
+    function render(f) {
+      const aws = numF(f.windSpeedApparentKn), awa = numF(f.windAngleApparentDeg);
+      const tws = numF(f.windSpeedTrueKn), twd = numF(f.windDirTrueDeg);
+      const depth = numF(f.depthFt), temp = numF(f.waterTempF);
+      const sog = numF(f.sogKn), boatspd = numF(f.boatSpeedKn);
+      const cog = numF(f.cogDeg), hdg = numF(f.headingMagDeg);
+      const updatedAt = numF(f.updatedAt);
+
+      // ── WIND ROSE, NORTH UP ──────────────────────────────────
+      // The rose is fixed to the compass and the boat turns inside it. At
+      // anchor that is the frame you actually want: the boat's heading is the
+      // thing that keeps changing, and a boat-up rose hides the wind shift by
+      // rotating with it.
+      if (aws != null) { $('roseSpeed').textContent = aws.toFixed(1); $('roseUnit').textContent = 'kn AWS'; }
+
+      // Prefer TRUE heading. Falling back to magnetic rotates everything by the
+      // local variation (~13 deg in Long Island Sound), so say which is in use
+      // rather than quietly drawing a rose that is off by that much.
+      const hdgTrue = numF(f.headingTrueDeg);
+      const useHdg = hdgTrue != null ? hdgTrue : hdg;
+      const isTrue = hdgTrue != null;
+
+      if (useHdg != null) {
+        $('boatRot').style.display = '';
+        $('boatRot').style.transform = `rotate(${useHdg}deg)`;
+        $('roseMode').textContent = isTrue ? 'True north up' : 'Magnetic north up';
+      } else {
+        // No heading: the boat's orientation is unknown, so drawing it pointing
+        // anywhere would be a guess. Hide it rather than lie.
+        $('boatRot').style.display = 'none';
+        $('roseMode').textContent = 'North up \u2014 no heading, boat not shown';
+      }
+
+      // Apparent wind is measured off the bow, so it only becomes a compass
+      // bearing once the heading is known.
+      if (awa != null && useHdg != null) {
+        $('awaArrow').style.display = '';
+        $('awaArrow').style.transform = `rotate(${(useHdg + awa) % 360}deg)`;
+      } else {
+        $('awaArrow').style.display = 'none';
+      }
+
+      // True wind direction is already a compass bearing.
+      if (twd != null) {
+        $('twdArrow').style.display = '';
+        $('twdArrow').style.transform = `rotate(${twd % 360}deg)`;
+      } else { $('twdArrow').style.display = 'none'; }
+
+      $('aws').textContent = aws != null ? aws.toFixed(1) : '--';
+      $('awsSub').textContent = awa != null ? `kn @ ${awa}°` : 'kn';
+      $('tws').textContent = tws != null ? tws.toFixed(1) : '--';
+      $('twsSub').textContent = twd != null ? `kn @ ${twd}°` : 'kn';
+      $('depth').textContent = depth != null ? Math.round(depth) : '--';
+      $('temp').textContent = temp != null ? temp : '--';
+      $('sog').textContent = sog != null ? sog.toFixed(1) : (boatspd != null ? boatspd.toFixed(1) : '--');
+      $('sogSub').textContent = boatspd != null ? `kn (STW ${boatspd.toFixed(1)})` : 'kn';
+      $('hdg').textContent = hdg != null ? hdg : (cog != null ? cog : '--');
+      $('hdgSub').textContent = cog != null ? `° (COG ${cog}°)` : '°';
+
+      // freshness
+      if (updatedAt) {
+        const ageSec = Math.floor((Date.now() - updatedAt) / 1000);
+        const ageStr = ageSec < 90 ? `${ageSec}s ago` : ageSec < 3600 ? `${Math.floor(ageSec/60)} min ago` : `${Math.floor(ageSec/3600)} h ago`;
+        $('foot').textContent = `Last update ${ageStr}`;
+        const off = ageSec > 150;  // ~2.5 min without an update => Vesper likely off
+        $('offlineNote').style.display = off ? 'block' : 'none';
+        setState(off ? 'stale' : 'live', off ? 'Vesper off' : 'Live');
+      }
+    }
+
+    ['cfgProject','cfgVessel'].forEach(id => $(id).addEventListener('change', () => {
+      localStorage.setItem('hm_instruments', JSON.stringify({ p:$('cfgProject').value, v:$('cfgVessel').value }));
+    }));
+
+    window.onload = () => {
+      try {
+        const c = JSON.parse(localStorage.getItem('hm_instruments') || 'null');
+        if (c) { if (c.p) $('cfgProject').value = c.p; if (c.v) $('cfgVessel').value = c.v; }
+      } catch (e) {}
+      poll();
+      pollTimer = setInterval(poll, 15000);
+    };
+  </script>
+</body>
+</html>
