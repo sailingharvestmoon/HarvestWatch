@@ -1,0 +1,9 @@
+[Unit]
+Description=HarvestWatch: pull updates from GitHub and deploy to this Pi
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/harvestwatch/update.sh
+TimeoutStartSec=5min
