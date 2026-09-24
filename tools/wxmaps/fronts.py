@@ -85,6 +85,14 @@ def _load(http, url):
     """(kml bytes, zipfile or None) - KMZ unpacked."""
     data = http(url)
     if not data: return None, None
+    if data[:2] == b"\x1f\x8b":                         # gzip-compressed
+        import gzip; data = gzip.decompress(data)
+    if data[:2] != b"PK":
+        i = data.find(b"<")                              # skip BOM / stray bytes
+        if i < 0 or not data[i:i + 200].lstrip().startswith((b"<?xml", b"<kml")):
+            print(f"fronts: {url.rsplit('/', 1)[-1]} is not KML - starts with {data[:160]!r}", flush=True)
+            return None, None
+        data = data[i:]
     if data[:2] == b"PK":
         z = zipfile.ZipFile(io.BytesIO(data))
         kml = next((n for n in z.namelist() if n.lower().endswith(".kml")), None)
