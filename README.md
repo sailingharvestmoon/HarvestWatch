@@ -104,8 +104,17 @@ On the iPhone: open the site in Safari → Share → **Add to Home Screen** for 
 It pulls the latest GFS, ECMWF, AIFS, HRRR, NAM and GFS-Wave runs straight from NOAA's and ECMWF's
 open-data buckets, cuts out 5–52°N, 100–40°W, and publishes small PNGs per variable per step to
 **https://sailingharvestmoon.github.io/HarvestWatch/**. The app's Maps view loads those first, so
-panning is instant. UKMO, ICON, currents and anything outside that region still come from the Pi
-(`wxgrid.py`). Run it by hand: GitHub → Actions → Build weather maps → Run workflow.
+panning is instant. UKMO, ICON and currents aren't in the maps (they're in the forecast table).
+It also builds the **Fronts** view: WPC's surface analyses and day 0–7 forecast charts (`fronts.py`). Run it by hand: GitHub → Actions → Build weather maps → Run workflow.
+
+## Cloudflare weather worker (`cloudflare-weather/`)
+
+`weather-worker.js` (worker name `harvest-weather`) does all the weather that used to run on the Pi, off the boat:
+the "Now" summary + tides + sun/moon every 30 min → `weather/harvest-moon`, and the 7-model forecast table hourly
+(or within a minute of the app's ↻ Refresh) → `weather/harvest-moon-forecast`. It uses the boat's last known
+position, so it keeps working with the boat shut down. Deployed by Cloudflare Workers Builds from this repo
+(root directory `cloudflare-weather`). Check it: `https://harvest-weather.<your-subdomain>.workers.dev/`.
+Kept separate from the anchor watcher so weather can never slow an alarm.
 
 ## Cloudflare worker
 

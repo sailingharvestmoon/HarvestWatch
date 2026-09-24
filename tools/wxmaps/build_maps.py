@@ -28,6 +28,7 @@ open data); the app falls back to the Pi's on-demand grids for those.
 
   python build_maps.py site              build everything
   python build_maps.py site gfs hrrr     build only these models
+  (WPC fronts/pressure charts are added every run - see fronts.py)
 """
 import sys, os, json, math, time, datetime as dt, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
@@ -350,6 +351,13 @@ def main():
         except Exception as e:
             print(f"{name}: FAILED {e}", flush=True)
         print(f"{name}: {time.time() - t0:.0f} s", flush=True)
+    # WPC fronts & pressure charts, day 0-7 (see fronts.py).
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import fronts
+        index["fronts"] = fronts.build_fronts(http, out)
+    except Exception as e:
+        print(f"fronts: FAILED {e}", flush=True)
     with open(os.path.join(out, "index.json"), "w") as fh: json.dump(index, fh, separators=(",", ":"))
     # Tell GitHub Pages to publish the files as-is (no Jekyll processing).
     with open(os.path.join(out, ".nojekyll"), "w") as fh: fh.write("")

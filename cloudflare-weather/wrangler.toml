@@ -1,0 +1,13 @@
+# Harvest Watch weather worker - see weather-worker.js for what it does.
+# Separate from the anchor watcher on purpose: weather can never slow an alarm.
+name = "harvest-weather"
+main = "weather-worker.js"
+compatibility_date = "2026-09-01"
+
+[triggers]
+crons = ["* * * * *"]      # checks every minute; does at most one job per run
+
+[vars]
+PROJECT_ID = "harvest-moon-watch"
+VESSEL_ID = "harvest-moon"
+NWS_UA = "harvest-watch (sailingharvestmoon@gmail.com)"

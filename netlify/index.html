@@ -307,7 +307,7 @@ table.fc tr.cat th .mchip.sm { pointer-events:none; position:absolute; right:22p
 tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
 /* weather maps */
-.seg.wxmode { width:220px; margin:0 auto 6px; }
+.seg.wxmode { width:250px; margin:0 auto 6px; }
 #view-maps { overflow:hidden; display:none; flex-direction:column; }
 #view-maps.active { display:flex; }
 .wm-stage { position:relative; flex:1; overflow:hidden; background:var(--bg); }
@@ -319,6 +319,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-side { position:absolute; top:58px; left:10px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:999px; padding:6px 12px 6px 6px; font-size:13px; font-weight:600; box-shadow:var(--shadow); display:flex; align-items:center; gap:6px; max-width:46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .wm-side.r { left:auto; right:10px; }
 .wm-split { position:absolute; right:10px; bottom:54px; z-index:800; }
+.wm-zoom { position:absolute; right:10px; bottom:108px; z-index:800; display:flex; flex-direction:column; gap:8px; }
 .wm-divider { position:absolute; top:0; bottom:0; width:0; z-index:790; }
 .wm-divider::before { content:''; position:absolute; top:0; bottom:0; left:-1.5px; width:3px; background:#fff; box-shadow:0 0 6px rgba(0,0,0,.5); }
 .wm-divider.h { left:0; right:0; width:auto; height:0; }
@@ -344,11 +345,34 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
 .wm-status { position:absolute; left:50%; top:112px; transform:translateX(-50%); z-index:800; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; display:none; white-space:nowrap; box-shadow:var(--shadow); }
 .wm-status.show { display:block; }
+/* fronts */
+#view-fronts { overflow:hidden; display:none; flex-direction:column; }
+#view-fronts.active { display:flex; }
+.fr-map .base-tiles { filter:none !important; }      /* WPC charts are drawn for a light map */
+.fr-label { position:absolute; left:10px; top:58px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:8px 12px; box-shadow:var(--shadow); max-width:calc(100% - 20px); }
+.fr-label .k { font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-right:6px; }
+.fr-label .k.analysis { background:#6b7785; color:#fff; } .fr-label .k.forecast { background:var(--accent); color:var(--accent-ink); }
+.fr-label b { font-size:16px; } .fr-label small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+.fr-src { position:absolute; left:10px; bottom:10px; z-index:800; font-size:10.5px; color:#39424d; background:rgba(255,255,255,.75); padding:2px 6px; border-radius:4px; }
+.fr-bar { background:var(--surface); border-top:1px solid var(--line); padding:8px 10px 10px; }
+.fr-ctrl { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+.fr-ctrl .fab { box-shadow:none; width:40px; height:40px; font-size:20px; flex:none; }
+.fr-strip { display:flex; gap:4px; overflow-x:auto; padding-bottom:4px; scrollbar-width:thin; }
+.fr-day { flex:none; display:flex; flex-direction:column; gap:3px; padding-right:6px; border-right:1px solid var(--line); }
+.fr-day > span { font-size:11px; font-weight:700; color:var(--muted); letter-spacing:.04em; }
+.fr-day > div { display:flex; gap:4px; }
+.fr-chip { flex:none; min-width:46px; padding:7px 6px; border-radius:8px; font-size:12.5px; font-weight:600; background:var(--surface2); border:1px solid var(--line); color:var(--ink); font-variant-numeric:tabular-nums; }
+.fr-chip.analysis { color:var(--muted); }
+.fr-chip.forecast { border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.fr-chip.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.fr-chip.now { box-shadow:inset 0 -3px 0 var(--warn); }
+
 /* forecast location */
 .loc-chip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; color:var(--ink); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .wm-toprow { display:flex; justify-content:center; gap:8px; align-items:center; padding:0 10px; }
-.wm-toprow .seg.wxmode { width:170px; margin:0; flex:none; }
-.wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:170px; }
+.wm-toprow .seg.wxmode { width:196px; margin:0; flex:none; }
+.wm-toprow .seg.wxmode button { font-size:12.5px; padding:8px 2px; }
+.wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:150px; }
 .loc-sheet { position:fixed; z-index:950; max-height:88%; }
 .pl-map { position:relative; height:190px; border-radius:10px; overflow:hidden; margin-top:10px; border:1px solid var(--line); }
 .pl-map #plMap { position:absolute; inset:0; }
@@ -391,6 +415,8 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
       <svg class="crosshair" id="crosshair" viewBox="0 0 38 38"><circle cx="19" cy="19" r="8" fill="none" stroke="#c6372c" stroke-width="2.5"/><path d="M19 0v12M19 26v12M0 19h12M26 19h12" stroke="#c6372c" stroke-width="2.5"/></svg>
       <div class="map-top" id="mapTop"></div>
       <div class="map-btns" id="mapBtns">
+        <button class="fab" onclick="map.zoomIn()" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+        <button class="fab" onclick="map.zoomOut()" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
         <button class="fab" id="btnFollow" onclick="followBoat()" title="Centre on boat" aria-label="Centre on boat">
           <svg viewBox="0 0 24 24"><path d="M21 3L3 10.5l7.5 3L13.5 21z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
         </button>
@@ -459,7 +485,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
     <!-- WEATHER -->
     <section class="view scroll" id="view-weather">
-      <div class="seg wxmode"><button class="on">Forecast</button><button onclick="showView('maps')">Maps</button></div>
+      <div class="seg wxmode"><button class="on">Table</button><button onclick="showView('maps')">Maps</button><button onclick="showView('fronts')">Fronts</button></div>
       <div style="text-align:center;margin-bottom:4px;"><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div>
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
@@ -485,9 +511,10 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
         <div class="wm-wrap" id="wmWrapB"><div class="wm-map" id="wmMapB"></div></div>
         <div class="wm-divider" id="wmDivider" style="display:none"><span>‹ ›</span></div>
         <div class="wm-status" id="wmStatus"></div>
-        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Forecast</button><button class="on">Maps</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button class="on">Maps</button><button onclick="showView('fronts')">Fronts</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
         <button class="wm-side" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
         <button class="wm-side r" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
+        <div class="wm-zoom"><button class="fab" onclick="WM.sides[0].map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="WM.sides[0].map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
         <button class="fab wm-split" id="wmSplitBtn" onclick="wmSetSplit(!WMP.split)" title="Split screen" aria-label="Split screen">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
         <div class="wm-leg" id="wmLegA"></div><div class="wm-leg r" id="wmLegB" style="display:none"></div>
@@ -500,6 +527,28 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
         <div class="grab"></div>
         <div class="sheet-head"><b id="wmOptTitle">Map</b><button class="x-btn" onclick="$('wmOpt').classList.remove('open')" aria-label="Close">✕</button></div>
         <div class="sheet-body" id="wmOptBody"></div>
+      </div>
+    </section>
+
+    <!-- FRONTS (WPC day 0-7) -->
+    <section class="view" id="view-fronts">
+      <div class="wm-stage" id="frStage">
+        <div class="wm-map fr-map" id="frMap"></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button onclick="showView('maps')">Maps</button><button class="on">Fronts</button></div></div></div>
+        <div class="fr-label" id="frLabel"></div>
+        <div class="wm-zoom" style="bottom:10px"><button class="fab" onclick="FR.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="FR.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
+        <div class="fr-src">WPC · NOAA</div>
+      </div>
+      <div class="fr-bar">
+        <div class="fr-ctrl">
+          <button class="fab" onclick="frStep(-1)" aria-label="Previous">‹</button>
+          <button class="fab" id="frPlay" onclick="frTogglePlay()" aria-label="Play">▶</button>
+          <button class="fab" onclick="frStep(1)" aria-label="Next">›</button>
+          <button class="btn" style="padding:8px 10px;font-size:13px;" onclick="frNow()">Now</button>
+          <div style="flex:1"></div>
+          <div class="seg" id="frSpeed" style="width:140px;"><button data-s=".5">½×</button><button data-s="1">1×</button><button data-s="2">2×</button></div>
+        </div>
+        <div class="fr-strip" id="frStrip"></div>
       </div>
     </section>
 
@@ -1629,7 +1678,7 @@ function wxIcon(sky) {
 }
 function paintWeather() {
   const w = S.wx;
-  if (!w) { $('wxNow').innerHTML = '<p class="note">No weather from the boat yet.</p>'; return; }
+  if (!w) { $('wxNow').innerHTML = '<p class="note">No weather yet.</p>'; return; }
   const place = str(w.city) ? `${str(w.city)}${str(w.state) ? ', ' + str(w.state) : ''}` : 'Now';
   $('wxPlace').textContent = place;
   const t = num(w.nowTemp), pr = num(w.pressureMb), tr = str(w.pressureTrend);
@@ -1697,7 +1746,7 @@ async function requestForecast() {
       body: JSON.stringify({ fields: { requestAt: fI(Date.now()) } }) });
     ok = r.ok;
   } catch (e) {}
-  toast(ok ? 'Asked the boat for a fresh forecast — about a minute' : 'Could not reach the cloud', 3500);
+  toast(ok ? 'Refreshing the forecast — about a minute' : 'Could not reach the cloud', 3500);
   if (ok) { FC_REQ = Date.now(); paintForecast(); setTimeout(() => loadForecast(true), 75000); setTimeout(() => loadForecast(true), 150000); }
 }
 
@@ -1758,7 +1807,7 @@ function paintForecast() {
     return `<button class="mchip ${FCU.primary === m.id ? 'on' : ''} ${off ? 'off' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pickModel('${m.id}')" title="${esc(m.info)}">${m.label}</button>`;
   }).join('');
   document.querySelectorAll('#fcDays button').forEach(b => b.classList.toggle('on', +b.dataset.d === FCU.days));
-  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast from the boat yet. The Pi pulls one every hour once weather.py is updated — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; return; }
+  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet. It updates every hour — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; return; }
 
   // Columns: from the current hour at the boat, local time there.
   const nowLocal = new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00';
@@ -1820,7 +1869,7 @@ function paintForecast() {
   const tgt = forecastTarget();
   const moved = PL.loaded && haversine(tgt.lat, tgt.lon, FC.lat, FC.lon) > 5 * 1852;
   const waiting = moved || (FC_REQ > FC.at && Date.now() - FC_REQ < 10 * 60000);
-  meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${moved ? `<b style="color:var(--warn)">Updating for ${esc(tgt.name || 'the boat')} — showing the previous spot</b> · ` : waiting ? '<b>Fresh forecast requested</b> · ' : ''}Pulled by the boat ${ago(FC.at)} for ${FC.place ? esc(FC.place) + ' · ' : 'the boat · '} ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
+  meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${moved ? `<b style="color:var(--warn)">Updating for ${esc(tgt.name || 'the boat')} — showing the previous spot</b> · ` : waiting ? '<b>Fresh forecast requested</b> · ' : ''}Updated ${ago(FC.at)} for ${FC.place ? esc(FC.place) + ' · ' : 'the boat · '} ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
     + (failed.length ? ` · <span style="color:var(--warn)">not available here: ${failed.join(', ')}</span>` : '')
     + ` · <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a>`;
 }
@@ -1863,7 +1912,7 @@ const WM_LAYERS = [
   { id: 'temp', label: 'Air Temp', ico: '🌡', key: 'ta', unit: '°F', stops: 'temp' },
   { id: 'sst', label: 'Sea Temp', ico: '🌊', key: 'st', unit: '°F', stops: 'temp', marine: true }
 ];
-const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5 };
+const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5, opacity: .6 };
 function wmPrefsFromCfg(c) {
   const side = (v, d) => { const [m, l] = str(v).split('|'); if (MODELS.some(x => x.id === m)) d.model = m; if (WM_LAYERS.some(x => x.id === l)) d.layer = l; };
   if (c.wmA) side(c.wmA, WMP.a);
@@ -1871,9 +1920,10 @@ function wmPrefsFromCfg(c) {
   if (c.wmSplit !== undefined) WMP.split = bool(c.wmSplit);
   if (c.wmFlow !== undefined) WMP.flow = bool(c.wmFlow);
   if (c.wmSpeed !== undefined) WMP.speed = num(c.wmSpeed) || .5;
+  if (c.wmOpacity !== undefined) WMP.opacity = num(c.wmOpacity) || .6;
 }
 function wmSavePrefs() {
-  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed) });
+  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed), wmOpacity: fD(WMP.opacity) });
 }
 
 // ─── colour helpers ─────────────────────────────────────────────
@@ -1936,6 +1986,7 @@ function preLoadStep(g, key, ti) {
 async function loadGrid(name) {
   const g = GRIDS[name];
   if (g && (g.loading || Date.now() - g.fetched < 20 * 60000) && !g.stale) return g.loading || g;
+  if (name.startsWith('none:')) return (GRIDS[name] = { unavailable: true, fetched: Date.now() });
   if (name.startsWith('pre:')) {
     const base = name.slice(4);
     const p = fetch(`${MAPS_BASE}${base}/meta.json?t=${PRE.index ? PRE.index.generated : Date.now()}`)
@@ -2027,15 +2078,16 @@ function fcPosition() {
 }
 const WM = { ready: false, sides: [], steps: [], ti: 0, playing: null, divX: 0, syncing: false, anim: null };
 function wmSideCfg(s) { return s === 0 ? WMP.a : WMP.b; }
+// Maps come only from the pre-built GitHub data now (the Pi no longer does
+// weather). A model or layer that isn't built there is shown as unavailable.
+function wmAvail(model, layerId) {
+  const lay = WM_LAYERS.find(l => l.id === layerId), name = lay.marine ? 'marine' : model;
+  const m = PRE.index && PRE.index.models && PRE.index.models[name];
+  return !!(m && m.vars && m.vars.includes(lay.acc ? 'pa' : lay.key));
+}
 function wmGridName(cfg) {
   const lay = WM_LAYERS.find(l => l.id === cfg.layer), name = lay.marine ? 'marine' : cfg.model;
-  const m = PRE.index && PRE.index.models && PRE.index.models[name];
-  const key = lay.acc ? 'pa' : lay.key;
-  if (m && m.vars && m.vars.includes(key) && m.bbox && WM.ready) {
-    const c = WM.sides[0].map.getCenter(), [a, b, cc, d] = m.bbox;
-    if (c.lat >= a && c.lat <= cc && c.lng >= b && c.lng <= d) return 'pre:' + name;
-  }
-  return name;
+  return wmAvail(cfg.model, cfg.layer) ? 'pre:' + name : 'none:' + name;
 }
 
 function initMaps() {
@@ -2095,6 +2147,7 @@ function wmStacked() { const r = $('wmStage').getBoundingClientRect(); return r.
 function wmResize() { wmLayout(); }
 function wmLayout() {
   const r = $('wmStage').getBoundingClientRect(), st = WMP.split && wmStacked();
+  if (r.width < 2 || r.height < 2) return;   // maps view not showing
   // Re-centre the divider whenever the screen flips between wide and tall.
   const orient = wmStacked() ? 'tall' : 'wide';
   if (WM.orient !== orient) { WM.orient = orient; WM.divX = r.width / 2; WM.divY = r.height / 2; }
@@ -2179,6 +2232,7 @@ function wmPaintButtons() {
     const g = GRIDS[wmGridName(cfg)];
     let note = '';
     if (!g || g.loading) note = ' · loading';
+    else if (g.unavailable) note = ' · not in maps';
     else if (g.missing) note = ' · not pulled yet';
     else if (g.error) note = ' · error';
     else if (g.meta && !g.meta.ok) note = ' · no data here';
@@ -2222,7 +2276,9 @@ function wmDrawAll(resetParticles) {
 function wmDrawSide(s, cfg, resetParticles) {
   const lay = WM_LAYERS.find(l => l.id === cfg.layer), g = GRIDS[wmGridName(cfg)];
   const W_ = s.field.width, H_ = s.field.height, ctx = s.fctx;
+  if (W_ < 2 || H_ < 2) return;              // view hidden or not laid out yet
   const o = s.map.containerPointToLayerPoint([0, 0]);
+  s.field.style.opacity = WMP.opacity;
   L.DomUtil.setPosition(s.field, o); L.DomUtil.setPosition(s.flow, o);
   ctx.clearRect(0, 0, W_, H_);
   s.cur = null;
@@ -2243,7 +2299,7 @@ function wmDrawSide(s, cfg, resetParticles) {
     for (let i = 0; i < vals.length; i++) {
       const v = vals[i]; if (v !== v) continue;
       rampColor(stops, v, c);
-      img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = c[3] * .78;
+      img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = c[3];
     }
     const off = s._off || (s._off = document.createElement('canvas'));
     off.width = cw; off.height = ch; off.getContext('2d').putImageData(img, 0, 0);
@@ -2344,8 +2400,9 @@ function wmNeedsArea() {
 }
 let wmAskT = null;
 function wmMaybeAsk() { clearTimeout(wmAskT); wmAskT = setTimeout(() => wmAsk(false), 1500); }
+const PI_GRIDS = false;   // on-demand grids from the Pi are retired
 async function wmAsk(force) {
-  if (!WM.ready || !$('view-maps').classList.contains('active')) return;
+  if (!PI_GRIDS || !WM.ready || !$('view-maps').classList.contains('active')) return;
   if (!force && (WM.pending || !wmNeedsArea())) return;
   const wait = 90000 - (Date.now() - (WM.askedAt || 0));
   if (wait > 0 && !force) { clearTimeout(wmAskT); wmAskT = setTimeout(() => wmAsk(false), wait); return; }
@@ -2389,18 +2446,27 @@ function wmOpenOptions(k) {
   $('wmOptTitle').textContent = WMP.split ? (k ? 'Right map' : 'Left map') : 'Map';
   $('wmOptBody').innerHTML = `
     <div class="wm-h">Map layer</div>
-    <div class="wm-grid">${WM_LAYERS.map(l => `<button class="wm-opt ${l.id === cfg.layer ? 'on' : ''}" onclick="wmPick('layer','${l.id}')"><span>${l.ico}</span>${l.label}</button>`).join('')}</div>
+    <div class="wm-grid">${WM_LAYERS.map(l => `<button class="wm-opt ${l.id === cfg.layer ? 'on' : ''}" ${PRE.index && !(l.marine ? wmAvail(cfg.model, l.id) : MODELS.some(m => wmAvail(m.id, l.id))) ? 'disabled' : ''} onclick="wmPick('layer','${l.id}')"><span>${l.ico}</span>${l.label}</button>`).join('')}</div>
     <div class="wm-h">Forecast model${lay.marine ? ' <small>(waves, currents and sea temperature come from one marine model)</small>' : ''}</div>
-    <div class="wm-grid">${MODELS.map(m => `<button class="wm-opt ${m.id === cfg.model ? 'on' : ''}" ${lay.marine ? 'disabled' : ''} onclick="wmPick('model','${m.id}')">${m.label}</button>`).join('')}</div>
+    <div class="wm-grid">${MODELS.map(m => `<button class="wm-opt ${m.id === cfg.model ? 'on' : ''}" ${lay.marine || (PRE.index && !wmAvail(m.id, cfg.layer)) ? 'disabled' : ''} onclick="wmPick('model','${m.id}')">${m.label}</button>`).join('')}</div>
+    ${lay.marine ? '' : '<p class="note" style="margin:-4px 2px 12px;">Greyed out = not in the maps for this layer (UKMO and ICON are in the forecast table only).</p>'}
     <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Split screen</b><small>Two maps, drag the divider to compare</small></div><span class="switch"><input type="checkbox" ${WMP.split ? 'checked' : ''} onchange="wmSetSplit(this.checked)"><span></span></span></label>
     <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Animated flow</b><small>Moving streaks on wind, gust and currents</small></div><span class="switch"><input type="checkbox" ${WMP.flow ? 'checked' : ''} onchange="WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)"><span></span></span></label>
+    <div class="wm-h">Layer opacity <small id="wmOpVal">${Math.round(WMP.opacity * 100)}%</small></div>
+    <input type="range" min="15" max="100" step="5" value="${Math.round(WMP.opacity * 100)}" style="margin:4px 0 16px;"
+      oninput="WMP.opacity=this.value/100;$('wmOpVal').textContent=this.value+'%';WM.sides.forEach(s=>s.field.style.opacity=WMP.opacity)"
+      onchange="wmSavePrefs()">
     <div class="wm-h">Animation speed</div>
     <div class="seg" id="wmSpeedSeg">${[.25, .5, 1, 2].map(v => `<button class="${WMP.speed === v ? 'on' : ''}" onclick="WMP.speed=${v};wmSavePrefs();wmOpenOptions(wmEditing)">${v}×</button>`).join('')}</div>
     <div style="height:10px"></div>`;
   $('wmOpt').classList.add('open');
 }
 function wmPick(what, id) {
-  wmSideCfg(wmEditing)[what] = id; wmSavePrefs();
+  const c = wmSideCfg(wmEditing); c[what] = id;
+  // Picked a layer this model doesn't have in the maps: switch to one that does.
+  const lay = WM_LAYERS.find(l => l.id === c.layer);
+  if (!lay.marine && PRE.index && !wmAvail(c.model, c.layer)) { const m = MODELS.find(x => wmAvail(x.id, c.layer)); if (m) c.model = m.id; }
+  wmSavePrefs();
   wmOpenOptions(wmEditing); wmRefreshData();
 }
 function wmSetSplit(on) {
@@ -2478,7 +2544,7 @@ function renderLoc() {
       <p class="note" id="plParsed" style="margin-top:6px;">Or type or paste a position in any format.</p>
       <button class="btn primary block" style="margin-top:8px;" onclick="addPlace()">Save and use</button>
     </div>
-    <p class="note" style="margin:10px 4px 0;">Sets where the forecast table and maps are for. The boat pulls the new forecast — the table in about a minute, the maps in a few minutes. The "Now" summary always stays at the boat.</p>`;
+    <p class="note" style="margin:10px 4px 0;">Sets where the forecast table and maps are for. The forecast table updates for the new spot in about a minute; the maps cover the whole region already. The "Now" summary always stays at the boat.</p>`;
   // Mini map: the crosshair is the new place. Dragging it fills in the
   // position; typing a position (or picking a search result) moves it.
   if (plMap) { plMap.remove(); plMap = null; }
@@ -2552,6 +2618,82 @@ function afterPlaceChange() {
   paintForecast();
 }
 
+// ═══ FRONTS: WPC surface analysis + forecasts, day 0-7 ════════════
+// The charts from wpc.ncep.noaa.gov/basicwx/day0-7loop.html, laid over the
+// real map and labelled in local time. Built into the GitHub Pages site by
+// tools/wxmaps/fronts.py (from WPC's KML, which carries exact valid times).
+const FR = { ready: false, map: null, frames: [], i: 0, layer: null, playing: null, speed: 1, fetched: 0 };
+function frInit() {
+  if (FR.ready) return; FR.ready = true;
+  FR.map = L.map('frMap', { zoomControl: false, attributionControl: false, zoomSnap: .5, minZoom: 2, maxZoom: 10, zoomAnimation: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(FR.map);
+  FR.map.setView([37, -85], 3.5, { animate: false });
+  document.querySelectorAll('#frSpeed button').forEach(b => b.addEventListener('click', () => { FR.speed = +b.dataset.s; frPaintSpeed(); if (FR.playing) { frTogglePlay(); frTogglePlay(); } }));
+  frPaintSpeed();
+  document.addEventListener('keydown', e => {
+    if (!$('view-fronts').classList.contains('active')) return;
+    if (e.key === 'ArrowRight') frStep(1); if (e.key === 'ArrowLeft') frStep(-1); if (e.key === ' ') { e.preventDefault(); frTogglePlay(); }
+  });
+}
+function frPaintSpeed() { document.querySelectorAll('#frSpeed button').forEach(b => b.classList.toggle('on', +b.dataset.s === FR.speed)); }
+async function openFronts() {
+  frInit();
+  setTimeout(() => FR.map.invalidateSize(), 60);
+  if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
+  $('frLabel').innerHTML = '<b>Loading charts…</b>';
+  try {
+    const r = await fetch(MAPS_BASE + 'fronts/index.json', { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const j = await r.json();
+    FR.frames = j.frames || []; FR.fetched = Date.now(); FR.gen = j.generated;
+  } catch (e) { $('frLabel').innerHTML = '<b>Charts not available yet</b><small>They are built by the GitHub maps job.</small>'; return; }
+  if (!FR.frames.length) { $('frLabel').innerHTML = '<b>No charts in the last build</b>'; return; }
+  // Warm the browser cache so the loop plays smoothly.
+  FR.frames.forEach(f => { const im = new Image(); im.src = MAPS_BASE + f.src + '?g=' + FR.gen; });
+  const b = FR.frames[0].bounds; FR.map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { animate: false, padding: [10, 10] });
+  frRenderStrip(); frNow();
+}
+const frLocal = (t, o) => new Date(t * 1000).toLocaleString([], o);
+function frRenderStrip() {
+  const days = [];
+  FR.frames.forEach((f, i) => {
+    const d = frLocal(f.t, { weekday: 'short', month: 'numeric', day: 'numeric' });
+    if (!days.length || days[days.length - 1].d !== d) days.push({ d, items: [] });
+    days[days.length - 1].items.push(i);
+  });
+  $('frStrip').innerHTML = days.map(g => `<div class="fr-day"><span>${esc(g.d)}</span><div>${g.items.map(i => {
+    const f = FR.frames[i];
+    return `<button class="fr-chip ${f.kind}" data-i="${i}" onclick="frShow(${i})">${frLocal(f.t, { hour: 'numeric' }).replace(' ', '').toLowerCase()}</button>`;
+  }).join('')}</div></div>`).join('');
+}
+// The frame closest to now; the latest analysis if nothing is closer.
+function frNow() {
+  const now = Date.now() / 1000; let best = 0, bd = Infinity;
+  FR.frames.forEach((f, i) => { const d = Math.abs(f.t - now); if (d < bd) { bd = d; best = i; } });
+  document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('now', +c.dataset.i === best));
+  frShow(best);
+}
+function frShow(i) {
+  if (!FR.frames.length) return;
+  FR.i = (i + FR.frames.length) % FR.frames.length;
+  const f = FR.frames[FR.i], url = MAPS_BASE + f.src + '?g=' + FR.gen, b = [[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[3]]];
+  if (!FR.layer) FR.layer = L.imageOverlay(url, b, { interactive: false }).addTo(FR.map);
+  else { FR.layer.setUrl(url); FR.layer.setBounds(L.latLngBounds(b)); }
+  const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
+  const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
+  const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
+  const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
+  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}</small>`;
+  document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
+  const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+function frStep(d) { frShow(FR.i + d); }
+function frTogglePlay() {
+  if (FR.playing) { clearInterval(FR.playing); FR.playing = null; $('frPlay').textContent = '▶'; return; }
+  $('frPlay').textContent = '❚❚';
+  FR.playing = setInterval(() => frStep(1), 1000 / FR.speed);
+}
+
 // ═══ BOAT ══════════════════════════════════════════════════════════
 const BOAT_FIELDS = [
   { k: 'loaFt', label: 'Length overall', unit: 'ft', step: .5, note: 'Draws the hull on the map' },
@@ -2619,11 +2761,11 @@ $('phoneGps').addEventListener('change', e => {
 });
 
 // ═══ NAV ═══════════════════════════════════════════════════════════
-const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', boat: 'Boat' };
+const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', fronts: 'Fronts · day 0–7', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of forecast / maps you left it on
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
-  const tab = v === 'maps' ? 'weather' : v;
+  const tab = (v === 'maps' || v === 'fronts') ? 'weather' : v;
   if (tab === 'weather') lastWx = v;
   document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
   document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === tab));
@@ -2634,6 +2776,8 @@ function showView(v) {
   if (v === 'weather') loadForecast(false);
   if (v === 'maps') openMaps();
   else if (WM.playing) wmTogglePlay();
+  if (v === 'fronts') openFronts();
+  else if (FR.playing) frTogglePlay();
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v === 'weather' ? lastWx : t.dataset.v)));
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
