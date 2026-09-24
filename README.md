@@ -49,7 +49,7 @@ What each service does:
 - **sensors** — reads the Vesper (192.168.1.167:39150) and posts wind/depth/temp/speed/heading to `telemetry/`, and GPS + bow position to `vessels/` every 60 s.
 - **guard** — the main anchor watcher (every 10 s): drag, swing, wind/gust, lying off the wind, AIS; sends ntfy alerts from the boat; runs the dead-man's-switch offline alert.
 - **weather** — NWS forecast/obs, NOAA tides, sun/moon → `weather/` every 30 min; the seven model forecasts (ECMWF, GFS, UKMO, ICON, NAM, HRRR, AIFS, plus waves) from Open-Meteo → `weather/harvest-moon-forecast` every hour, or within a minute when the app's ↻ Refresh asks.
-- **wxgrid** — every 6 h pulls a 15×15 grid (~240 nm box around the boat) for each model plus marine (waves, currents, sea temp) → `weather/harvest-moon-grid-<model>`, for the Weather → Maps split-screen. Uses ~7,000 of Open-Meteo's 10,000 free calls a day and ~20 MB of download per day.
+- **wxgrid** — pulls forecast map grids (~225 points) for the area the app's Maps view is showing, for just the models on screen, and keeps them fresh every 6 h while someone has looked in the last 2 days → `weather/harvest-moon-grid-<model>`. The app asks for a new area via `weather/harvest-moon-gridview` when you pan or zoom off the data. Each new area costs ~225 of Open-Meteo's 10,000 free daily calls per model shown.
 - **frame** — drives the e-ink display (photos / dashboard / info screen), mode set from `netlify/frame.html`.
 - **harvest-moon-polar** — logs 1 Hz sailing data to `~/polar_logs/` for building polars.
 
@@ -115,7 +115,7 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 |---|---|---|
 | `vessels/` | sensors | GPS + bow position |
 | `telemetry/` | sensors | wind, depth, temp, speed, heading |
-| `weather/` | weather, wxgrid, app | forecast, tides, sun/moon; `harvest-moon-forecast` = model table; `harvest-moon-grid-*` = map grids; `harvest-moon-places` = saved forecast locations and the one in use |
+| `weather/` | weather, wxgrid, app | forecast, tides, sun/moon; `harvest-moon-forecast` = model table; `harvest-moon-grid-*` = map grids; `harvest-moon-places` = saved forecast locations and the one in use; `harvest-moon-gridview` = the map area the app wants |
 | `alarms/` | Harvest Watch | anchor, radius, every alert setting, snooze, app preferences (`ui*`, `fc*`) |
 | `state/` | worker + guard | shared alert latches |
 | `tracks/` | worker | swing track |

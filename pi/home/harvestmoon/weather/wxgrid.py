@@ -60,11 +60,50 @@ MARINE = [
     ("sea_surface_temperature", "st",  20.0, 0.4),      # F (converted)
 ]
 
-def grid_points(lat0, lon0):
+def default_bbox(lat0, lon0):
     half_lon = GRID_HALF / max(0.2, math.cos(math.radians(lat0)))
-    lats = [lat0 - GRID_HALF + 2 * GRID_HALF * j / (GRID_N - 1) for j in range(GRID_N)]
-    lons = [lon0 - half_lon + 2 * half_lon * i / (GRID_N - 1) for i in range(GRID_N)]
-    return lats, lons, (lat0 - GRID_HALF, lon0 - half_lon, lat0 + GRID_HALF, lon0 + half_lon)
+    return (lat0 - GRID_HALF, lon0 - half_lon, lat0 + GRID_HALF, lon0 + half_lon)
+
+def grid_points(bbox):
+    """About GRID_N*GRID_N points spread over bbox, keeping the cells square-ish."""
+    la0, lo0, la1, lo1 = bbox
+    w = (lo1 - lo0) * max(0.2, math.cos(math.radians((la0 + la1) / 2)))
+    h = max(1e-6, la1 - la0)
+    total = GRID_N * GRID_N
+    ny = max(6, min(30, round(math.sqrt(total * h / max(w, 1e-6)))))
+    nx = max(6, min(30, round(total / ny)))
+    lats = [la0 + (la1 - la0) * j / (ny - 1) for j in range(ny)]
+    lons = [lo0 + (lo1 - lo0) * i / (nx - 1) for i in range(nx)]
+    return lats, lons, nx, ny
+
+# The app says which area and which grids it is looking at
+# (weather/<vessel>-gridview: bbox, models, at). The Pi pulls that area,
+# and only those grids, so panning to a new area costs 2-3 grids, not 8.
+VIEW_URL = f"{W.FS}/weather/{W.VESSEL_ID}-gridview"
+VIEW_IDLE_S = 2 * 86400     # nobody has looked for 2 days: stop refreshing
+
+def clamp_bbox(b):
+    la0, lo0, la1, lo1 = b
+    la0, la1 = max(-80.0, min(la0, la1)), min(80.0, max(la0, la1))
+    if la1 - la0 < 1.0: c = (la0 + la1) / 2; la0, la1 = c - 0.5, c + 0.5
+    if lo1 - lo0 < 1.0: c = (lo0 + lo1) / 2; lo0, lo1 = c - 0.5, c + 0.5
+    if la1 - la0 > 40: c = (la0 + la1) / 2; la0, la1 = c - 20, c + 20
+    if lo1 - lo0 > 60: c = (lo0 + lo1) / 2; lo0, lo1 = c - 30, c + 30
+    return (round(la0, 3), round(lo0, 3), round(la1, 3), round(lo1, 3))
+
+def target():
+    """(bbox, set of grid names to keep fresh, place label, request time s)."""
+    try:
+        f = W.get_json(VIEW_URL, retries=0).get("fields", {})
+        at = (W.num(f.get("at")) or 0) / 1000.0
+        bbox = json.loads((f.get("bbox") or {}).get("stringValue") or "null")
+        models = json.loads((f.get("models") or {}).get("stringValue") or "null")
+        if bbox and models:
+            return clamp_bbox(bbox), set(models), "view", at
+    except Exception:
+        pass
+    lat0, lon0, place = W.forecast_position()
+    return clamp_bbox(default_bbox(lat0, lon0)), None, place, 0.0
 
 def fetch_grid(base_url, extra, varlist, lats, lons):
     """Returns (epoch-hour list, {key: [per-point hourly lists]}) or raises."""
@@ -89,10 +128,9 @@ def fetch_grid(base_url, extra, varlist, lats, lons):
         time.sleep(1.0)       # be polite to the free API
     return times or [], series
 
-def pack(times, series, varlist, convert=None):
+def pack(times, series, varlist, convert, npts):
     now = time.time()
     keep = [i for i, t in enumerate(times) if (t // 3600) % STEP_H == 0 and t >= now - 3 * 3600]
-    npts = GRID_N * GRID_N
     fields, anyval = {}, False
     for v, k, off, step in varlist:
         buf = bytearray(len(keep) * npts)
@@ -119,31 +157,33 @@ def write(name, meta, fields):
         return r.status
 
 def last_pull(name):
-    """(seconds since epoch of the last pull, (lat, lon) it was centred on)."""
+    """(seconds since epoch of the last pull, bbox it covered)."""
     try:
         f = W.get_json(doc_url(name) + "?mask.fieldPaths=meta", retries=0).get("fields", {})
         m = json.loads((f.get("meta") or {}).get("stringValue") or "{}")
-        return (m.get("at") or 0) / 1000.0, tuple(m.get("center") or (None, None))
+        return (m.get("at") or 0) / 1000.0, tuple(m.get("bbox") or ())
     except Exception:
-        return 0.0, (None, None)
+        return 0.0, ()
 
-MOVE_NM   = 30        # re-pull when the forecast spot is this far from the grid centre
-MIN_GAP_S = 20 * 60   # ...but never re-pull one model more often than this
+MIN_GAP_S = 60        # never re-pull one grid more often than this
 
 def pull_all(force=False):
-    lat0, lon0, place = W.forecast_position()
-    lats, lons, bbox = grid_points(lat0, lon0)
+    bbox, wanted, place, req_at = target()
+    if wanted is not None and time.time() - req_at > VIEW_IDLE_S and not force:
+        return                                       # nobody is looking - save the API budget
+    lats, lons, nx, ny = grid_points(bbox)
     jobs = [(mid, apis) for mid, apis in W.FC_MODELS] + [("marine", None)]
     for name, apis in jobs:
+        if wanted is not None and name not in wanted:
+            continue
         if not force:
-            at, (clat, clon) = last_pull(name)
+            at, old_bbox = last_pull(name)
             age = time.time() - at
-            moved = clat is None or W.haversine(clat, clon, lat0, lon0) / 1.852 > MOVE_NM
-            if age < REFRESH_H * 3600 * 0.9 and not (moved and age > MIN_GAP_S):
+            elsewhere = tuple(round(x, 3) for x in old_bbox) != bbox
+            if age < REFRESH_H * 3600 * 0.9 and not (elsewhere and age > MIN_GAP_S):
                 continue
         varlist = MARINE if name == "marine" else ATMOS
-        meta = {"at": int(time.time() * 1000), "bbox": [round(b, 4) for b in bbox], "nx": GRID_N, "ny": GRID_N,
-                "center": [round(lat0, 4), round(lon0, 4)], "place": place,
+        meta = {"at": int(time.time() * 1000), "bbox": list(bbox), "nx": nx, "ny": ny, "place": place,
                 "vars": {k: [off, step] for _, k, off, step in varlist}, "ok": False}
         try:
             if name == "marine":
@@ -163,19 +203,21 @@ def pull_all(force=False):
                         err = str(e)[:120]
                 if used is None: raise RuntimeError(err)
                 conv, meta["api"] = None, used
-            t, fields, anyval = pack(times, series, varlist, conv)
+            t, fields, anyval = pack(times, series, varlist, conv, nx * ny)
             meta.update(times=t, ok=anyval, err="" if anyval else "no coverage here")
             st = write(name, meta, fields)
             size = sum(len(f["stringValue"]) for f in fields.values()) // 1024
             print(f"grid {name}: {meta.get('api')} {len(t)} steps, {size} KB, {'ok' if anyval else 'no data'} [{st}]", flush=True)
         except Exception as e:
             print(f"grid {name}: FAILED {e}", flush=True)
-            meta.update(err=str(e)[:160], times=[])
+            # Stamped as if pulled a while ago, so it is retried in ~15 min
+            # rather than every 30 s (or not for 6 hours).
+            meta.update(err=str(e)[:160], times=[], at=int((time.time() - REFRESH_H * 3600 * 0.9 + 900) * 1000))
             try: write(name, meta, {})
             except Exception: pass
 
 def run():
-    print(f"wxgrid: {GRID_N}x{GRID_N}, +/-{GRID_HALF} deg, every {REFRESH_H} h, {GRID_DAYS} days", flush=True)
+    print(f"wxgrid: ~{GRID_N}x{GRID_N} points over the area the app is viewing, every {REFRESH_H} h, {GRID_DAYS} days", flush=True)
     while True:
         try:
             pull_all()
@@ -184,7 +226,7 @@ def run():
         # Checked every 2 minutes so a new forecast location is picked up
         # quickly; each model is only re-pulled when it is REFRESH_H old or
         # the spot has moved more than MOVE_NM from its grid.
-        time.sleep(120)
+        time.sleep(30)
 
 if __name__ == "__main__":
     if "--now" in sys.argv: pull_all(force=True)

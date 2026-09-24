@@ -311,7 +311,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 #view-maps { overflow:hidden; display:none; flex-direction:column; }
 #view-maps.active { display:flex; }
 .wm-stage { position:relative; flex:1; overflow:hidden; background:var(--bg); }
-.wm-wrap { position:absolute; inset:0; }
+.wm-wrap { position:absolute; left:0; top:0; width:100%; height:100%; overflow:hidden; }
 .wm-map { position:absolute; inset:0; background:#9fb7c9; }
 .wm-cv { position:absolute; left:0; top:0; }
 .wm-top { position:absolute; top:10px; left:0; right:0; z-index:800; pointer-events:none; }
@@ -342,12 +342,17 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 #wmOpt { max-height:80%; z-index:900; }
 .wm-pop .leaflet-popup-content { margin:8px 10px; font-size:13px; }
 
+.wm-status { position:absolute; left:50%; top:112px; transform:translateX(-50%); z-index:800; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; display:none; white-space:nowrap; box-shadow:var(--shadow); }
+.wm-status.show { display:block; }
 /* forecast location */
 .loc-chip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; color:var(--ink); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .wm-toprow { display:flex; justify-content:center; gap:8px; align-items:center; padding:0 10px; }
 .wm-toprow .seg.wxmode { width:170px; margin:0; flex:none; }
 .wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:170px; }
-.loc-sheet { position:fixed; z-index:950; max-height:85%; }
+.loc-sheet { position:fixed; z-index:950; max-height:88%; }
+.pl-map { position:relative; height:190px; border-radius:10px; overflow:hidden; margin-top:10px; border:1px solid var(--line); }
+.pl-map #plMap { position:absolute; inset:0; }
+.pl-map svg { position:absolute; left:50%; top:50%; width:34px; height:34px; margin:-17px 0 0 -17px; z-index:500; pointer-events:none; }
 .loc-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid var(--line); }
 .loc-row:first-child { border-top:0; }
 .loc-row .pick { flex:1; text-align:left; display:flex; align-items:center; gap:10px; min-width:0; }
@@ -466,8 +471,6 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
       <div class="fc-wrap" id="fcBox"></div>
       <p class="note" id="fcMeta" style="margin:8px 4px 0;"></p>
       <p class="note" style="margin:4px 4px 0;">Tap a model to make it the one shown in collapsed rows (marked by the coloured edge). Tap a row name to expand every model. Shaded columns are night.</p>
-      <div class="section-title" id="wxFcTitle">NWS forecast</div>
-      <div class="list" id="wxFc"></div>
       <div class="section-title" id="wxTideTitle">Tides</div>
       <div class="list" id="wxTides"></div>
       <div class="section-title">Sun &amp; moon</div>
@@ -481,6 +484,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
         <div class="wm-wrap" id="wmWrapA"><div class="wm-map" id="wmMapA"></div></div>
         <div class="wm-wrap" id="wmWrapB"><div class="wm-map" id="wmMapB"></div></div>
         <div class="wm-divider" id="wmDivider" style="display:none"><span>‹ ›</span></div>
+        <div class="wm-status" id="wmStatus"></div>
         <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Forecast</button><button class="on">Maps</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
         <button class="wm-side" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
         <button class="wm-side r" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
@@ -1633,15 +1637,6 @@ function paintWeather() {
   $('wxNow').innerHTML = `<div class="wx-now"><div style="font-size:44px">${wxIcon(str(w.nowSky))}</div>
     <div class="t">${t !== null ? t + '°' : '--'}</div>
     <div class="d"><b>${esc(str(w.nowSky))}</b>${esc(str(w.nowWind))}${pr !== null ? `<br>${pr.toFixed(0)} mb ${arrow} ${esc(tr)}` : ''}</div></div>`;
-  const src = str(w.forecastFrom);
-  $('wxFcTitle').textContent = 'Forecast' + (src && src !== 'boat position' ? ' · ' + src : '');
-  const days = str(w.forecast).split(' | ').filter(Boolean);
-  $('wxFc').innerHTML = days.length ? days.map(d => {
-    const m = d.match(/^(\w+):\s*(-?\d+)°\s*(.*)$/);
-    if (!m) return `<div class="fc-row"><span></span><span>${esc(d)}</span><span></span></div>`;
-    const rest = m[3], wm = rest.match(/^([NESW]{0,3})\s*(\d+)kt\s*(.*)$/);
-    return `<div class="fc-row"><b>${esc(m[1])}</b><span>${wxIcon(wm ? wm[3] : rest)} ${esc(wm ? wm[3] : rest)}<br><span class="note">${wm ? esc(wm[1] + ' ' + wm[2] + ' kn') : ''}</span></span><b>${m[2]}°</b></div>`;
-  }).join('') : '<div class="fc-row"><span></span><span class="note">No forecast</span><span></span></div>';
   const fa = num(w.forecastAt);
   const stn = str(w.tideStation), nm = num(w.tideStationNm);
   $('wxTideTitle').textContent = 'Tides' + (stn ? ' · ' + stn.replace(/\b\w/g, c => c.toUpperCase()).replace(/\B\w+/g, x => x.toLowerCase()) : '') + (nm !== null ? ` (${nm < 1 ? 'here' : nm.toFixed(0) + ' nm'})` : '');
@@ -1868,16 +1863,17 @@ const WM_LAYERS = [
   { id: 'temp', label: 'Air Temp', ico: '🌡', key: 'ta', unit: '°F', stops: 'temp' },
   { id: 'sst', label: 'Sea Temp', ico: '🌊', key: 'st', unit: '°F', stops: 'temp', marine: true }
 ];
-const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true };
+const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5 };
 function wmPrefsFromCfg(c) {
   const side = (v, d) => { const [m, l] = str(v).split('|'); if (MODELS.some(x => x.id === m)) d.model = m; if (WM_LAYERS.some(x => x.id === l)) d.layer = l; };
   if (c.wmA) side(c.wmA, WMP.a);
   if (c.wmB) side(c.wmB, WMP.b);
   if (c.wmSplit !== undefined) WMP.split = bool(c.wmSplit);
   if (c.wmFlow !== undefined) WMP.flow = bool(c.wmFlow);
+  if (c.wmSpeed !== undefined) WMP.speed = num(c.wmSpeed) || .5;
 }
 function wmSavePrefs() {
-  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow) });
+  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed) });
 }
 
 // ─── colour helpers ─────────────────────────────────────────────
@@ -1902,7 +1898,7 @@ function rampColor(stops, v, out) {
 const GRIDS = {};   // memory only, for this visit
 async function loadGrid(name) {
   const g = GRIDS[name];
-  if (g && (g.loading || Date.now() - g.fetched < 20 * 60000)) return g.loading || g;
+  if (g && (g.loading || Date.now() - g.fetched < 20 * 60000) && !g.stale) return g.loading || g;
   const p = (async () => {
     try {
       const r = await fetch(`${FSB}/weather/${VESSEL}-grid-${name}`, { cache: 'no-store' });
@@ -1917,7 +1913,7 @@ async function loadGrid(name) {
         for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
         bytes[k] = u;
       }
-      return (GRIDS[name] = { meta, bytes, fetched: Date.now(), cache: {} });
+      return (GRIDS[name] = { meta, bytes, fetched: Date.now(), cache: {} });   // replaces any stale entry
     } catch (e) {
       return (GRIDS[name] = { error: String(e.message || e), fetched: Date.now() - 19 * 60000 });
     }
@@ -1997,8 +1993,9 @@ function initMaps() {
     map.on('zoomstart movestart', () => { side.pctx.clearRect(0, 0, flow.width, flow.height); side.parts = []; });
     map.on('click', e => wmReadout(side, e.latlng));
   }
-  const p = fcPosition();
-  WM.sides.forEach(s => s.map.setView([p.lat, p.lon], 7, { animate: false }));
+  const p = forecastTarget();
+  WM.sides.forEach(s => s.map.setView([p.lat, p.lon], 6.5, { animate: false }));
+  WM.sides.forEach(s => s.map.on('moveend', wmMaybeAsk));
   if (window.ResizeObserver) new ResizeObserver(() => { if (WM.ready) wmLayout(); }).observe($('wmStage'));
   // divider drag
   const div = $('wmDivider');
@@ -2034,25 +2031,40 @@ function wmLayout() {
   if (!WM.divY) WM.divY = r.height / 2;
   WM.divX = Math.max(40, Math.min(r.width - 40, WM.divX));
   WM.divY = Math.max(140, Math.min(r.height - 110, WM.divY));
+  // Two real maps, each showing the same area: stacked top/bottom on a
+  // tall screen, side by side on a wide one. The divider only resizes them.
   const A = $('wmWrapA').style, B = $('wmWrapB').style, D = $('wmDivider');
-  D.classList.toggle('h', st);
-  if (st) {
-    Object.assign(A, { top: '0px', bottom: 'auto', height: WM.divY + 'px' });
-    Object.assign(B, { top: WM.divY + 'px', bottom: 'auto', height: (r.height - WM.divY) + 'px', clipPath: 'none' });
-    D.style.left = ''; D.style.top = WM.divY + 'px';
+  const sp = WMP.split, tall = wmStacked();
+  D.classList.toggle('h', tall);
+  const px = v => v + 'px';
+  if (!sp) {
+    Object.assign(A, { left: '0px', top: '0px', width: px(r.width), height: px(r.height) });
+  } else if (tall) {
+    Object.assign(A, { left: '0px', top: '0px', width: px(r.width), height: px(WM.divY) });
+    Object.assign(B, { left: '0px', top: px(WM.divY), width: px(r.width), height: px(r.height - WM.divY) });
+    D.style.left = ''; D.style.top = px(WM.divY);
   } else {
-    Object.assign(A, { top: '0px', bottom: '0px', height: 'auto' });
-    Object.assign(B, { top: '0px', bottom: '0px', height: 'auto', clipPath: `inset(0 0 0 ${WM.divX}px)` });
-    D.style.top = ''; D.style.left = WM.divX + 'px';
+    Object.assign(A, { left: '0px', top: '0px', width: px(WM.divX), height: px(r.height) });
+    Object.assign(B, { left: px(WM.divX), top: '0px', width: px(r.width - WM.divX), height: px(r.height) });
+    D.style.top = ''; D.style.left = px(WM.divX);
   }
-  B.display = WMP.split ? '' : 'none';
-  D.style.display = WMP.split ? '' : 'none';
-  $('wmBtnB').style.display = WMP.split ? '' : 'none';
-  $('wmBtnB').style.top = st ? (WM.divY + 10) + 'px' : '';
-  $('wmBtnB').classList.toggle('r', !st);
-  $('wmLegB').style.display = WMP.split ? '' : 'none';
-  $('wmLegB').classList.toggle('r', !st);
-  Object.assign($('wmLegA').style, st ? { top: (WM.divY - 46) + 'px', bottom: 'auto' } : { top: '', bottom: '' });
+  B.clipPath = 'none';
+  B.display = sp ? '' : 'none';
+  D.style.display = sp ? '' : 'none';
+  const bB = $('wmBtnB').style, lA = $('wmLegA').style, lB = $('wmLegB').style;
+  bB.display = sp ? '' : 'none'; lB.display = sp ? '' : 'none';
+  $('wmBtnB').classList.remove('r'); $('wmLegB').classList.remove('r');
+  if (sp && tall) {
+    Object.assign(bB, { top: px(WM.divY + 10), left: '10px', right: 'auto' });
+    Object.assign(lA, { top: px(WM.divY - 46), bottom: 'auto' });
+    Object.assign(lB, { left: '10px', right: 'auto', bottom: '10px', top: 'auto' });
+  } else if (sp) {
+    Object.assign(bB, { top: '', left: px(WM.divX + 10), right: 'auto' });
+    Object.assign(lA, { top: '', bottom: '' });
+    Object.assign(lB, { left: px(WM.divX + 10), right: 'auto', bottom: '10px', top: 'auto' });
+  } else {
+    Object.assign(lA, { top: '', bottom: '' });
+  }
   $('wmSplitBtn').classList.toggle('on', WMP.split);
   WM.sides.forEach(s => {
     const c = s.map.getContainer(), w = c.clientWidth, hh = c.clientHeight;
@@ -2076,13 +2088,8 @@ async function wmRefreshData() {
   let ti = prevT ? WM.steps.findIndex(t => t >= prevT) : WM.steps.findIndex(t => t >= nowS - 5400);
   WM.ti = Math.max(0, ti);
   $('wmTime').max = Math.max(0, WM.steps.length - 1); $('wmTime').value = WM.ti;
-  // First data this visit: frame the whole forecast box.
-  const g0 = GRIDS[names[0]];
-  if (!WM.framed && g0 && g0.meta && g0.meta.bbox) {
-    WM.framed = true; const [a, b, c, d] = g0.meta.bbox;
-    WM.sides[0].map.fitBounds([[a, b], [c, d]], { padding: [10, 60], animate: false }); wmSync(WM.sides[0]);
-  }
   wmPaintTime(); wmPaintButtons(); wmDrawAll(true); wmDrawBoxes();
+  wmMaybeAsk();
 }
 function wmStepIndex(g) {
   const t = WM.steps[WM.ti]; if (!g || !g.meta || !g.meta.times || t === undefined) return -1;
@@ -2193,13 +2200,14 @@ function wmAnimate() {
   WM.sides.forEach((s, k) => {
     if (k === 1 && !WMP.split) return;
     const ctx = s.pctx, W_ = s.flow.width, H_ = s.flow.height;
-    ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = 'rgba(0,0,0,.90)'; ctx.fillRect(0, 0, W_, H_);
+    ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = 'rgba(0,0,0,.93)'; ctx.fillRect(0, 0, W_, H_);
     ctx.globalCompositeOperation = 'source-over';
     const cur = s.cur; if (!cur || !cur.flow) { if (s.parts.length) { s.parts = []; ctx.clearRect(0, 0, W_, H_); } return; }
     const want = Math.round(W_ * H_ / 1100);
     while (s.parts.length < want) s.parts.push({ x: Math.random() * W_, y: Math.random() * H_, age: Math.random() * 80 | 0 });
     ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.1; ctx.beginPath();
-    const k0 = cur.lay.flow === 'current' ? .9 : .16;
+    // px per frame per knot; currents are slow so they get a bigger factor.
+    const k0 = (cur.lay.flow === 'current' ? .5 : .07) * WMP.speed;
     for (const p of s.parts) {
       const ll = s.map.containerPointToLatLng([p.x, p.y]);
       const u = sampleAt(cur.g, cur.flow.u, ll.lat, ll.lng), v = sampleAt(cur.g, cur.flow.v, ll.lat, ll.lng);
@@ -2222,6 +2230,76 @@ function wmReadout(s, ll) {
     .setContent(`<b>${cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}</b><br>${txt}`).openOn(s.map);
 }
 
+// ─── asking the Pi for the area on screen ──────────────────────
+// The Pi pulls grids for whatever area the maps are showing. When the
+// screen isn't covered (panned away, zoomed far out, or zoomed so far in
+// that the grid is too coarse), the app writes the visible area to
+// weather/<vessel>-gridview and the Pi pulls just the grids on display.
+const GRIDVIEW_URL = `${FSB}/weather/${VESSEL}-gridview`;
+function wmNames() { const n = [wmGridName(WMP.a)]; if (WMP.split) n.push(wmGridName(WMP.b)); return [...new Set(n)]; }
+function wmViewBounds() {
+  let b = null;
+  WM.sides.forEach((s, k) => {
+    if (k === 1 && !WMP.split) return;
+    const sb = s.map.getBounds();
+    b = b ? b.extend(sb) : L.latLngBounds(sb.getSouthWest(), sb.getNorthEast());
+  });
+  return b;
+}
+function wmNeedsArea() {
+  const v = wmViewBounds(); if (!v) return false;
+  const vs = v.getSouth(), vw = v.getWest(), vn = v.getNorth(), ve = v.getEast(), va = Math.max(1e-6, (vn - vs) * (ve - vw));
+  for (const n of wmNames()) {
+    const g = GRIDS[n];
+    if (!g || g.loading) continue;
+    if (!g.meta || !g.meta.bbox || !g.meta.times || !g.meta.times.length) return true;
+    if (Date.now() - g.meta.at > 7 * 3600e3) return true;
+    const [a, b, c, d] = g.meta.bbox;
+    const ix = Math.max(0, Math.min(ve, d) - Math.max(vw, b)), iy = Math.max(0, Math.min(vn, c) - Math.max(vs, a));
+    if (ix * iy / va < .8) return true;
+    if ((c - a) > 4 * (vn - vs) && (vn - vs) > .5) return true;   // zoomed right in
+  }
+  return false;
+}
+let wmAskT = null;
+function wmMaybeAsk() { clearTimeout(wmAskT); wmAskT = setTimeout(() => wmAsk(false), 1500); }
+async function wmAsk(force) {
+  if (!WM.ready || !$('view-maps').classList.contains('active')) return;
+  if (!force && (WM.pending || !wmNeedsArea())) return;
+  const wait = 90000 - (Date.now() - (WM.askedAt || 0));
+  if (wait > 0 && !force) { clearTimeout(wmAskT); wmAskT = setTimeout(() => wmAsk(false), wait); return; }
+  const v = wmViewBounds().pad(.15);
+  const bbox = [v.getSouth(), v.getWest(), v.getNorth(), v.getEast()].map(x => +x.toFixed(3));
+  const names = wmNames();
+  const now = Date.now();
+  try {
+    const r = await fetch(GRIDVIEW_URL + '?updateMask.fieldPaths=bbox&updateMask.fieldPaths=models&updateMask.fieldPaths=at', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields: { bbox: fS(JSON.stringify(bbox)), models: fS(JSON.stringify(names)), at: fI(now) } }) });
+    if (!r.ok) throw new Error();
+  } catch (e) { toast('Could not reach the cloud'); return; }
+  WM.askedAt = now; WM.pending = { at: now, names };
+  wmPaintStatus(); wmPollPending();
+}
+function wmPaintStatus() {
+  const el = $('wmStatus'); if (!el) return;
+  if (WM.pending) { el.textContent = Date.now() - WM.pending.at > 6 * 60000 ? 'The boat hasn\'t answered — is the Pi online?' : '⟳ Boat is pulling this area…'; el.classList.add('show'); }
+  else el.classList.remove('show');
+}
+async function wmPollPending() {
+  clearTimeout(WM.pollT);
+  const p = WM.pending; if (!p) return;
+  WM.pollT = setTimeout(async () => {
+    if (WM.pending !== p) return;
+    p.names.forEach(n => { if (GRIDS[n]) GRIDS[n].stale = true; });
+    await Promise.all(p.names.map(loadGrid));
+    const done = p.names.every(n => GRIDS[n] && GRIDS[n].meta && GRIDS[n].meta.at >= p.at - 5000);
+    if (done || Date.now() - p.at > 10 * 60000) { WM.pending = null; if (done) wmRefreshData(); }
+    else if (p.names.some(n => GRIDS[n] && GRIDS[n].meta && GRIDS[n].meta.at >= p.at - 5000)) wmRefreshData();
+    wmPaintStatus(); if (WM.pending) wmPollPending();
+  }, 15000);
+}
+
 // ─── controls ───────────────────────────────────────────────────
 let wmEditing = 0;
 function wmOpenOptions(k) {
@@ -2234,7 +2312,10 @@ function wmOpenOptions(k) {
     <div class="wm-h">Forecast model${lay.marine ? ' <small>(waves, currents and sea temperature come from one marine model)</small>' : ''}</div>
     <div class="wm-grid">${MODELS.map(m => `<button class="wm-opt ${m.id === cfg.model ? 'on' : ''}" ${lay.marine ? 'disabled' : ''} onclick="wmPick('model','${m.id}')">${m.label}</button>`).join('')}</div>
     <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Split screen</b><small>Two maps, drag the divider to compare</small></div><span class="switch"><input type="checkbox" ${WMP.split ? 'checked' : ''} onchange="wmSetSplit(this.checked)"><span></span></span></label>
-    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Animated flow</b><small>Moving streaks on wind, gust and currents</small></div><span class="switch"><input type="checkbox" ${WMP.flow ? 'checked' : ''} onchange="WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)"><span></span></span></label>`;
+    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Animated flow</b><small>Moving streaks on wind, gust and currents</small></div><span class="switch"><input type="checkbox" ${WMP.flow ? 'checked' : ''} onchange="WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)"><span></span></span></label>
+    <div class="wm-h">Animation speed</div>
+    <div class="seg" id="wmSpeedSeg">${[.25, .5, 1, 2].map(v => `<button class="${WMP.speed === v ? 'on' : ''}" onclick="WMP.speed=${v};wmSavePrefs();wmOpenOptions(wmEditing)">${v}×</button>`).join('')}</div>
+    <div style="height:10px"></div>`;
   $('wmOpt').classList.add('open');
 }
 function wmPick(what, id) {
@@ -2243,7 +2324,7 @@ function wmPick(what, id) {
 }
 function wmSetSplit(on) {
   WMP.split = on; wmSavePrefs(); wmLayout(); wmRefreshData();
-  if (on) toast('Drag the white divider to compare');
+  if (on) toast('Both maps show the same area — drag the divider to resize');
 }
 function wmTogglePlay() {
   if (WM.playing) { clearInterval(WM.playing); WM.playing = null; $('wmPlay').textContent = '▶'; return; }
@@ -2304,26 +2385,59 @@ function renderLoc() {
     <div class="list">${rows.join('')}</div>
     <div class="section-title">Add a place</div>
     <div class="card pad">
-      <label class="in-label" for="plName" style="margin-top:0">Name</label>
+      <input class="text-in" id="plSearch" type="search" placeholder="Search a town, harbor or island" autocomplete="off" spellcheck="false">
+      <div class="list" id="plResults" style="margin-top:8px;display:none"></div>
+      <div class="pl-map"><div id="plMap"></div>
+        <svg viewBox="0 0 38 38"><circle cx="19" cy="19" r="8" fill="none" stroke="#c6372c" stroke-width="2.5"/><path d="M19 0v12M19 26v12M0 19h12M26 19h12" stroke="#c6372c" stroke-width="2.5"/></svg></div>
+      <p class="note" style="margin-top:6px;">Search, or drag the map until the crosshair is on the spot.</p>
+      <label class="in-label" for="plName">Name</label>
       <input class="text-in" id="plName" placeholder="e.g. Camden Harbor" autocomplete="off">
       <label class="in-label" for="plPos">Position</label>
       <input class="text-in" id="plPos" placeholder="N 44 12.5  W 69 03.6" autocomplete="off" autocapitalize="characters" spellcheck="false">
-      <p class="note" id="plParsed" style="margin-top:6px;">Paste or type a position in any format.</p>
-      <div class="btn-row" style="margin-top:8px;"><button class="btn" onclick="plFill('boat')">Use boat position</button>${WM.ready && $('view-maps').classList.contains('active') ? `<button class="btn" onclick="plFill('map')">Use map centre</button>` : ''}</div>
+      <p class="note" id="plParsed" style="margin-top:6px;">Or type or paste a position in any format.</p>
       <button class="btn primary block" style="margin-top:8px;" onclick="addPlace()">Save and use</button>
     </div>
     <p class="note" style="margin:10px 4px 0;">Sets where the forecast table and maps are for. The boat pulls the new forecast — the table in about a minute, the maps in a few minutes. The "Now" summary always stays at the boat.</p>`;
+  // Mini map: the crosshair is the new place. Dragging it fills in the
+  // position; typing a position (or picking a search result) moves it.
+  if (plMap) { plMap.remove(); plMap = null; }
+  const t = forecastTarget();
+  plMap = L.map('plMap', { zoomControl: false, attributionControl: false }).setView([t.lat, t.lon], 8, { animate: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(plMap);
+  setTimeout(() => plMap && plMap.invalidateSize(), 320);
+  let fromTyping = false;
+  plMap.on('moveend', () => {
+    if (fromTyping) { fromTyping = false; return; }
+    const c = plMap.getCenter();
+    $('plPos').value = `${fmtCoord(c.lat, true)} ${fmtCoord(c.lng, false)}`;
+    $('plParsed').textContent = 'From the map crosshair.';
+  });
   $('plPos').addEventListener('input', () => {
     const p = parsePair($('plPos').value);
-    $('plParsed').textContent = p ? `${fmtCoord(p.lat, true)}  ${fmtCoord(p.lon, false)}` : ($('plPos').value.trim() ? 'Can\'t read that position yet' : 'Paste or type a position in any format.');
+    $('plParsed').textContent = p ? `${fmtCoord(p.lat, true)}  ${fmtCoord(p.lon, false)}` : ($('plPos').value.trim() ? 'Can\'t read that position yet' : 'Or type or paste a position in any format.');
+    if (p) { fromTyping = true; plMap.setView([p.lat, p.lon], Math.max(plMap.getZoom(), 9), { animate: false }); }
   });
+  let st = null;
+  $('plSearch').addEventListener('input', () => { clearTimeout(st); st = setTimeout(plSearch, 350); });
 }
-function plFill(src) {
-  let p = null;
-  if (src === 'boat' && S.pos) p = { lat: S.pos.lat, lon: S.pos.lon };
-  if (src === 'map' && WM.ready) { const c = WM.sides[0].map.getCenter(); p = { lat: c.lat, lon: c.lng }; }
-  if (!p) { toast('No position available'); return; }
-  $('plPos').value = `${fmtCoord(p.lat, true)} ${fmtCoord(p.lon, false)}`; $('plPos').dispatchEvent(new Event('input'));
+let plMap = null, plHits = [];
+// Place names from Open-Meteo's geocoder: a lookup only, nothing is kept.
+async function plSearch() {
+  const q = $('plSearch').value.trim(), box = $('plResults');
+  if (q.length < 2) { box.style.display = 'none'; return; }
+  try {
+    const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`);
+    plHits = ((await r.json()).results || []);
+  } catch (e) { plHits = []; }
+  box.style.display = '';
+  box.innerHTML = plHits.length ? plHits.map((h, i) => `<button class="row" onclick="plPick(${i})"><div class="txt"><b>${esc(h.name)}</b><small>${esc([h.admin1, h.country].filter(Boolean).join(', '))}</small></div><span class="chev">›</span></button>`).join('')
+    : '<div class="row"><div class="txt"><small>No matches — try a nearby town, or use the map.</small></div></div>';
+}
+function plPick(i) {
+  const h = plHits[i]; if (!h) return;
+  $('plName').value = h.name;
+  $('plResults').style.display = 'none'; $('plSearch').value = '';
+  plMap.setView([h.latitude, h.longitude], 11, { animate: false });
 }
 async function addPlace() {
   const name = $('plName').value.trim(), p = parsePair($('plPos').value);
@@ -2353,8 +2467,7 @@ function afterPlaceChange() {
   requestForecast();
   // Throw away this visit's map grids; the Pi re-centres them within a few minutes.
   for (const k in GRIDS) delete GRIDS[k];
-  WM.framed = false;
-  if (WM.ready) { wmRefreshData(); setTimeout(() => { for (const k in GRIDS) delete GRIDS[k]; if ($('view-maps').classList.contains('active')) wmRefreshData(); }, 4 * 60000); }
+  if (WM.ready) { const t = forecastTarget(); WM.sides[0].map.setView([t.lat, t.lon], 7, { animate: false }); wmSync(WM.sides[0]); wmRefreshData(); }
   paintForecast();
 }
 
