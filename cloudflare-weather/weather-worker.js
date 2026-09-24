@@ -45,6 +45,7 @@ export default {
   },
   async fetch(request, env) {
     const e = cfg(env), u = new URL(request.url);
+    if (u.pathname === '/wpc') return wpcRelay(request, u);
     try {
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
@@ -54,6 +55,21 @@ export default {
     } catch (err) { return json({ ok: false, error: String(err && err.stack || err) }, 500); }
   }
 };
+
+// Relay for NOAA WPC chart files (fronts & pressure). WPC doesn't answer
+// GitHub's build machines, so the map build fetches through here.
+// Only WPC /kml/ files are passed through.
+async function wpcRelay(request, u) {
+  let t;
+  try { t = new URL(u.searchParams.get('u') || ''); } catch { return new Response('bad url', { status: 400 }); }
+  if (t.protocol !== 'https:' || !/(^|\.)wpc\.ncep\.noaa\.gov$/.test(t.hostname) || !t.pathname.startsWith('/kml/'))
+    return new Response('not allowed', { status: 403 });
+  const r = await fetch(t.toString(), { method: request.method === 'HEAD' ? 'HEAD' : 'GET',
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; harvest-watch)' } });
+  const h = new Headers();
+  for (const k of ['content-type', 'last-modified']) { const v = r.headers.get(k); if (v) h.set(k, v); }
+  return new Response(request.method === 'HEAD' ? null : r.body, { status: r.status, headers: h });
+}
 
 function cfg(env) {
   const t = v => typeof v === 'string' ? v.trim() : v;

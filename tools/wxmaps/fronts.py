@@ -56,26 +56,28 @@ def _parse_time(s):
 BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/128.0 Safari/537.36 harvest-watch")
 
-def wpc_get(url, tries=3):
-    """GET from WPC with a browser-like User-Agent (WPC refuses unusual ones).
-    Tries www. and origin. hosts. Logs why a fetch failed."""
+# WPC doesn't answer GitHub's build machines (connections time out), so
+# files are fetched through the harvest-weather Cloudflare worker's /wpc relay.
+RELAY = os.environ.get("WPC_RELAY", "https://harvest-weather.sailingharvestmoon.workers.dev/wpc?u=")
+
+def _via(url, relay):
+    return RELAY + urllib.parse.quote(url, safe="") if relay else url
+
+def wpc_get(url, tries=2):
     import urllib.request, urllib.error
-    hosts = [url]
-    if "://www.wpc." in url: hosts.append(url.replace("://www.wpc.", "://origin.wpc."))
-    elif "://origin.wpc." in url: hosts.append(url.replace("://origin.wpc.", "://www.wpc."))
     why = ""
-    for u in hosts:
-        for k in range(tries):
+    for relay, timeout in ((True, 60), (False, 15)):
+        for k in range(tries if relay else 1):
             try:
-                req = urllib.request.Request(u, headers={"User-Agent": BROWSER_UA, "Accept": "*/*"})
-                with urllib.request.urlopen(req, timeout=60) as r:
+                req = urllib.request.Request(_via(url, relay), headers={"User-Agent": BROWSER_UA, "Accept": "*/*"})
+                with urllib.request.urlopen(req, timeout=timeout) as r:
                     return r.read()
             except urllib.error.HTTPError as e:
-                why = f"HTTP {e.code}"
+                why = f"HTTP {e.code} ({'relay' if relay else 'direct'})"
                 if e.code in (403, 404): break
             except Exception as e:
-                why = str(e)
-            time.sleep(2 * (k + 1))
+                why = f"{e} ({'relay' if relay else 'direct'})"
+            time.sleep(2)
     print(f"fronts: fetch failed {url.rsplit('/', 1)[-1]}: {why}", flush=True)
     return None
 
@@ -120,7 +122,7 @@ def collect(http, url, kind, depth=0, out=None):
 def _last_modified(url):
     import urllib.request, email.utils
     try:
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": BROWSER_UA})
+        req = urllib.request.Request(_via(url, True), method="HEAD", headers={"User-Agent": BROWSER_UA})
         with urllib.request.urlopen(req, timeout=30) as r:
             lm = r.headers.get("Last-Modified")
         return email.utils.parsedate_to_datetime(lm).timestamp() if lm else None
