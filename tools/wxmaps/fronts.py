@@ -88,6 +88,43 @@ def collect(http, url, kind, depth=0, out=None):
                         "bounds": [s_, w, n, e], "rot": float(_text(box, "rotation") or 0)})
     return out
 
+# WPC's KMLs carry no valid times - only names like "12Z Surface Analysis",
+# "36-hour forecast" or "Day 5". The valid time is worked out from the name
+# plus the image's Last-Modified time on WPC's server.
+def _last_modified(url):
+    import urllib.request, email.utils
+    try:
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "harvest-watch wxmaps"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            lm = r.headers.get("Last-Modified")
+        return email.utils.parsedate_to_datetime(lm).timestamp() if lm else None
+    except Exception:
+        return None
+
+def _floor(ts, hours):
+    step = hours * 3600
+    return int(ts // step * step)
+
+def infer_time(it, now):
+    name = it["name"] or ""
+    url = urllib.parse.urljoin(it["base"], it["href"])
+    lm = _last_modified(url) or now
+    m = re.search(r"(\d{1,2})\s*Z\s+Surface Analysis", name, re.I)
+    if m:
+        hh = int(m.group(1))
+        day = _floor(lm, 24)
+        t = day + hh * 3600
+        return t if t <= lm else t - 86400
+    if re.search(r"latest", name, re.I):
+        return _floor(lm - 1800, 3)
+    m = re.search(r"(\d+)\s*-?\s*hour", name, re.I)
+    if m:
+        return _floor(lm - 3 * 3600, 6) + int(m.group(1)) * 3600
+    m = re.search(r"Day\s*(\d)", name, re.I)
+    if m:
+        return _floor(lm - 12 * 3600, 24) + 12 * 3600 + int(m.group(1)) * 86400
+    return None
+
 def _merc(lat): return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
 
 def to_mercator(png_bytes, s, n):
@@ -117,9 +154,13 @@ def build_fronts(http, out_dir):
             print(f"fronts: {url} FAILED {e}", flush=True)
     # One frame per valid time: analyses win for the past, forecasts for the future.
     now = time.time()
+    for it in items:
+        if it["t"] is None:
+            it["t"] = infer_time(it, now)
     by_t = {}
     for it in items:
-        if it["t"] is None: continue
+        if it["t"] is None:
+            print(f"fronts: no time for {it['name']!r}", flush=True); continue
         k = it["t"]
         keep = by_t.get(k)
         if keep is None or (it["kind"] == "analysis") == (k <= now):
