@@ -98,6 +98,15 @@ The app stores nothing on the phone — settings, track and forecasts all live i
 
 On the iPhone: open the site in Safari → Share → **Add to Home Screen** for a full-screen app icon.
 
+## Pre-built weather maps (GitHub Actions → GitHub Pages)
+
+`tools/wxmaps/build_maps.py` runs on GitHub four times a day (`.github/workflows/wxmaps.yml`).
+It pulls the latest GFS, ECMWF, AIFS, HRRR, NAM and GFS-Wave runs straight from NOAA's and ECMWF's
+open-data buckets, cuts out 5–52°N, 100–40°W, and publishes small PNGs per variable per step to
+**https://sailingharvestmoon.github.io/HarvestWatch/**. The app's Maps view loads those first, so
+panning is instant. UKMO, ICON, currents and anything outside that region still come from the Pi
+(`wxgrid.py`). Run it by hand: GitHub → Actions → Build weather maps → Run workflow.
+
 ## Cloudflare worker
 
 `cloudflare-worker/anchor-watcher-worker.js` → Cloudflare dashboard → the worker → Edit code → paste → Deploy.

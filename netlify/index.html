@@ -1896,9 +1896,55 @@ function rampColor(stops, v, out) {
 
 // ─── grid data ──────────────────────────────────────────────────
 const GRIDS = {};   // memory only, for this visit
+// ─── pre-built maps (GitHub Pages) ─────────────────────────────
+// A GitHub Actions job builds the whole region from each model run
+// (tools/wxmaps/build_maps.py) and publishes one small PNG per variable
+// per time step. Those load straight away, wherever you pan. Anything not
+// pre-built (UKMO, ICON, currents, or outside the region) falls back to
+// the Pi's on-demand grids in Firestore.
+const MAPS_BASE = 'https://sailingharvestmoon.github.io/HarvestWatch/';
+const PRE = { index: null, fetched: 0, loading: null };
+function loadPreIndex() {
+  if (PRE.loading) return PRE.loading;
+  if (PRE.fetched && Date.now() - PRE.fetched < 10 * 60000) return Promise.resolve(PRE.index);
+  PRE.loading = fetch(MAPS_BASE + 'index.json', { cache: 'no-store' })
+    .then(r => r.ok ? r.json() : null).catch(() => null)
+    .then(j => { PRE.index = j; PRE.fetched = Date.now(); PRE.loading = null; return j; });
+  return PRE.loading;
+}
+const PRE_LRU = [];            // decoded steps kept in memory for this visit only
+function preLoadStep(g, key, ti) {
+  const k = key + '_' + ti;
+  if (g.steps[k] || g.pend[k] || ti < 0 || ti >= g.meta.times.length) return;
+  g.pend[k] = true;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+    const d = x.getImageData(0, 0, img.width, img.height).data, u = new Uint8Array(img.width * img.height);
+    for (let i = 0; i < u.length; i++) u[i] = d[i * 4];
+    g.steps[k] = u; delete g.pend[k];
+    PRE_LRU.push([g, k]);
+    while (PRE_LRU.length > 160) { const [og, ok] = PRE_LRU.shift(); delete og.steps[ok]; og.cache = {}; }
+    g.cache = {};
+    wmQueueDraw();
+  };
+  img.onerror = () => { g.steps[k] = 'x'; delete g.pend[k]; };
+  img.src = `${MAPS_BASE}${g.name}/${k}.png?r=${g.meta.run}`;
+}
 async function loadGrid(name) {
   const g = GRIDS[name];
   if (g && (g.loading || Date.now() - g.fetched < 20 * 60000) && !g.stale) return g.loading || g;
+  if (name.startsWith('pre:')) {
+    const base = name.slice(4);
+    const p = fetch(`${MAPS_BASE}${base}/meta.json?t=${PRE.index ? PRE.index.generated : Date.now()}`)
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(meta => (GRIDS[name] = { pre: true, name: base, meta, steps: {}, pend: {}, cache: {}, fetched: Date.now() }))
+      .catch(e => (GRIDS[name] = { error: String(e.message || e), fetched: Date.now() - 19 * 60000 }));
+    GRIDS[name] = Object.assign(g || {}, { loading: p });
+    return p;
+  }
   const p = (async () => {
     try {
       const r = await fetch(`${FSB}/weather/${VESSEL}-grid-${name}`, { cache: 'no-store' });
@@ -1925,6 +1971,15 @@ async function loadGrid(name) {
 function gridField(g, key, ti, acc) {
   const ck = key + ':' + ti + (acc ? ':acc' : '');
   if (g.cache[ck]) return g.cache[ck];
+  if (g.pre) {
+    // One PNG per step; not loaded yet -> blank for now, redrawn on arrival.
+    const kk = acc && g.meta.vars.pa ? 'pa' : key, u = g.steps[kk + '_' + ti];
+    const n = g.meta.nx * g.meta.ny;
+    if (!u || u === 'x') { if (!u) preLoadStep(g, kk, ti); return new Float32Array(n).fill(NaN); }
+    const [off, step] = g.meta.vars[kk] || [0, 1], out = new Float32Array(n);
+    for (let p = 0; p < n; p++) { const x = u[p]; out[p] = x === 255 ? NaN : off + x * step; }
+    return (g.cache[ck] = out);
+  }
   const m = g.meta, n = m.nx * m.ny, b = g.bytes[key], [off, step] = m.vars[key] || [0, 1];
   const out = new Float32Array(n).fill(NaN);
   if (!b) return (g.cache[ck] = out);
@@ -1942,11 +1997,14 @@ function gridFlow(g, flow, ti) {
   if (g.cache[ck]) return g.cache[ck];
   const s = gridField(g, flow === 'current' ? 'cv' : 'ws', ti), d = gridField(g, flow === 'current' ? 'cd' : 'wd', ti);
   const n = s.length, u = new Float32Array(n), v = new Float32Array(n), sign = flow === 'current' ? 1 : -1;   // wind dir is FROM
+  const ready = !g.pre || (g.steps[(flow === 'current' ? 'cv' : 'ws') + '_' + ti] && g.steps[(flow === 'current' ? 'cd' : 'wd') + '_' + ti]);
   for (let p = 0; p < n; p++) {
     const r = d[p] * Math.PI / 180;
     u[p] = sign * s[p] * Math.sin(r); v[p] = sign * s[p] * Math.cos(r);
   }
-  return (g.cache[ck] = { u, v });
+  const res = { u, v };
+  if (ready) g.cache[ck] = res;
+  return res;
 }
 function sampleAt(g, arr, lat, lon) {
   const m = g.meta, [la0, lo0, la1, lo1] = m.bbox;
@@ -1969,7 +2027,16 @@ function fcPosition() {
 }
 const WM = { ready: false, sides: [], steps: [], ti: 0, playing: null, divX: 0, syncing: false, anim: null };
 function wmSideCfg(s) { return s === 0 ? WMP.a : WMP.b; }
-function wmGridName(cfg) { return WM_LAYERS.find(l => l.id === cfg.layer).marine ? 'marine' : cfg.model; }
+function wmGridName(cfg) {
+  const lay = WM_LAYERS.find(l => l.id === cfg.layer), name = lay.marine ? 'marine' : cfg.model;
+  const m = PRE.index && PRE.index.models && PRE.index.models[name];
+  const key = lay.acc ? 'pa' : lay.key;
+  if (m && m.vars && m.vars.includes(key) && m.bbox && WM.ready) {
+    const c = WM.sides[0].map.getCenter(), [a, b, cc, d] = m.bbox;
+    if (c.lat >= a && c.lat <= cc && c.lng >= b && c.lng <= d) return 'pre:' + name;
+  }
+  return name;
+}
 
 function initMaps() {
   if (WM.ready) return;
@@ -1995,7 +2062,11 @@ function initMaps() {
   }
   const p = forecastTarget();
   WM.sides.forEach(s => s.map.setView([p.lat, p.lon], 6.5, { animate: false }));
-  WM.sides.forEach(s => s.map.on('moveend', wmMaybeAsk));
+  WM.sides.forEach(s => s.map.on('moveend', () => {
+    // Panned in or out of the pre-built region: switch source.
+    const now = [wmGridName(WMP.a)].concat(WMP.split ? [wmGridName(WMP.b)] : []).join(',');
+    if (now !== WM.lastSrc) wmRefreshData(); else wmMaybeAsk();
+  }));
   if (window.ResizeObserver) new ResizeObserver(() => { if (WM.ready) wmLayout(); }).observe($('wmStage'));
   // divider drag
   const div = $('wmDivider');
@@ -2076,7 +2147,9 @@ function wmLayout() {
 }
 
 async function wmRefreshData() {
+  await loadPreIndex();
   const names = [wmGridName(WMP.a)]; if (WMP.split) names.push(wmGridName(WMP.b));
+  WM.lastSrc = names.join(',');
   wmPaintButtons();
   await Promise.all(names.map(loadGrid));
   // Time axis: every step either side has.
@@ -2138,6 +2211,13 @@ function wmQueueDraw() { if (!wmDrawQueued) { wmDrawQueued = true; requestAnimat
 function wmDrawAll(resetParticles) {
   if (!WM.ready) return;
   WM.sides.forEach((s, k) => { if (k === 1 && !WMP.split) return; wmDrawSide(s, k ? WMP.b : WMP.a, resetParticles); });
+  // Fetch the next couple of steps ahead of the slider / play button.
+  [WMP.a].concat(WMP.split ? [WMP.b] : []).forEach(cfg => {
+    const g = GRIDS[wmGridName(cfg)]; if (!g || !g.pre) return;
+    const lay = WM_LAYERS.find(l => l.id === cfg.layer), ti = wmStepIndex(g); if (ti < 0) return;
+    const keys = [lay.acc ? 'pa' : lay.key].concat(lay.flow === 'wind' ? ['ws', 'wd'] : []);
+    for (const d of [1, 2]) keys.forEach(k => g.meta.vars[k] && preLoadStep(g, k, ti + d));
+  });
 }
 function wmDrawSide(s, cfg, resetParticles) {
   const lay = WM_LAYERS.find(l => l.id === cfg.layer), g = GRIDS[wmGridName(cfg)];
@@ -2147,7 +2227,7 @@ function wmDrawSide(s, cfg, resetParticles) {
   ctx.clearRect(0, 0, W_, H_);
   s.cur = null;
   if (resetParticles) { s.parts = []; s.pctx.clearRect(0, 0, W_, H_); }
-  if (!g || !g.meta || !g.bytes) return;
+  if (!g || !g.meta || (!g.bytes && !g.pre)) return;
   const ti = wmStepIndex(g); if (ti < 0) return;
   const arr = gridField(g, lay.key, ti, lay.acc);
   s.cur = { g, lay, ti, arr, flow: lay.flow && WMP.flow ? gridFlow(g, lay.flow, ti) : null };
@@ -2236,7 +2316,8 @@ function wmReadout(s, ll) {
 // that the grid is too coarse), the app writes the visible area to
 // weather/<vessel>-gridview and the Pi pulls just the grids on display.
 const GRIDVIEW_URL = `${FSB}/weather/${VESSEL}-gridview`;
-function wmNames() { const n = [wmGridName(WMP.a)]; if (WMP.split) n.push(wmGridName(WMP.b)); return [...new Set(n)]; }
+// Only the grids the Pi supplies - pre-built ones never need asking for.
+function wmNames() { const n = [wmGridName(WMP.a)]; if (WMP.split) n.push(wmGridName(WMP.b)); return [...new Set(n)].filter(x => !x.startsWith('pre:')); }
 function wmViewBounds() {
   let b = null;
   WM.sides.forEach((s, k) => {

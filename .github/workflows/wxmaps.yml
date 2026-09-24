@@ -1,0 +1,50 @@
+# Harvest Watch - pre-built forecast maps
+# Builds map data for the whole region from the latest model runs and
+# publishes it to this repo's GitHub Pages site, where the app reads it.
+# Nothing here touches the boat, the Pi or Netlify.
+name: Build weather maps
+
+on:
+  schedule:
+    # Four times a day, a few hours after each model run is published
+    # (times are UTC). GitHub may start scheduled runs some minutes late.
+    - cron: "30 4,10,16,22 * * *"
+  workflow_dispatch: {}          # "Run workflow" button for a manual build
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: wxmaps
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: pip install eccodes numpy scipy pillow
+      - name: Build maps
+        run: python tools/wxmaps/build_maps.py site
+      - name: Size of what will be published
+        run: du -sh site && ls site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
