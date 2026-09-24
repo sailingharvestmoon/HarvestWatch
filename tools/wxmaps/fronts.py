@@ -53,6 +53,32 @@ def _parse_time(s):
         except Exception: pass
     return None
 
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/128.0 Safari/537.36 harvest-watch")
+
+def wpc_get(url, tries=3):
+    """GET from WPC with a browser-like User-Agent (WPC refuses unusual ones).
+    Tries www. and origin. hosts. Logs why a fetch failed."""
+    import urllib.request, urllib.error
+    hosts = [url]
+    if "://www.wpc." in url: hosts.append(url.replace("://www.wpc.", "://origin.wpc."))
+    elif "://origin.wpc." in url: hosts.append(url.replace("://origin.wpc.", "://www.wpc."))
+    why = ""
+    for u in hosts:
+        for k in range(tries):
+            try:
+                req = urllib.request.Request(u, headers={"User-Agent": BROWSER_UA, "Accept": "*/*"})
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    return r.read()
+            except urllib.error.HTTPError as e:
+                why = f"HTTP {e.code}"
+                if e.code in (403, 404): break
+            except Exception as e:
+                why = str(e)
+            time.sleep(2 * (k + 1))
+    print(f"fronts: fetch failed {url.rsplit('/', 1)[-1]}: {why}", flush=True)
+    return None
+
 def _load(http, url):
     """(kml bytes, zipfile or None) - KMZ unpacked."""
     data = http(url)
@@ -94,7 +120,7 @@ def collect(http, url, kind, depth=0, out=None):
 def _last_modified(url):
     import urllib.request, email.utils
     try:
-        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "harvest-watch wxmaps"})
+        req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": BROWSER_UA})
         with urllib.request.urlopen(req, timeout=30) as r:
             lm = r.headers.get("Last-Modified")
         return email.utils.parsedate_to_datetime(lm).timestamp() if lm else None
@@ -143,6 +169,7 @@ def to_mercator(png_bytes, s, n):
     return buf.getvalue()
 
 def build_fronts(http, out_dir):
+    http = wpc_get                      # WPC needs its own fetcher (see wpc_get)
     fdir = os.path.join(out_dir, "fronts"); os.makedirs(fdir, exist_ok=True)
     items = []
     for kind, url in KMLS:
