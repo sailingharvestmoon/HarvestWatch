@@ -509,8 +509,24 @@ def fc_model(apis, lat, lon):
         return j, {"api": name, "ok": ok, "err": "" if ok else "no coverage here"}
     return None, {"ok": False, "err": last}
 
-def build_forecast():
+# Where the model forecasts (table and maps) are for: the boat, unless a
+# place has been chosen in the app (weather/<vessel>-places, field "active").
+PLACES_DOC = f"{FS}/weather/{VESSEL_ID}-places"
+
+def forecast_position():
+    """(lat, lon, place name or '' for the boat)."""
+    try:
+        f = get_json(PLACES_DOC + "?mask.fieldPaths=active", retries=0).get("fields", {})
+        a = json.loads((f.get("active") or {}).get("stringValue") or "null")
+        if a and a.get("lat") is not None and a.get("lon") is not None:
+            return float(a["lat"]), float(a["lon"]), str(a.get("name") or "")
+    except Exception as e:
+        print("places read failed (using boat):", e, flush=True)
     lat, lon = get_position()
+    return lat, lon, ""
+
+def build_forecast():
+    lat, lon, place = forecast_position()
     models, base = {}, None
     for mid, apis in FC_MODELS:
         j, meta = fc_model(apis, lat, lon)
@@ -544,7 +560,7 @@ def build_forecast():
     except Exception as e:
         print("forecast marine failed:", e, flush=True)
     data = {
-        "at": int(time.time() * 1000), "lat": round(lat, 4), "lon": round(lon, 4),
+        "at": int(time.time() * 1000), "lat": round(lat, 4), "lon": round(lon, 4), "place": place,
         "off": base.get("utc_offset_seconds", 0), "tz": base.get("timezone_abbreviation", ""),
         "time": base["hourly"]["time"], "daily": base.get("daily"), "models": models, "marine": marine,
     }

@@ -1,0 +1,19 @@
+[Unit]
+Description=Harvest Moon forecast map grids (Open-Meteo -> Firebase)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PROJECT_ID=harvest-moon-watch
+Environment=VESSEL_ID=harvest-moon
+Environment=GRID_N=15
+Environment=REFRESH_H=6
+User=harvestmoon
+WorkingDirectory=/home/harvestmoon/weather
+ExecStart=/usr/bin/python3 /home/harvestmoon/weather/wxgrid.py
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

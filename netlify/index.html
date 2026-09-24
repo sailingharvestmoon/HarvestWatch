@@ -306,6 +306,56 @@ table.fc tr.model th.fc-lab { text-align:right; }
 table.fc tr.cat th .mchip.sm { pointer-events:none; position:absolute; right:22px; top:50%; transform:translateY(-50%) scale(.85); }
 tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
+/* weather maps */
+.seg.wxmode { width:220px; margin:0 auto 6px; }
+#view-maps { overflow:hidden; display:none; flex-direction:column; }
+#view-maps.active { display:flex; }
+.wm-stage { position:relative; flex:1; overflow:hidden; background:var(--bg); }
+.wm-wrap { position:absolute; inset:0; }
+.wm-map { position:absolute; inset:0; background:#9fb7c9; }
+.wm-cv { position:absolute; left:0; top:0; }
+.wm-top { position:absolute; top:10px; left:0; right:0; z-index:800; pointer-events:none; }
+.wm-top .seg { pointer-events:auto; box-shadow:var(--shadow); background:var(--surface); }
+.wm-side { position:absolute; top:58px; left:10px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:999px; padding:6px 12px 6px 6px; font-size:13px; font-weight:600; box-shadow:var(--shadow); display:flex; align-items:center; gap:6px; max-width:46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.wm-side.r { left:auto; right:10px; }
+.wm-split { position:absolute; right:10px; bottom:54px; z-index:800; }
+.wm-divider { position:absolute; top:0; bottom:0; width:0; z-index:790; }
+.wm-divider::before { content:''; position:absolute; top:0; bottom:0; left:-1.5px; width:3px; background:#fff; box-shadow:0 0 6px rgba(0,0,0,.5); }
+.wm-divider.h { left:0; right:0; width:auto; height:0; }
+.wm-divider.h::before { top:-1.5px; bottom:auto; left:0; right:0; width:auto; height:3px; }
+.wm-divider.h span { top:-20px; left:50%; margin:0 0 0 -20px; cursor:ns-resize; transform:rotate(90deg); }
+.wm-divider span { position:absolute; top:50%; left:-20px; width:40px; height:40px; margin-top:-20px; border-radius:50%; background:#fff; color:#14212d; display:grid; place-items:center; font-weight:800; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:ew-resize; touch-action:none; }
+.wm-divider { touch-action:none; }
+.wm-leg { position:absolute; left:10px; bottom:10px; z-index:800; background:color-mix(in srgb, var(--surface) 90%, transparent); border-radius:8px; padding:5px 8px 4px; font-size:10.5px; color:var(--ink); display:grid; grid-template-columns:auto auto auto; gap:0 14px; box-shadow:var(--shadow); max-width:44%; }
+.wm-leg i { grid-column:1/-1; height:7px; border-radius:4px; margin-bottom:3px; min-width:120px; }
+.wm-leg span:nth-of-type(2) { text-align:center; } .wm-leg span:nth-of-type(3) { text-align:right; }
+.wm-leg.r { left:auto; right:64px; }
+.wm-timebar { display:flex; gap:10px; align-items:center; padding:8px 12px 10px; background:var(--surface); border-top:1px solid var(--line); }
+.wm-timebar .fab { box-shadow:none; flex:none; font-size:15px; }
+.wm-h { font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin:6px 2px 8px; }
+.wm-h small { text-transform:none; letter-spacing:0; }
+.wm-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
+.wm-opt { padding:11px 10px; border-radius:999px; background:var(--surface2); border:1px solid var(--line); font-weight:600; font-size:14px; display:flex; align-items:center; justify-content:center; gap:8px; }
+.wm-opt span { opacity:.7; }
+.wm-opt.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
+.wm-opt:disabled { opacity:.35; }
+#wmOpt { max-height:80%; z-index:900; }
+.wm-pop .leaflet-popup-content { margin:8px 10px; font-size:13px; }
+
+/* forecast location */
+.loc-chip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; color:var(--ink); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.wm-toprow { display:flex; justify-content:center; gap:8px; align-items:center; padding:0 10px; }
+.wm-toprow .seg.wxmode { width:170px; margin:0; flex:none; }
+.wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:170px; }
+.loc-sheet { position:fixed; z-index:950; max-height:85%; }
+.loc-row { display:flex; align-items:center; gap:10px; padding:10px 12px; border-top:1px solid var(--line); }
+.loc-row:first-child { border-top:0; }
+.loc-row .pick { flex:1; text-align:left; display:flex; align-items:center; gap:10px; min-width:0; }
+.loc-row .pick .txt { min-width:0; }
+.loc-row .pick b { display:block; font-weight:600; }
+.loc-row .pick small { display:block; color:var(--muted); font-size:12.5px; }
+.loc-row .tick { color:var(--ok); font-weight:800; }
+
 /* toast */
 .toast { position:fixed; left:50%; top:calc(70px + env(safe-area-inset-top)); transform:translateX(-50%) translateY(-12px); opacity:0; z-index:900; background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:10px; font-size:13.5px; font-weight:600; transition:.25s; pointer-events:none; max-width:90vw; text-align:center; }
 .toast.show { opacity:1; transform:translateX(-50%); }
@@ -404,6 +454,8 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
     <!-- WEATHER -->
     <section class="view scroll" id="view-weather">
+      <div class="seg wxmode"><button class="on">Forecast</button><button onclick="showView('maps')">Maps</button></div>
+      <div style="text-align:center;margin-bottom:4px;"><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div>
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
       <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="requestForecast()">↻ Refresh</button></div>
@@ -421,6 +473,30 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
       <div class="section-title">Sun &amp; moon</div>
       <div class="card pad" id="wxSun"></div>
       <p class="note" id="wxAge" style="text-align:center;margin-top:14px;"></p>
+    </section>
+
+    <!-- WEATHER MAPS -->
+    <section class="view" id="view-maps">
+      <div class="wm-stage" id="wmStage">
+        <div class="wm-wrap" id="wmWrapA"><div class="wm-map" id="wmMapA"></div></div>
+        <div class="wm-wrap" id="wmWrapB"><div class="wm-map" id="wmMapB"></div></div>
+        <div class="wm-divider" id="wmDivider" style="display:none"><span>‹ ›</span></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Forecast</button><button class="on">Maps</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
+        <button class="wm-side" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
+        <button class="wm-side r" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
+        <button class="fab wm-split" id="wmSplitBtn" onclick="wmSetSplit(!WMP.split)" title="Split screen" aria-label="Split screen">
+          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
+        <div class="wm-leg" id="wmLegA"></div><div class="wm-leg r" id="wmLegB" style="display:none"></div>
+      </div>
+      <div class="wm-timebar">
+        <button class="fab" id="wmPlay" onclick="wmTogglePlay()" aria-label="Play">▶</button>
+        <div style="flex:1;min-width:0;"><input type="range" id="wmTime" min="0" max="0" value="0"><div class="note num" id="wmTimeLbl" style="margin-top:4px;"></div></div>
+      </div>
+      <div class="sheet" id="wmOpt">
+        <div class="grab"></div>
+        <div class="sheet-head"><b id="wmOptTitle">Map</b><button class="x-btn" onclick="$('wmOpt').classList.remove('open')" aria-label="Close">✕</button></div>
+        <div class="sheet-body" id="wmOptBody"></div>
+      </div>
     </section>
 
     <!-- BOAT -->
@@ -479,6 +555,13 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
   </div>
   <div class="page-body" id="apBody"></div>
   <div class="page-foot"><button class="btn primary block" id="apSave" onclick="saveAlertPage()">Save</button></div>
+</div>
+
+<!-- forecast location sheet -->
+<div class="sheet loc-sheet" id="locSheet">
+  <div class="grab"></div>
+  <div class="sheet-head"><b>Forecast location</b><button class="x-btn" onclick="closeLoc()" aria-label="Close">✕</button></div>
+  <div class="sheet-body" id="locBody"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -580,6 +663,7 @@ function prefsFromCfg(c) {
   if (c.fcPrimary) FCU.primary = str(c.fcPrimary);
   if (c.fcDays) FCU.days = num(c.fcDays) || 3;
   if (c.fcOpen) { FCU.open = {}; str(c.fcOpen).split(',').filter(Boolean).forEach(x => FCU.open[x] = true); }
+  wmPrefsFromCfg(c);
   return changed;
 }
 function applyTheme() {
@@ -1738,8 +1822,10 @@ function paintForecast() {
   }
   box.innerHTML = `<table class="fc">${head1}</tr>${head2}</tr>${body}</table>`;
   const failed = MODELS.filter(m => !FC.models[m.id] || !FC.models[m.id].ok).map(m => m.label);
-  const waiting = FC_REQ > FC.at && Date.now() - FC_REQ < 10 * 60000;
-  meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${waiting ? '<b>Fresh forecast requested</b> · ' : ''}Pulled by the boat ${ago(FC.at)} for ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
+  const tgt = forecastTarget();
+  const moved = PL.loaded && haversine(tgt.lat, tgt.lon, FC.lat, FC.lon) > 5 * 1852;
+  const waiting = moved || (FC_REQ > FC.at && Date.now() - FC_REQ < 10 * 60000);
+  meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${moved ? `<b style="color:var(--warn)">Updating for ${esc(tgt.name || 'the boat')} — showing the previous spot</b> · ` : waiting ? '<b>Fresh forecast requested</b> · ' : ''}Pulled by the boat ${ago(FC.at)} for ${FC.place ? esc(FC.place) + ' · ' : 'the boat · '} ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
     + (failed.length ? ` · <span style="color:var(--warn)">not available here: ${failed.join(', ')}</span>` : '')
     + ` · <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a>`;
 }
@@ -1752,6 +1838,525 @@ function pickModel(id) {
   toast(m.info + (r && !r.ok ? ' — not available here' : ''), 4000);
 }
 function setFcDays(d) { FCU.days = d; saveFcu(); paintForecast(); }
+
+
+// ═══ WEATHER MAPS (split-screen model comparison) ══════════════════
+// Grids are pulled on the Pi by wxgrid.py (one Firestore document per
+// model, plus one for marine data) and only read here. Two Leaflet maps
+// are stacked and kept in step; the right one is clipped to the right of a
+// draggable divider, so each side can show its own model and layer.
+const WM_STOPS = {
+  wind: [[0, '#5b4ea8'], [5, '#3f7fd6'], [10, '#36b7c9'], [14, '#4fd05a'], [18, '#e6e33a'], [22, '#f39a2e'], [27, '#e0392e'], [33, '#b3246e'], [42, '#6b1a5e']],
+  cape: [[0, '#ffffff00'], [100, '#fff3a0'], [500, '#f7c948'], [1000, '#f39a2e'], [2000, '#e0392e'], [3500, '#9b2aa0']],
+  wave: [[0, '#3d58b5'], [1, '#3f7fd6'], [2, '#36b7c9'], [4, '#4fd05a'], [6, '#e6e33a'], [9, '#f39a2e'], [13, '#e0392e'], [20, '#9b2aa0']],
+  current: [[0, '#3d58b5'], [.3, '#3f7fd6'], [.6, '#36b7c9'], [1, '#4fd05a'], [1.5, '#e6e33a'], [2.5, '#f39a2e'], [4, '#e0392e']],
+  rain: [[0, '#ffffff00'], [.1, '#9fd3ff80'], [.5, '#5fb0f5'], [2, '#2f7fd6'], [5, '#4fd05a'], [10, '#e6e33a'], [20, '#e0392e'], [40, '#9b2aa0']],
+  acc: [[0, '#ffffff00'], [1, '#9fd3ff80'], [5, '#5fb0f5'], [15, '#2f7fd6'], [30, '#4fd05a'], [60, '#e6e33a'], [100, '#e0392e'], [200, '#9b2aa0']],
+  cloud: [[0, '#ffffff00'], [30, '#d0d6de40'], [60, '#b8c2cc99'], [90, '#8e9aa6dd'], [100, '#7d8995ee']],
+  temp: [[0, '#6b1a5e'], [20, '#5b4ea8'], [35, '#3f7fd6'], [50, '#36b7c9'], [60, '#4fd05a'], [70, '#e6e33a'], [80, '#f39a2e'], [90, '#e0392e'], [100, '#9b2a4a']]
+};
+const WM_LAYERS = [
+  { id: 'wind', label: 'Wind', ico: '≋', key: 'ws', unit: 'kn', stops: 'wind', flow: 'wind' },
+  { id: 'gust', label: 'Gust', ico: '⋙', key: 'wg', unit: 'kn', stops: 'wind', flow: 'wind' },
+  { id: 'cape', label: 'CAPE', ico: 'ϟ', key: 'ce', unit: 'J/kg', stops: 'cape' },
+  { id: 'wave', label: 'Wave', ico: '〜', key: 'wh', unit: 'ft', stops: 'wave', marine: true },
+  { id: 'current', label: 'Currents', ico: '⇶', key: 'cv', unit: 'kn', stops: 'current', marine: true, flow: 'current' },
+  { id: 'rain', label: 'Rain', ico: '☂', key: 'pr', unit: 'mm/h', stops: 'rain' },
+  { id: 'accrain', label: 'Acc Rain', ico: '☔', key: 'pr', unit: 'mm', stops: 'acc', acc: true },
+  { id: 'cloud', label: 'Cloud', ico: '☁', key: 'cc', unit: '%', stops: 'cloud' },
+  { id: 'isobar', label: 'Isobar', ico: '◠', key: 'ps', unit: 'mb', contours: true },
+  { id: 'temp', label: 'Air Temp', ico: '🌡', key: 'ta', unit: '°F', stops: 'temp' },
+  { id: 'sst', label: 'Sea Temp', ico: '🌊', key: 'st', unit: '°F', stops: 'temp', marine: true }
+];
+const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true };
+function wmPrefsFromCfg(c) {
+  const side = (v, d) => { const [m, l] = str(v).split('|'); if (MODELS.some(x => x.id === m)) d.model = m; if (WM_LAYERS.some(x => x.id === l)) d.layer = l; };
+  if (c.wmA) side(c.wmA, WMP.a);
+  if (c.wmB) side(c.wmB, WMP.b);
+  if (c.wmSplit !== undefined) WMP.split = bool(c.wmSplit);
+  if (c.wmFlow !== undefined) WMP.flow = bool(c.wmFlow);
+}
+function wmSavePrefs() {
+  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow) });
+}
+
+// ─── colour helpers ─────────────────────────────────────────────
+function hexRgba(h) {
+  h = h.replace('#', '');
+  const n = parseInt(h.slice(0, 6), 16), a = h.length > 6 ? parseInt(h.slice(6, 8), 16) : 255;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255, a];
+}
+const WM_RGBA = {}; for (const k in WM_STOPS) WM_RGBA[k] = WM_STOPS[k].map(([v, c]) => [v, hexRgba(c)]);
+function rampColor(stops, v, out) {
+  if (v <= stops[0][0]) { const c = stops[0][1]; out[0] = c[0]; out[1] = c[1]; out[2] = c[2]; out[3] = c[3]; return; }
+  for (let i = 1; i < stops.length; i++) {
+    if (v <= stops[i][0]) {
+      const [v0, c0] = stops[i - 1], [v1, c1] = stops[i], f = (v - v0) / (v1 - v0);
+      for (let k = 0; k < 4; k++) out[k] = c0[k] + (c1[k] - c0[k]) * f; return;
+    }
+  }
+  const c = stops[stops.length - 1][1]; out[0] = c[0]; out[1] = c[1]; out[2] = c[2]; out[3] = c[3];
+}
+
+// ─── grid data ──────────────────────────────────────────────────
+const GRIDS = {};   // memory only, for this visit
+async function loadGrid(name) {
+  const g = GRIDS[name];
+  if (g && (g.loading || Date.now() - g.fetched < 20 * 60000)) return g.loading || g;
+  const p = (async () => {
+    try {
+      const r = await fetch(`${FSB}/weather/${VESSEL}-grid-${name}`, { cache: 'no-store' });
+      if (r.status === 404) return (GRIDS[name] = { missing: true, fetched: Date.now() });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const f = (await r.json()).fields || {};
+      const meta = JSON.parse(str(f.meta) || '{}');
+      const bytes = {};
+      for (const k in (meta.vars || {})) {
+        const b64 = str(f[k]); if (!b64) continue;
+        const bin = atob(b64), u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        bytes[k] = u;
+      }
+      return (GRIDS[name] = { meta, bytes, fetched: Date.now(), cache: {} });
+    } catch (e) {
+      return (GRIDS[name] = { error: String(e.message || e), fetched: Date.now() - 19 * 60000 });
+    }
+  })();
+  GRIDS[name] = Object.assign(g || {}, { loading: p });
+  return p;
+}
+// Float field for one variable at one time step (NaN = no data).
+function gridField(g, key, ti, acc) {
+  const ck = key + ':' + ti + (acc ? ':acc' : '');
+  if (g.cache[ck]) return g.cache[ck];
+  const m = g.meta, n = m.nx * m.ny, b = g.bytes[key], [off, step] = m.vars[key] || [0, 1];
+  const out = new Float32Array(n).fill(NaN);
+  if (!b) return (g.cache[ck] = out);
+  if (acc) {
+    out.fill(0);
+    for (let t = 0; t <= ti; t++) for (let p = 0; p < n; p++) { const x = b[t * n + p]; if (x !== 255) out[p] += (off + x * step) * 3; }
+  } else {
+    for (let p = 0; p < n; p++) { const x = b[ti * n + p]; out[p] = x === 255 ? NaN : off + x * step; }
+  }
+  return (g.cache[ck] = out);
+}
+// u/v (knots, towards) for particles.
+function gridFlow(g, flow, ti) {
+  const ck = 'uv:' + flow + ':' + ti;
+  if (g.cache[ck]) return g.cache[ck];
+  const s = gridField(g, flow === 'current' ? 'cv' : 'ws', ti), d = gridField(g, flow === 'current' ? 'cd' : 'wd', ti);
+  const n = s.length, u = new Float32Array(n), v = new Float32Array(n), sign = flow === 'current' ? 1 : -1;   // wind dir is FROM
+  for (let p = 0; p < n; p++) {
+    const r = d[p] * Math.PI / 180;
+    u[p] = sign * s[p] * Math.sin(r); v[p] = sign * s[p] * Math.cos(r);
+  }
+  return (g.cache[ck] = { u, v });
+}
+function sampleAt(g, arr, lat, lon) {
+  const m = g.meta, [la0, lo0, la1, lo1] = m.bbox;
+  const fx = (lon - lo0) / (lo1 - lo0) * (m.nx - 1), fy = (lat - la0) / (la1 - la0) * (m.ny - 1);
+  if (fx < 0 || fy < 0 || fx > m.nx - 1 || fy > m.ny - 1) return NaN;
+  const x0 = Math.min(m.nx - 2, Math.floor(fx)), y0 = Math.min(m.ny - 2, Math.floor(fy)), tx = fx - x0, ty = fy - y0;
+  const i = y0 * m.nx + x0, a = arr[i], b = arr[i + 1], c = arr[i + m.nx], d = arr[i + m.nx + 1];
+  if (a !== a || b !== b || c !== c || d !== d) {   // a NaN corner: nearest valid instead of a hole
+    const pick = [[a, (1 - tx) * (1 - ty)], [b, tx * (1 - ty)], [c, (1 - tx) * ty], [d, tx * ty]].filter(q => q[0] === q[0]).sort((p, q) => q[1] - p[1]);
+    return pick.length ? pick[0][0] : NaN;
+  }
+  return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+}
+
+// ─── the two sides ──────────────────────────────────────────────
+function fcPosition() {
+  if (S.pos) return { lat: S.pos.lat, lon: S.pos.lon };
+  if (S.anchor) return { lat: S.anchor.lat, lon: S.anchor.lon };
+  return { lat: 44.10, lon: -69.10 };
+}
+const WM = { ready: false, sides: [], steps: [], ti: 0, playing: null, divX: 0, syncing: false, anim: null };
+function wmSideCfg(s) { return s === 0 ? WMP.a : WMP.b; }
+function wmGridName(cfg) { return WM_LAYERS.find(l => l.id === cfg.layer).marine ? 'marine' : cfg.model; }
+
+function initMaps() {
+  if (WM.ready) return;
+  WM.ready = true;
+  const mk = (id) => {
+    const m = L.map(id, { zoomControl: false, attributionControl: false, zoomSnap: .5, minZoom: 3, maxZoom: 12, zoomAnimation: false, fadeAnimation: false });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(m);
+    return m;
+  };
+  for (const [k, id] of [[0, 'wmMapA'], [1, 'wmMapB']]) {
+    const map = mk(id);
+    // Canvases live in their own panes: above the chart tiles, below the
+    // boat, the data-box outline and the tap popups.
+    const field = document.createElement('canvas'), flow = document.createElement('canvas');
+    field.className = 'wm-cv'; flow.className = 'wm-cv';
+    const fp = map.createPane('wmField'); fp.style.zIndex = 350; fp.style.pointerEvents = 'none'; fp.appendChild(field);
+    const pp = map.createPane('wmFlow'); pp.style.zIndex = 360; pp.style.pointerEvents = 'none'; pp.appendChild(flow);
+    const side = { k, map, field, flow, fctx: field.getContext('2d'), pctx: flow.getContext('2d'), parts: [], boat: null, box: null };
+    WM.sides.push(side);
+    map.on('move', () => { wmSync(side); wmQueueDraw(); });
+    map.on('zoomstart movestart', () => { side.pctx.clearRect(0, 0, flow.width, flow.height); side.parts = []; });
+    map.on('click', e => wmReadout(side, e.latlng));
+  }
+  const p = fcPosition();
+  WM.sides.forEach(s => s.map.setView([p.lat, p.lon], 7, { animate: false }));
+  if (window.ResizeObserver) new ResizeObserver(() => { if (WM.ready) wmLayout(); }).observe($('wmStage'));
+  // divider drag
+  const div = $('wmDivider');
+  let dragging = false;
+  div.addEventListener('pointerdown', e => { dragging = true; div.setPointerCapture(e.pointerId); e.preventDefault(); });
+  let dq = false;
+  div.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const r = $('wmStage').getBoundingClientRect();
+    if (wmStacked()) WM.divY = e.clientY - r.top; else WM.divX = e.clientX - r.left;
+    if (!dq) { dq = true; requestAnimationFrame(() => { dq = false; wmLayout(); }); }
+  });
+  div.addEventListener('pointerup', () => { dragging = false; });
+  $('wmTime').addEventListener('input', e => { WM.ti = +e.target.value; wmPaintTime(); wmDrawAll(true); });
+
+}
+function wmSync(src) {
+  if (WM.syncing || !WMP.split) return;
+  WM.syncing = true;
+  WM.sides.forEach(s => { if (s !== src) s.map.setView(src.map.getCenter(), src.map.getZoom(), { animate: false }); });
+  WM.syncing = false;
+}
+// Wide screens: one map with a left/right swipe divider. Tall screens
+// (phones): two maps stacked top and bottom, each showing the same area.
+function wmStacked() { const r = $('wmStage').getBoundingClientRect(); return r.height > r.width; }
+function wmResize() { wmLayout(); }
+function wmLayout() {
+  const r = $('wmStage').getBoundingClientRect(), st = WMP.split && wmStacked();
+  // Re-centre the divider whenever the screen flips between wide and tall.
+  const orient = wmStacked() ? 'tall' : 'wide';
+  if (WM.orient !== orient) { WM.orient = orient; WM.divX = r.width / 2; WM.divY = r.height / 2; }
+  if (!WM.divX) WM.divX = r.width / 2;
+  if (!WM.divY) WM.divY = r.height / 2;
+  WM.divX = Math.max(40, Math.min(r.width - 40, WM.divX));
+  WM.divY = Math.max(140, Math.min(r.height - 110, WM.divY));
+  const A = $('wmWrapA').style, B = $('wmWrapB').style, D = $('wmDivider');
+  D.classList.toggle('h', st);
+  if (st) {
+    Object.assign(A, { top: '0px', bottom: 'auto', height: WM.divY + 'px' });
+    Object.assign(B, { top: WM.divY + 'px', bottom: 'auto', height: (r.height - WM.divY) + 'px', clipPath: 'none' });
+    D.style.left = ''; D.style.top = WM.divY + 'px';
+  } else {
+    Object.assign(A, { top: '0px', bottom: '0px', height: 'auto' });
+    Object.assign(B, { top: '0px', bottom: '0px', height: 'auto', clipPath: `inset(0 0 0 ${WM.divX}px)` });
+    D.style.top = ''; D.style.left = WM.divX + 'px';
+  }
+  B.display = WMP.split ? '' : 'none';
+  D.style.display = WMP.split ? '' : 'none';
+  $('wmBtnB').style.display = WMP.split ? '' : 'none';
+  $('wmBtnB').style.top = st ? (WM.divY + 10) + 'px' : '';
+  $('wmBtnB').classList.toggle('r', !st);
+  $('wmLegB').style.display = WMP.split ? '' : 'none';
+  $('wmLegB').classList.toggle('r', !st);
+  Object.assign($('wmLegA').style, st ? { top: (WM.divY - 46) + 'px', bottom: 'auto' } : { top: '', bottom: '' });
+  $('wmSplitBtn').classList.toggle('on', WMP.split);
+  WM.sides.forEach(s => {
+    const c = s.map.getContainer(), w = c.clientWidth, hh = c.clientHeight;
+    for (const cv of [s.field, s.flow]) if (cv.width !== w || cv.height !== hh) { cv.width = w; cv.height = hh; }
+    s.map.invalidateSize({ animate: false });
+  });
+  if (WMP.split) wmSync(WM.sides[0]);
+  wmDrawAll(true);
+}
+
+async function wmRefreshData() {
+  const names = [wmGridName(WMP.a)]; if (WMP.split) names.push(wmGridName(WMP.b));
+  wmPaintButtons();
+  await Promise.all(names.map(loadGrid));
+  // Time axis: every step either side has.
+  const set = new Set();
+  names.forEach(n => { const g = GRIDS[n]; if (g && g.meta && g.meta.times) g.meta.times.forEach(t => set.add(t)); });
+  const prevT = WM.steps[WM.ti];
+  WM.steps = [...set].sort((a, b) => a - b);
+  const nowS = Date.now() / 1000;
+  let ti = prevT ? WM.steps.findIndex(t => t >= prevT) : WM.steps.findIndex(t => t >= nowS - 5400);
+  WM.ti = Math.max(0, ti);
+  $('wmTime').max = Math.max(0, WM.steps.length - 1); $('wmTime').value = WM.ti;
+  // First data this visit: frame the whole forecast box.
+  const g0 = GRIDS[names[0]];
+  if (!WM.framed && g0 && g0.meta && g0.meta.bbox) {
+    WM.framed = true; const [a, b, c, d] = g0.meta.bbox;
+    WM.sides[0].map.fitBounds([[a, b], [c, d]], { padding: [10, 60], animate: false }); wmSync(WM.sides[0]);
+  }
+  wmPaintTime(); wmPaintButtons(); wmDrawAll(true); wmDrawBoxes();
+}
+function wmStepIndex(g) {
+  const t = WM.steps[WM.ti]; if (!g || !g.meta || !g.meta.times || t === undefined) return -1;
+  let best = -1, bd = 1e9; g.meta.times.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; best = i; } });
+  return bd <= 5400 ? best : -1;
+}
+function wmPaintTime() {
+  const t = WM.steps[WM.ti];
+  $('wmTimeLbl').textContent = t ? new Date(t * 1000).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'No map data yet';
+}
+function wmPaintButtons() {
+  [['wmBtnA', WMP.a, 0], ['wmBtnB', WMP.b, 1]].forEach(([id, cfg, k]) => {
+    const lay = WM_LAYERS.find(l => l.id === cfg.layer), m = MODELS.find(x => x.id === cfg.model);
+    const g = GRIDS[wmGridName(cfg)];
+    let note = '';
+    if (!g || g.loading) note = ' · loading';
+    else if (g.missing) note = ' · not pulled yet';
+    else if (g.error) note = ' · error';
+    else if (g.meta && !g.meta.ok) note = ' · no data here';
+    $(id).innerHTML = `${lay.marine ? '<span class="mchip sm" style="--mbg:#1f64b8;--mfg:#fff">MARINE</span>' : `<span class="mchip sm" style="--mbg:${m.bg};--mfg:${m.fg}">${m.label}</span>`} ${lay.label}${note} ▾`;
+    const leg = $(k ? 'wmLegB' : 'wmLegA');
+    if (lay.contours) { leg.innerHTML = `<span>Isobars · 2 mb</span>`; return; }
+    const st = WM_STOPS[lay.stops], lo = st[0][0], hi = st[st.length - 1][0];
+    const grad = st.map(([v, c]) => `${c.length > 7 ? c.slice(0, 7) : c} ${((v - lo) / (hi - lo) * 100).toFixed(0)}%`).join(',');
+    leg.innerHTML = `<i style="background:linear-gradient(90deg,${grad})"></i><span>${lo}</span><span>${Math.round((lo + hi) / 2)}</span><span>${hi}+ ${lay.unit}</span>`;
+  });
+}
+function wmDrawBoxes() {
+  WM.sides.forEach((s, k) => {
+    const g = GRIDS[wmGridName(k ? WMP.b : WMP.a)];
+    if (s.box) { s.map.removeLayer(s.box); s.box = null; }
+    if (g && g.meta && g.meta.bbox) {
+      const [a, b, c, d] = g.meta.bbox;
+      s.box = L.rectangle([[a, b], [c, d]], { color: '#ffffff', weight: 1, dashArray: '4 6', fill: false, opacity: .7, interactive: false }).addTo(s.map);
+    }
+    const p = S.pos || null;
+    if (p) {
+      if (!s.boat) s.boat = L.marker([p.lat, p.lon], { icon: boatIcon(), interactive: false }).addTo(s.map);
+      else s.boat.setLatLng([p.lat, p.lon]);
+    }
+  });
+}
+
+let wmDrawQueued = false;
+function wmQueueDraw() { if (!wmDrawQueued) { wmDrawQueued = true; requestAnimationFrame(() => { wmDrawQueued = false; wmDrawAll(false); }); } }
+function wmDrawAll(resetParticles) {
+  if (!WM.ready) return;
+  WM.sides.forEach((s, k) => { if (k === 1 && !WMP.split) return; wmDrawSide(s, k ? WMP.b : WMP.a, resetParticles); });
+}
+function wmDrawSide(s, cfg, resetParticles) {
+  const lay = WM_LAYERS.find(l => l.id === cfg.layer), g = GRIDS[wmGridName(cfg)];
+  const W_ = s.field.width, H_ = s.field.height, ctx = s.fctx;
+  const o = s.map.containerPointToLayerPoint([0, 0]);
+  L.DomUtil.setPosition(s.field, o); L.DomUtil.setPosition(s.flow, o);
+  ctx.clearRect(0, 0, W_, H_);
+  s.cur = null;
+  if (resetParticles) { s.parts = []; s.pctx.clearRect(0, 0, W_, H_); }
+  if (!g || !g.meta || !g.bytes) return;
+  const ti = wmStepIndex(g); if (ti < 0) return;
+  const arr = gridField(g, lay.key, ti, lay.acc);
+  s.cur = { g, lay, ti, arr, flow: lay.flow && WMP.flow ? gridFlow(g, lay.flow, ti) : null };
+  // Sample on a coarse screen grid, then let the browser smooth it up.
+  const B = 6, cw = Math.ceil(W_ / B), ch = Math.ceil(H_ / B);
+  const lats = new Float32Array(ch), lons = new Float32Array(cw);
+  for (let y = 0; y < ch; y++) lats[y] = s.map.containerPointToLatLng([0, y * B + B / 2]).lat;
+  for (let x = 0; x < cw; x++) lons[x] = s.map.containerPointToLatLng([x * B + B / 2, 0]).lng;
+  const vals = new Float32Array(cw * ch);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) vals[y * cw + x] = sampleAt(g, arr, lats[y], lons[x]);
+  if (!lay.contours) {
+    const img = new ImageData(cw, ch), stops = WM_RGBA[lay.stops], c = [0, 0, 0, 0];
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i]; if (v !== v) continue;
+      rampColor(stops, v, c);
+      img.data[i * 4] = c[0]; img.data[i * 4 + 1] = c[1]; img.data[i * 4 + 2] = c[2]; img.data[i * 4 + 3] = c[3] * .78;
+    }
+    const off = s._off || (s._off = document.createElement('canvas'));
+    off.width = cw; off.height = ch; off.getContext('2d').putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, cw * B, ch * B);
+  } else {
+    wmContours(ctx, vals, cw, ch, B);
+  }
+}
+// Isobars: marching squares over the screen-sampled pressure field.
+function wmContours(ctx, vals, cw, ch, B) {
+  let lo = Infinity, hi = -Infinity; for (const v of vals) if (v === v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  if (lo === Infinity) return;
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  ctx.lineWidth = 1.6; ctx.strokeStyle = dark ? 'rgba(255,255,255,.85)' : 'rgba(20,33,45,.85)';
+  ctx.fillStyle = ctx.strokeStyle; ctx.font = '600 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+  for (let lev = Math.ceil(lo / 2) * 2; lev <= hi; lev += 2) {
+    ctx.beginPath(); let labelled = 0;
+    for (let y = 0; y < ch - 1; y++) for (let x = 0; x < cw - 1; x++) {
+      const a = vals[y * cw + x], b = vals[y * cw + x + 1], c = vals[(y + 1) * cw + x + 1], d = vals[(y + 1) * cw + x];
+      if (a !== a || b !== b || c !== c || d !== d) continue;
+      const pts = [];
+      const edge = (v1, v2, x1, y1, x2, y2) => { if ((v1 < lev) !== (v2 < lev)) { const f = (lev - v1) / (v2 - v1); pts.push([(x1 + (x2 - x1) * f) * B, (y1 + (y2 - y1) * f) * B]); } };
+      edge(a, b, x, y, x + 1, y); edge(b, c, x + 1, y, x + 1, y + 1); edge(d, c, x, y + 1, x + 1, y + 1); edge(a, d, x, y, x, y + 1);
+      for (let i = 0; i + 1 < pts.length; i += 2) { ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]); }
+      if (pts.length && !labelled && (x * 7 + y * 13 + lev) % 97 === 0) { labelled = 1; ctx.fillText(Math.round(lev), pts[0][0], pts[0][1] - 3); }
+    }
+    ctx.stroke();
+  }
+}
+// Particles drift with the flow; the fading canvas leaves the trails.
+function wmAnimate() {
+  WM.anim = requestAnimationFrame(wmAnimate);
+  if (!$('view-maps').classList.contains('active')) return;
+  WM.sides.forEach((s, k) => {
+    if (k === 1 && !WMP.split) return;
+    const ctx = s.pctx, W_ = s.flow.width, H_ = s.flow.height;
+    ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = 'rgba(0,0,0,.90)'; ctx.fillRect(0, 0, W_, H_);
+    ctx.globalCompositeOperation = 'source-over';
+    const cur = s.cur; if (!cur || !cur.flow) { if (s.parts.length) { s.parts = []; ctx.clearRect(0, 0, W_, H_); } return; }
+    const want = Math.round(W_ * H_ / 1100);
+    while (s.parts.length < want) s.parts.push({ x: Math.random() * W_, y: Math.random() * H_, age: Math.random() * 80 | 0 });
+    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.1; ctx.beginPath();
+    const k0 = cur.lay.flow === 'current' ? .9 : .16;
+    for (const p of s.parts) {
+      const ll = s.map.containerPointToLatLng([p.x, p.y]);
+      const u = sampleAt(cur.g, cur.flow.u, ll.lat, ll.lng), v = sampleAt(cur.g, cur.flow.v, ll.lat, ll.lng);
+      if (u !== u || v !== v || ++p.age > 90) { p.x = Math.random() * W_; p.y = Math.random() * H_; p.age = 0; continue; }
+      const nx = p.x + u * k0, ny = p.y - v * k0;
+      ctx.moveTo(p.x, p.y); ctx.lineTo(nx, ny); p.x = nx; p.y = ny;
+      if (nx < 0 || ny < 0 || nx > W_ || ny > H_) { p.x = Math.random() * W_; p.y = Math.random() * H_; p.age = 0; }
+    }
+    ctx.stroke();
+  });
+}
+function wmReadout(s, ll) {
+  const cur = s.cur; if (!cur) return;
+  const v = sampleAt(cur.g, cur.arr, ll.lat, ll.lng);
+  const cfg = s.k ? WMP.b : WMP.a, m = MODELS.find(x => x.id === cfg.model);
+  let txt = v !== v ? 'No data here' : `${cur.lay.contours ? v.toFixed(0) : v < 10 && cur.lay.unit !== '%' ? v.toFixed(1) : Math.round(v)} ${cur.lay.unit}`;
+  if (v === v && cur.lay.flow === 'wind') { const d = sampleAt(cur.g, gridField(cur.g, 'wd', cur.ti), ll.lat, ll.lng); if (d === d) txt += ` from ${compass(d)}`; }
+  if (v === v && cur.lay.id === 'wave') { const p = sampleAt(cur.g, gridField(cur.g, 'wp', cur.ti), ll.lat, ll.lng); if (p === p) txt += ` · ${Math.round(p)} s`; }
+  L.popup({ closeButton: false, autoClose: true, className: 'wm-pop' }).setLatLng(ll)
+    .setContent(`<b>${cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}</b><br>${txt}`).openOn(s.map);
+}
+
+// ─── controls ───────────────────────────────────────────────────
+let wmEditing = 0;
+function wmOpenOptions(k) {
+  wmEditing = k;
+  const cfg = wmSideCfg(k), lay = WM_LAYERS.find(l => l.id === cfg.layer);
+  $('wmOptTitle').textContent = WMP.split ? (k ? 'Right map' : 'Left map') : 'Map';
+  $('wmOptBody').innerHTML = `
+    <div class="wm-h">Map layer</div>
+    <div class="wm-grid">${WM_LAYERS.map(l => `<button class="wm-opt ${l.id === cfg.layer ? 'on' : ''}" onclick="wmPick('layer','${l.id}')"><span>${l.ico}</span>${l.label}</button>`).join('')}</div>
+    <div class="wm-h">Forecast model${lay.marine ? ' <small>(waves, currents and sea temperature come from one marine model)</small>' : ''}</div>
+    <div class="wm-grid">${MODELS.map(m => `<button class="wm-opt ${m.id === cfg.model ? 'on' : ''}" ${lay.marine ? 'disabled' : ''} onclick="wmPick('model','${m.id}')">${m.label}</button>`).join('')}</div>
+    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Split screen</b><small>Two maps, drag the divider to compare</small></div><span class="switch"><input type="checkbox" ${WMP.split ? 'checked' : ''} onchange="wmSetSplit(this.checked)"><span></span></span></label>
+    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Animated flow</b><small>Moving streaks on wind, gust and currents</small></div><span class="switch"><input type="checkbox" ${WMP.flow ? 'checked' : ''} onchange="WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)"><span></span></span></label>`;
+  $('wmOpt').classList.add('open');
+}
+function wmPick(what, id) {
+  wmSideCfg(wmEditing)[what] = id; wmSavePrefs();
+  wmOpenOptions(wmEditing); wmRefreshData();
+}
+function wmSetSplit(on) {
+  WMP.split = on; wmSavePrefs(); wmLayout(); wmRefreshData();
+  if (on) toast('Drag the white divider to compare');
+}
+function wmTogglePlay() {
+  if (WM.playing) { clearInterval(WM.playing); WM.playing = null; $('wmPlay').textContent = '▶'; return; }
+  $('wmPlay').textContent = '❚❚';
+  WM.playing = setInterval(() => {
+    WM.ti = (WM.ti + 1) % Math.max(1, WM.steps.length); $('wmTime').value = WM.ti; wmPaintTime(); wmDrawAll(true);
+  }, 900);
+}
+function openMaps() {
+  initMaps();
+  setTimeout(() => {
+    wmResize(); wmLayout(); wmRefreshData();
+    if (!WM.anim) wmAnimate();
+  }, 60);
+}
+
+// ═══ FORECAST LOCATION ═════════════════════════════════════════════
+// The forecast table and maps are for the boat unless a place is chosen.
+// Stored in Firestore (weather/<vessel>-places); the Pi reads "active"
+// and pulls for that spot. The "Now" summary always stays with the boat.
+const PLACES_URL = `${FSB}/weather/${VESSEL}-places`;
+const PL = { active: null, list: [], loaded: false };
+async function loadPlaces() {
+  try {
+    const r = await fetch(PLACES_URL, { cache: 'no-store' });
+    if (r.ok) {
+      const f = (await r.json()).fields || {};
+      PL.active = JSON.parse(str(f.active) || 'null');
+      PL.list = JSON.parse(str(f.places) || '[]');
+    }
+  } catch (e) {}
+  PL.loaded = true; paintPlaceChips();
+}
+async function savePlaces(mask) {
+  const fields = { active: fS(PL.active ? JSON.stringify(PL.active) : ''), places: fS(JSON.stringify(PL.list)), updatedAt: fI(Date.now()) };
+  try {
+    const r = await fetch(PLACES_URL + '?' + mask.concat('updatedAt').map(k => 'updateMask.fieldPaths=' + k).join('&'),
+      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+    return r.ok;
+  } catch (e) { return false; }
+}
+function paintPlaceChips() {
+  const t = PL.active ? PL.active.name : 'Boat position';
+  document.querySelectorAll('.loc-chip').forEach(b => b.textContent = `📍 ${t} ▾`);
+}
+function forecastTarget() {
+  if (PL.active) return PL.active;
+  const p = fcPosition(); return { name: '', lat: p.lat, lon: p.lon };
+}
+function openLoc() { renderLoc(); $('locSheet').classList.add('open'); loadPlaces().then(renderLoc); }
+function closeLoc() { $('locSheet').classList.remove('open'); }
+function renderLoc() {
+  const same = (a, b) => a && b && a.name === b.name && Math.abs(a.lat - b.lat) < 1e-6 && Math.abs(a.lon - b.lon) < 1e-6;
+  const bp = S.pos;
+  const rows = [`<div class="loc-row"><button class="pick" onclick="choosePlace(null)"><div class="ico">🛥️</div><div class="txt"><b>Boat position</b><small>${bp ? fmtCoord(bp.lat, true) + ' ' + fmtCoord(bp.lon, false) : 'follows the boat'}</small></div></button>${!PL.active ? '<span class="tick">✓</span>' : ''}</div>`];
+  PL.list.forEach((p, i) => rows.push(`<div class="loc-row"><button class="pick" onclick="choosePlace(PL.list[${i}])"><div class="ico">⭐</div><div class="txt"><b>${esc(p.name)}</b><small>${fmtCoord(p.lat, true)} ${fmtCoord(p.lon, false)}</small></div></button>${same(p, PL.active) ? '<span class="tick">✓</span>' : ''}<button class="x-btn" onclick="deletePlace(${i})" aria-label="Delete ${esc(p.name)}">✕</button></div>`));
+  $('locBody').innerHTML = `
+    <div class="list">${rows.join('')}</div>
+    <div class="section-title">Add a place</div>
+    <div class="card pad">
+      <label class="in-label" for="plName" style="margin-top:0">Name</label>
+      <input class="text-in" id="plName" placeholder="e.g. Camden Harbor" autocomplete="off">
+      <label class="in-label" for="plPos">Position</label>
+      <input class="text-in" id="plPos" placeholder="N 44 12.5  W 69 03.6" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <p class="note" id="plParsed" style="margin-top:6px;">Paste or type a position in any format.</p>
+      <div class="btn-row" style="margin-top:8px;"><button class="btn" onclick="plFill('boat')">Use boat position</button>${WM.ready && $('view-maps').classList.contains('active') ? `<button class="btn" onclick="plFill('map')">Use map centre</button>` : ''}</div>
+      <button class="btn primary block" style="margin-top:8px;" onclick="addPlace()">Save and use</button>
+    </div>
+    <p class="note" style="margin:10px 4px 0;">Sets where the forecast table and maps are for. The boat pulls the new forecast — the table in about a minute, the maps in a few minutes. The "Now" summary always stays at the boat.</p>`;
+  $('plPos').addEventListener('input', () => {
+    const p = parsePair($('plPos').value);
+    $('plParsed').textContent = p ? `${fmtCoord(p.lat, true)}  ${fmtCoord(p.lon, false)}` : ($('plPos').value.trim() ? 'Can\'t read that position yet' : 'Paste or type a position in any format.');
+  });
+}
+function plFill(src) {
+  let p = null;
+  if (src === 'boat' && S.pos) p = { lat: S.pos.lat, lon: S.pos.lon };
+  if (src === 'map' && WM.ready) { const c = WM.sides[0].map.getCenter(); p = { lat: c.lat, lon: c.lng }; }
+  if (!p) { toast('No position available'); return; }
+  $('plPos').value = `${fmtCoord(p.lat, true)} ${fmtCoord(p.lon, false)}`; $('plPos').dispatchEvent(new Event('input'));
+}
+async function addPlace() {
+  const name = $('plName').value.trim(), p = parsePair($('plPos').value);
+  if (!name) { toast('Give the place a name'); return; }
+  if (!p) { toast('Can\'t read that position'); return; }
+  const place = { name: name.slice(0, 40), lat: +p.lat.toFixed(4), lon: +p.lon.toFixed(4) };
+  PL.list = PL.list.filter(x => x.name !== place.name).concat(place);
+  await choosePlace(place, true);
+}
+async function deletePlace(i) {
+  const p = PL.list[i]; if (!p || !confirm(`Delete ${p.name}?`)) return;
+  PL.list.splice(i, 1);
+  const wasActive = PL.active && PL.active.name === p.name;
+  if (wasActive) PL.active = null;
+  const ok = await savePlaces(wasActive ? ['places', 'active'] : ['places']);
+  toast(ok ? 'Deleted' : 'Could not reach the cloud');
+  if (wasActive) afterPlaceChange(); else renderLoc();
+}
+async function choosePlace(p, listChanged) {
+  PL.active = p;
+  const ok = await savePlaces(listChanged ? ['active', 'places'] : ['active']);
+  if (!ok) { toast('Could not reach the cloud — not changed', 3500); return; }
+  afterPlaceChange();
+}
+function afterPlaceChange() {
+  closeLoc(); paintPlaceChips();
+  requestForecast();
+  // Throw away this visit's map grids; the Pi re-centres them within a few minutes.
+  for (const k in GRIDS) delete GRIDS[k];
+  WM.framed = false;
+  if (WM.ready) { wmRefreshData(); setTimeout(() => { for (const k in GRIDS) delete GRIDS[k]; if ($('view-maps').classList.contains('active')) wmRefreshData(); }, 4 * 60000); }
+  paintForecast();
+}
 
 // ═══ BOAT ══════════════════════════════════════════════════════════
 const BOAT_FIELDS = [
@@ -1820,18 +2425,23 @@ $('phoneGps').addEventListener('change', e => {
 });
 
 // ═══ NAV ═══════════════════════════════════════════════════════════
-const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', boat: 'Boat' };
+const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', boat: 'Boat' };
+let lastWx = 'weather';   // the Weather tab reopens whichever of forecast / maps you left it on
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
+  const tab = v === 'maps' ? 'weather' : v;
+  if (tab === 'weather') lastWx = v;
   document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
-  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === v));
+  document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === tab));
   $('viewName').textContent = VIEW_NAMES[v];
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
   if (v === 'boat') { paintBoat(); loadFrameMode(); }
   if (v === 'weather') loadForecast(false);
+  if (v === 'maps') openMaps();
+  else if (WM.playing) wmTogglePlay();
 }
-document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v)));
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v === 'weather' ? lastWx : t.dataset.v)));
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
 
 function paintAll() {
@@ -1850,6 +2460,7 @@ function startPolling() {
 (function init() {
   drawAnchor(); drawTrail();
   if (S.anchor) map.setView([S.anchor.lat, S.anchor.lon], 17, { animate: false });
+  loadPlaces();
   showView(location.hash.slice(1) || 'anchor');
   paintAll();
   startPolling();

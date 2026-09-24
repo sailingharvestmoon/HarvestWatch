@@ -38,6 +38,7 @@ Michael DataHub Files/
 | `pi/home/harvestmoon/sensors/guard.py` | `/home/harvestmoon/sensors/guard.py` | `guard` | `sudo systemctl restart guard` |
 | `pi/home/harvestmoon/weather/weather.py` | `/home/harvestmoon/weather/weather.py` | weather unit ⚠ | `sudo systemctl restart <weather unit>` |
 | `pi/home/harvestmoon/inky/frame.py` | `/home/harvestmoon/inky/frame.py` ⚠ | frame unit ⚠ (runs as root) | `sudo systemctl restart <frame unit>` |
+| `pi/home/harvestmoon/weather/wxgrid.py` | `/home/harvestmoon/weather/wxgrid.py` | `wxgrid` | `sudo systemctl restart wxgrid` |
 | `pi/home/harvestmoon/polar/polar_logger.py` | `/home/harvestmoon/polar/polar_logger.py` | `harvest-moon-polar` | `sudo systemctl restart harvest-moon-polar` |
 | `pi/home/harvestmoon/polar/polar_build.py` | `/home/harvestmoon/polar/polar_build.py` | run by hand | — |
 | `pi/etc/systemd/system/*.service` | `/etc/systemd/system/` | — | `sudo systemctl daemon-reload` then restart that unit |
@@ -48,6 +49,7 @@ What each service does:
 - **sensors** — reads the Vesper (192.168.1.167:39150) and posts wind/depth/temp/speed/heading to `telemetry/`, and GPS + bow position to `vessels/` every 60 s.
 - **guard** — the main anchor watcher (every 10 s): drag, swing, wind/gust, lying off the wind, AIS; sends ntfy alerts from the boat; runs the dead-man's-switch offline alert.
 - **weather** — NWS forecast/obs, NOAA tides, sun/moon → `weather/` every 30 min; the seven model forecasts (ECMWF, GFS, UKMO, ICON, NAM, HRRR, AIFS, plus waves) from Open-Meteo → `weather/harvest-moon-forecast` every hour, or within a minute when the app's ↻ Refresh asks.
+- **wxgrid** — every 6 h pulls a 15×15 grid (~240 nm box around the boat) for each model plus marine (waves, currents, sea temp) → `weather/harvest-moon-grid-<model>`, for the Weather → Maps split-screen. Uses ~7,000 of Open-Meteo's 10,000 free calls a day and ~20 MB of download per day.
 - **frame** — drives the e-ink display (photos / dashboard / info screen), mode set from `netlify/frame.html`.
 - **harvest-moon-polar** — logs 1 Hz sailing data to `~/polar_logs/` for building polars.
 
@@ -86,7 +88,7 @@ Drag the **whole `netlify/` folder** onto the Netlify site — each deploy repla
 | Anchor | map, drag circle, swing track, AIS targets; set / adjust / end the anchor watch |
 | Instruments | wind rose, wind, depth, temp, speed, heading, scope, tide |
 | Alerts | every alert (Off / Ready / Active / Snoozed / Triggered), snooze, watcher health |
-| Weather | conditions, 3-day forecast, tides, sun & moon (forecast models to come) |
+| Weather | conditions, 7-model forecast table, tides, sun & moon; **Maps**: wind / gust / CAPE / rain / cloud / isobars / temp / waves / currents / sea temp per model, split-screen compare |
 | Boat | cabin display mode, boat setup (bow offset, roller, transducer, variation), phone settings, backup GPS |
 
 `watch.html`, `instruments.html`, `frame.html` are one-line redirects so old bookmarks still work.
@@ -113,7 +115,7 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 |---|---|---|
 | `vessels/` | sensors | GPS + bow position |
 | `telemetry/` | sensors | wind, depth, temp, speed, heading |
-| `weather/` | weather | forecast, tides, sun/moon; `harvest-moon-forecast` holds the model table |
+| `weather/` | weather, wxgrid, app | forecast, tides, sun/moon; `harvest-moon-forecast` = model table; `harvest-moon-grid-*` = map grids; `harvest-moon-places` = saved forecast locations and the one in use |
 | `alarms/` | Harvest Watch | anchor, radius, every alert setting, snooze, app preferences (`ui*`, `fc*`) |
 | `state/` | worker + guard | shared alert latches |
 | `tracks/` | worker | swing track |
