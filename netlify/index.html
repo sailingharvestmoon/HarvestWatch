@@ -352,6 +352,8 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .fr-label { position:absolute; left:10px; top:58px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:8px 12px; box-shadow:var(--shadow); max-width:calc(100% - 20px); }
 .fr-label .k { font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-right:6px; }
 .fr-label .k.analysis { background:#6b7785; color:#fff; } .fr-label .k.forecast { background:var(--accent); color:var(--accent-ink); }
+.fr-label .tog { display:inline-block; margin-top:6px; font:600 12px system-ui, sans-serif; padding:4px 10px; border-radius:999px; border:1px solid var(--line); background:var(--surface2); color:var(--ink); pointer-events:auto; }
+.fr-label .tog.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .fr-label b { font-size:16px; } .fr-label small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
 .fr-src { position:absolute; left:10px; bottom:10px; z-index:800; font-size:10.5px; color:#39424d; background:rgba(255,255,255,.75); padding:2px 6px; border-radius:4px; }
 .fr-bar { background:var(--surface); border-top:1px solid var(--line); padding:8px 10px 10px; }
@@ -2878,16 +2880,17 @@ function frShow(i) {
   FR.i = (i + FR.frames.length) % FR.frames.length;
   const f = FR.frames[FR.i], b = [[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]];
   if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
-  FR.layer.setImg(f.vec ? null : FR.imgs[FR.i]);
-  const iso = frIsoFor(f.t);
-  // With our own isobars and highs/lows on top, NOAA's image is kept faint - it's there for its fronts.
-  FR.layer.setOpacity(f.vec ? 1 : iso ? .5 : 1);
+  const iso = frIsoFor(f.t), gfsOnly = !f.vec && FRISO.meta && FRISO.meta.times.some(x => Math.abs(x - f.t) <= 7200);
+  // Past 24 h there are no coded fronts: the clean view is GFS isobars + highs/lows.
+  // NOAA's chart (fronts, but low-res and its own isobars) is an opt-in underlay.
+  FR.layer.setImg(f.vec || (gfsOnly && !FR.showImg) ? null : FR.imgs[FR.i]);
+  FR.layer.setOpacity(gfsOnly ? .6 : 1);
   FR.vec.setData(f.vec || null, iso, f.vec ? null : iso && iso.hl);
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
   const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
   const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
-  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}</small>`;
+  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}${gfsOnly ? ' · isobars: GFS' : ''}</small>${gfsOnly ? `<button class="tog ${FR.showImg ? 'on' : ''}" onclick="FR.showImg=!FR.showImg;frShow(FR.i)">NOAA fronts ${FR.showImg ? 'on' : 'off'}</button>` : ''}`;
   document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
   const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }
