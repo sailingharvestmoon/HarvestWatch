@@ -197,20 +197,23 @@ export function parseCOD(text, issuedMs) {
 }
 async function jobFronts(e, st) {
   const hdr = { 'User-Agent': e.NWS_UA, 'Accept': 'application/ld+json' };
-  const list = async type => ((await getJson(`https://api.weather.gov/products/types/${type}`, hdr)) || {})['@graph'] || [];
+  // NWS API product ids are 3+3: type COD, location SUS (analysis) / SRP (forecast)
+  const list = async type => ((await getJson(`https://api.weather.gov/products/types/${type.slice(0, 3)}/locations/${type.slice(3)}`, hdr)) || {})['@graph'] || [];
   const text = async id => (await getJson(`https://api.weather.gov/products/${id}`, hdr)).productText || '';
   const out = [], notes = [];
   try {
     const all = (await list('CODSUS')).sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime));
+    notes.push(`CODSUS: ${all.length} listed`);
     let pick = all.filter(p => p.wmoCollectiveId === 'ASUS02');
     if (!pick.length) pick = all;
     pick = pick.filter(p => Date.now() - Date.parse(p.issuanceTime) < 30 * 3600e3).slice(0, 10);
     for (const p of pick) {
-      try { out.push(...parseCOD(await text(p.id), Date.parse(p.issuanceTime))); } catch (err) { notes.push('CODSUS ' + p.id + ': ' + err.message); }
+      try { const got = parseCOD(await text(p.id), Date.parse(p.issuanceTime)); if (!got.length) notes.push('CODSUS ' + p.id + ': nothing decoded'); out.push(...got); } catch (err) { notes.push('CODSUS ' + p.id + ': ' + err.message); }
     }
   } catch (err) { notes.push('CODSUS list: ' + err.message); }
   try {
-    const p = (await list('CODSRP')).sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime))[0];
+    const srp = await list('CODSRP'); notes.push(`CODSRP: ${srp.length} listed`);
+    const p = srp.sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime))[0];
     if (p) out.push(...parseCOD(await text(p.id), Date.parse(p.issuanceTime)).map(f => ({ ...f, issued: Date.parse(p.issuanceTime) })));
   } catch (err) { notes.push('CODSRP: ' + err.message); }
   // one frame per valid time: analyses win over forecasts
