@@ -2620,9 +2620,9 @@ function afterPlaceChange() {
 }
 
 // ═══ FRONTS: WPC surface analysis + forecasts, day 0-7 ════════════
-// The charts from wpc.ncep.noaa.gov/basicwx/day0-7loop.html, laid over the
-// real map and labelled in local time. Built into the GitHub Pages site by
-// tools/wxmaps/fronts.py (from WPC's KML, which carries exact valid times).
+// WPC's day 0-7 fronts (wpc.ncep.noaa.gov/basicwx/day0-7loop.html) on the
+// real map, labelled in local time: vector fronts for the analyses and the
+// 12-48 h forecasts, WPC's images after that.
 const FR = { ready: false, map: null, frames: [], i: 0, layer: null, playing: null, speed: 1, fetched: 0 };
 function frInit() {
   if (FR.ready) return; FR.ready = true;
@@ -2649,7 +2649,7 @@ const WarpOverlay = L.ImageOverlay.extend({
     if (this._zoomAnimated) L.DomUtil.addClass(c, 'leaflet-zoom-animated');
     c.width = 16; c.height = 16; this._draw();
   },
-  setImg(img) { this._img = img; this._draw(); return this; },
+  setImg(img) { this._img = img; if (!img && this._image) this._image.getContext('2d').clearRect(0, 0, this._image.width, this._image.height); this._draw(); return this; },
   _draw() {
     const c = this._image, img = this._img;
     if (!c || !img || !img.naturalWidth) return;
@@ -2686,16 +2686,95 @@ function wpcFrames() {
   return out.sort((a, b) => a.t - b.t).filter(f => !seen.has(f.t) && seen.add(f.t))
             .map(f => ({ ...f, bounds: WPC_BOUNDS }));
 }
+// Sharp fronts: WPC's coded bulletins (analysis every 3 h, forecasts to 48 h),
+// decoded by the harvest-weather Cloudflare worker into weather/<vessel>-fronts
+// and drawn here as vector lines with the usual symbols - crisp at any zoom.
+// Day 3-7 are still WPC's images (no coded version exists).
+const FRONT_STYLE = {
+  COLD: { c: '#1d5fd0' }, WARM: { c: '#d7263d' }, STNRY: { c: '#1d5fd0', c2: '#d7263d' },
+  OCFNT: { c: '#8b3fb5' }, TROF: { c: '#d9822b', dash: [9, 6] }, DRYLINE: { c: '#a0522d', dash: [2, 5] }
+};
+const FrontLayer = L.Layer.extend({
+  onAdd(map) {
+    this._map = map; this._c = L.DomUtil.create('canvas', 'fr-vec');
+    Object.assign(this._c.style, { position: 'absolute', pointerEvents: 'none' });
+    map.getPanes().overlayPane.appendChild(this._c);
+    map.on('move zoom resize viewreset', this._draw, this); this._draw();
+  },
+  onRemove(map) { map.off('move zoom resize viewreset', this._draw, this); this._c.remove(); },
+  setData(d) { this._d = d; if (this._map) this._draw(); return this; },
+  _draw() {
+    const map = this._map, c = this._c, sz = map.getSize(), dpr = window.devicePixelRatio || 1;
+    L.DomUtil.setPosition(c, map.containerPointToLayerPoint([0, 0]));
+    c.width = sz.x * dpr; c.height = sz.y * dpr; c.style.width = sz.x + 'px'; c.style.height = sz.y + 'px';
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sz.x, sz.y);
+    const d = this._d; if (!d) return;
+    const P = (la, lo) => map.latLngToContainerPoint([la, lo]);
+    for (const [k, q, flat] of d.fr) {
+      const st = FRONT_STYLE[k] || FRONT_STYLE.TROF, pts = [];
+      for (let i = 0; i + 1 < flat.length; i += 2) pts.push(P(flat[i], flat[i + 1]));
+      frDrawFront(g, pts, k, st, q === 'STG' ? 3.2 : q === 'MDT' ? 2.7 : 2.3);
+    }
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+    for (const [t, p, la, lo] of d.hl) {
+      const pt = P(la, lo); if (pt.x < -30 || pt.y < -30 || pt.x > sz.x + 30 || pt.y > sz.y + 30) continue;
+      const col = t === 'H' ? '#1d5fd0' : '#d7263d';
+      g.font = '800 24px system-ui, sans-serif'; g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,.9)';
+      g.strokeText(t, pt.x, pt.y); g.fillStyle = col; g.fillText(t, pt.x, pt.y);
+      g.font = '700 12px system-ui, sans-serif'; g.lineWidth = 3;
+      g.strokeText(p, pt.x, pt.y + 18); g.fillText(p, pt.x, pt.y + 18);
+    }
+  }
+});
+// Line plus symbols every ~40 px, on the left of the direction the points
+// run (WPC's convention: that's the side the front is moving toward).
+function frDrawFront(g, pts, k, st, w) {
+  if (pts.length < 2) return;
+  const seg = [], len = [0];
+  for (let i = 1; i < pts.length; i++) { const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y; seg.push([dx, dy]); len.push(len[i - 1] + Math.hypot(dx, dy)); }
+  const L_ = len[len.length - 1]; if (L_ < 2) return;
+  const at = s => { let i = 1; while (i < len.length - 1 && len[i] < s) i++; const [dx, dy] = seg[i - 1], l = Math.hypot(dx, dy) || 1, f = (s - len[i - 1]) / l;
+    return { x: pts[i - 1].x + dx * f, y: pts[i - 1].y + dy * f, ux: dx / l, uy: dy / l }; };
+  const sub = (s0, s1) => { const out = [at(s0)]; for (let i = 1; i < len.length - 1; i++) if (len[i] > s0 && len[i] < s1) out.push(pts[i]); out.push(at(s1)); return out; };
+  const stroke = (ps, col) => { g.beginPath(); ps.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.strokeStyle = col; g.stroke(); };
+  g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.setLineDash(st.dash || []);
+  const S = 40;
+  if (k === 'STNRY') {                                   // alternating red/blue pieces
+    for (let s = 0, n = 0; s < L_; s += S / 2, n++) stroke(sub(s, Math.min(L_, s + S / 2)), n % 2 ? st.c2 : st.c);
+  } else stroke(pts, st.c);
+  g.setLineDash([]);
+  if (k === 'TROF' || k === 'DRYLINE') return;
+  const tri = (m, side, col) => { const nx = m.uy * side, ny = -m.ux * side, h = 8, b = 6;
+    g.beginPath(); g.moveTo(m.x - m.ux * b, m.y - m.uy * b); g.lineTo(m.x + nx * h * 1.3, m.y + ny * h * 1.3); g.lineTo(m.x + m.ux * b, m.y + m.uy * b); g.closePath(); g.fillStyle = col; g.fill(); };
+  const semi = (m, side, col) => { const a = Math.atan2(m.uy, m.ux);
+    g.beginPath(); g.arc(m.x, m.y, 6, a, a + Math.PI, side > 0); g.closePath(); g.fillStyle = col; g.fill(); };
+  for (let s = S / 2, n = 0; s < L_ - 6; s += S, n++) {
+    const m = at(s);
+    if (k === 'COLD') tri(m, 1, st.c);
+    else if (k === 'WARM') semi(m, 1, st.c);
+    else if (k === 'OCFNT') (n % 2 ? semi : tri)(m, 1, st.c);
+    else if (k === 'STNRY') { if (n % 2) semi(m, -1, st.c2); else tri(m, 1, st.c); }
+  }
+}
 async function openFronts() {
   frInit();
   setTimeout(() => FR.map.invalidateSize(), 60);
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
   $('frLabel').innerHTML = '<b>Loading charts…</b>';
-  FR.frames = wpcFrames(); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
-  FR.imgs = FR.frames.map(f => { const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
+  let vec = [];
+  try {
+    const r = await fetch(`${FSB}/weather/${VESSEL}-fronts`, { cache: 'no-store' });
+    if (r.ok) { const j = await r.json(); const d = JSON.parse(((j.fields || {}).data || {}).stringValue || '{}');
+      vec = (d.frames || []).map(f => ({ t: Math.round(f.t / 1000), kind: f.kind, name: f.kind === 'analysis' ? 'Analysis' : `${f.lead}-hour forecast`, vec: f })); }
+  } catch (e) {}
+  const lastVec = vec.length ? vec[vec.length - 1].t : 0;
+  const imgs = wpcFrames().filter(f => !vec.length || f.t > lastVec + 3600);
+  FR.frames = [...vec, ...imgs].sort((a, b) => a.t - b.t); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
+  FR.imgs = FR.frames.map(f => { if (!f.url) return null; const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); };
     im.src = f.url + '?v=' + FR.bust; return im; });
-  const b = FR.frames[0].bounds; FR.map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { animate: false, padding: [10, 10] });
+  if (!FR.vec) FR.vec = new FrontLayer().addTo(FR.map);
+  if (!FR.fitted) { FR.map.fitBounds([[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]], { animate: false, padding: [10, 10] }); FR.fitted = true; }
   frRenderStrip(); frNow();
 }
 const frLocal = (t, o) => new Date(t * 1000).toLocaleString([], o);
@@ -2721,9 +2800,10 @@ function frNow() {
 function frShow(i) {
   if (!FR.frames.length) return;
   FR.i = (i + FR.frames.length) % FR.frames.length;
-  const f = FR.frames[FR.i], b = [[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[3]]];
+  const f = FR.frames[FR.i], b = [[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]];
   if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
-  FR.layer.setImg(FR.imgs[FR.i]);
+  FR.layer.setImg(f.vec ? null : FR.imgs[FR.i]);
+  FR.vec.setData(f.vec || null);
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
   const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';

@@ -20,10 +20,10 @@
 // CPU allowance. Bookkeeping lives in weather/<vessel>-wxstate.
 //
 // Variables (wrangler.toml [vars]): PROJECT_ID, VESSEL_ID, NWS_UA
-// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?status=1
+// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?status=1
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
-const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2;
+const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30;
 
 const FC_MODELS = [
   ['ecmwf', ['ecmwf_ifs025', 'ecmwf_ifs']],
@@ -49,6 +49,7 @@ export default {
     try {
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
+      if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
       const st = await getState(e);
       return json({ ok: true, lastNow: ago(st.lastNow), lastForecast: ago(st.lastFc), station: st.station,
                     hint: 'Add ?run=now or ?run=forecast to run a job by hand.' });
@@ -109,7 +110,7 @@ const parse = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } 
 
 async function getState(e) {
   const f = await fsGet(e, `weather/${e.VESSEL_ID}-wxstate`) || {};
-  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0,
+  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0,
            station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []) };
 }
 async function boatPosition(e) {
@@ -137,7 +138,89 @@ async function tick(e) {
   const fcDue = now - st.lastFc > FC_EVERY_MIN * 60000 || (req > st.lastFc && now - st.lastFc > FC_MIN_GAP_MIN * 60000);
   if (fcDue) return jobForecast(e, st);
   if (now - st.lastNow > NOW_EVERY_MIN * 60000) return jobNow(e, st);
+  if (now - st.lastFronts > FRONTS_EVERY_MIN * 60000) return jobFronts(e, st);
   return { idle: true };
+}
+
+// ═══ JOB: surface fronts (WPC coded bulletins) ════════════════════
+// WPC's "Coded Surface Frontal Positions": the analysis every 3 h (CODSUS,
+// high-res ASUS02 at 0.1 deg) and the 12-48 h forecasts (CODSRP). The app
+// draws them as sharp lines. Written to weather/<vessel>-fronts.
+export function codCoord(tok) {
+  if (!/^\d{4,7}$/.test(tok)) return null;
+  const hi = tok.length >= 6;
+  const la = hi ? +tok.slice(0, 3) / 10 : +tok.slice(0, 2), lo = hi ? +tok.slice(3) / 10 : +tok.slice(2);
+  if (la > 90 || lo > 360) return null;
+  return [Math.round(la * 10) / 10, -Math.round((lo > 180 ? lo - 360 : lo) * 10) / 10];
+}
+const COD_KEYS = new Set(['HIGHS', 'LOWS', 'COLD', 'WARM', 'STNRY', 'OCFNT', 'TROF', 'DRYLINE']);
+export function parseCOD(text, issuedMs) {
+  const iss = new Date(issuedMs), frames = [];
+  let fr = null, feat = null;
+  const close = () => { if (feat && fr) {
+      if (feat.k === 'HIGHS' || feat.k === 'LOWS') {
+        for (let i = 0; i + 1 < feat.nums.length; i += 2) { const c = codCoord(feat.nums[i + 1]); if (c) fr.hl.push([feat.k[0], +feat.nums[i], c[0], c[1]]); }
+      } else {
+        const pts = feat.nums.map(codCoord).filter(Boolean);
+        if (pts.length > 1) fr.fr.push([feat.k, feat.q, pts.flat()]);
+      } }
+    feat = null; };
+  // MMDDHH (analysis) / DDHHMM (forecast) -> ms, year/month from the issue time
+  const when = (mo, d, h, mi) => {
+    let t = Date.UTC(iss.getUTCFullYear(), mo, d, h, mi);
+    if (t - issuedMs > 200 * 86400e3) t = Date.UTC(iss.getUTCFullYear() - 1, mo, d, h, mi);
+    if (issuedMs - t > 200 * 86400e3) t = Date.UTC(iss.getUTCFullYear() + 1, mo, d, h, mi);
+    return t;
+  };
+  for (const raw of String(text).split('\n')) {
+    const line = raw.trim(); if (!line) continue;
+    if (line.startsWith('$$')) { close(); break; }
+    let m = line.match(/^(\d+)\s*HR PROG VALID (\d{2})(\d{2})(\d{2})Z/);
+    if (m) {
+      close();
+      let mo = iss.getUTCMonth(); const d = +m[2];
+      if (d < iss.getUTCDate() - 7) mo += 1;                        // crossed into next month
+      fr = { t: when(mo, d, +m[3], +m[4]), kind: 'forecast', lead: +m[1], hl: [], fr: [] }; frames.push(fr); continue;
+    }
+    m = line.match(/^VALID (\d{2})(\d{2})(\d{2})Z/);
+    if (m) { close(); fr = { t: when(+m[1] - 1, +m[2], +m[3], 0), kind: 'analysis', hl: [], fr: [] }; frames.push(fr); continue; }
+    if (!fr) continue;
+    const tok = line.split(/\s+/);
+    if (COD_KEYS.has(tok[0])) {
+      close(); feat = { k: tok[0], q: '', nums: [] };
+      for (const x of tok.slice(1)) { if (/^\d+$/.test(x)) feat.nums.push(x); else if (!feat.nums.length) feat.q += (feat.q ? ' ' : '') + x; }
+    } else if (feat && /^\d/.test(tok[0])) { for (const x of tok) if (/^\d+$/.test(x)) feat.nums.push(x); }
+    else close();
+  }
+  close();
+  return frames.filter(f => f.fr.length || f.hl.length);
+}
+async function jobFronts(e, st) {
+  const hdr = { 'User-Agent': e.NWS_UA, 'Accept': 'application/ld+json' };
+  const list = async type => ((await getJson(`https://api.weather.gov/products/types/${type}`, hdr)) || {})['@graph'] || [];
+  const text = async id => (await getJson(`https://api.weather.gov/products/${id}`, hdr)).productText || '';
+  const out = [], notes = [];
+  try {
+    const all = (await list('CODSUS')).sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime));
+    let pick = all.filter(p => p.wmoCollectiveId === 'ASUS02');
+    if (!pick.length) pick = all;
+    pick = pick.filter(p => Date.now() - Date.parse(p.issuanceTime) < 30 * 3600e3).slice(0, 10);
+    for (const p of pick) {
+      try { out.push(...parseCOD(await text(p.id), Date.parse(p.issuanceTime))); } catch (err) { notes.push('CODSUS ' + p.id + ': ' + err.message); }
+    }
+  } catch (err) { notes.push('CODSUS list: ' + err.message); }
+  try {
+    const p = (await list('CODSRP')).sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime))[0];
+    if (p) out.push(...parseCOD(await text(p.id), Date.parse(p.issuanceTime)).map(f => ({ ...f, issued: Date.parse(p.issuanceTime) })));
+  } catch (err) { notes.push('CODSRP: ' + err.message); }
+  // one frame per valid time: analyses win over forecasts
+  const byT = new Map();
+  for (const f of out) { const k = f.t, cur = byT.get(k); if (!cur || (cur.kind === 'forecast' && f.kind === 'analysis')) byT.set(k, f); }
+  const frames = [...byT.values()].sort((a, b) => a.t - b.t);
+  const at = Date.now();
+  if (frames.length) await fsWrite(e, `weather/${e.VESSEL_ID}-fronts`, { data: JSON.stringify({ at, frames }), updatedAt: at });
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastFronts: frames.length ? at : at - (FRONTS_EVERY_MIN - 10) * 60000 }, true);
+  return { ok: frames.length > 0, frames: frames.map(f => `${new Date(f.t).toISOString().slice(5, 16)} ${f.kind}${f.lead ? ' +' + f.lead + 'h' : ''}: ${f.fr.length} fronts, ${f.hl.length} H/L`), notes };
 }
 
 // ═══ JOB: 7-model point forecast ══════════════════════════════════
