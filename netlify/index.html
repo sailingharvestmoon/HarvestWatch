@@ -366,6 +366,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .fr-chip.forecast { border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); }
 .fr-chip.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .fr-chip.now { box-shadow:inset 0 -3px 0 var(--warn); }
+.fr-chip.bad { opacity:.35; text-decoration:line-through; }
 
 /* forecast location */
 .loc-chip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; color:var(--ink); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -2636,20 +2637,64 @@ function frInit() {
   });
 }
 function frPaintSpeed() { document.querySelectorAll('#frSpeed button').forEach(b => b.classList.toggle('on', +b.dataset.s === FR.speed)); }
+// NOAA WPC charts are loaded straight from WPC by this browser (WPC blocks
+// cloud servers, so they can't be pre-built). Nothing is stored.
+// WPC's images are plain lat/lon; WarpOverlay redraws them for the
+// web map (Mercator) row by row so fronts line up with the coastline.
+const WPC = 'https://www.wpc.ncep.noaa.gov/kml/conus_png/';
+const WPC_BOUNDS = [14.88, -130.08, 58.79, -64.06];
+const WarpOverlay = L.ImageOverlay.extend({
+  _initImage() {
+    const c = this._image = L.DomUtil.create('canvas', 'leaflet-image-layer');
+    if (this._zoomAnimated) L.DomUtil.addClass(c, 'leaflet-zoom-animated');
+    c.width = 16; c.height = 16; this._draw();
+  },
+  setImg(img) { this._img = img; this._draw(); return this; },
+  _draw() {
+    const c = this._image, img = this._img;
+    if (!c || !img || !img.naturalWidth) return;
+    const iw = img.naturalWidth, ih = img.naturalHeight;
+    if (c.width !== iw || c.height !== ih) { c.width = iw; c.height = ih; }
+    const ctx = c.getContext('2d'); ctx.clearRect(0, 0, iw, ih);
+    const b = this._bounds, n = b.getNorth(), s = b.getSouth();
+    const merc = la => Math.log(Math.tan(Math.PI / 4 + la * Math.PI / 360));
+    const mn = merc(n), ms = merc(s), latAt = y => (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+    const rowOf = dy => (n - latAt(mn + (ms - mn) * dy / ih)) / (n - s) * ih;
+    const step = 2;
+    for (let dy = 0; dy < ih; dy += step) {
+      const s0 = rowOf(dy), s1 = rowOf(Math.min(ih, dy + step));
+      ctx.drawImage(img, 0, s0, iw, Math.max(.5, s1 - s0), 0, dy, iw, step);
+    }
+  }
+});
+// Valid times. WPC's files carry none, so they follow WPC's schedule:
+// analyses every 3 h (posted ~1¾ h after); day 0-2.5 forecasts from the
+// 00Z/12Z cycles (posted ~7 h after); day 3-7 at 12Z, issued ~19Z.
+function wpcFrames() {
+  const now = Date.now() / 1000, H = 3600, D = 86400, day0 = Math.floor(now / D) * D, out = [];
+  for (let hh = 0; hh < 24; hh += 3) {
+    let t = day0 + hh * H; if (t + 1.75 * H > now) t -= D;
+    out.push({ t, kind: 'analysis', name: `${String(hh).padStart(2, '0')}Z analysis`, url: `${WPC}conussfc${String(hh).padStart(2, '0')}_trans.png` });
+  }
+  const base = Math.floor((now - 7 * H) / (12 * H)) * 12 * H;
+  [[1, 6], [2, 12], [3, 18], [4, 24], [5, 30], [6, 36], [8, 48], [9, 60]].forEach(([k, h]) =>
+    out.push({ t: base + h * H, kind: 'forecast', name: `${h}-hour forecast`, url: `${WPC}9${k}f_trans_CED.png` }));
+  const issue = Math.floor((now - 19 * H) / D) * D;
+  ['j', 'k', 'l', 'm', 'n'].forEach((c, i) =>
+    out.push({ t: issue + (3 + i) * D + 12 * H, kind: 'forecast', name: `Day ${3 + i}`, url: `${WPC}9${c}h_trans_CED.png` }));
+  const seen = new Set();
+  return out.sort((a, b) => a.t - b.t).filter(f => !seen.has(f.t) && seen.add(f.t))
+            .map(f => ({ ...f, bounds: WPC_BOUNDS }));
+}
 async function openFronts() {
   frInit();
   setTimeout(() => FR.map.invalidateSize(), 60);
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
   $('frLabel').innerHTML = '<b>Loading charts…</b>';
-  try {
-    const r = await fetch(MAPS_BASE + 'fronts/index.json', { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    const j = await r.json();
-    FR.frames = j.frames || []; FR.fetched = Date.now(); FR.gen = j.generated;
-  } catch (e) { $('frLabel').innerHTML = '<b>Charts not available yet</b><small>They are built by the GitHub maps job.</small>'; return; }
-  if (!FR.frames.length) { $('frLabel').innerHTML = '<b>No charts in the last build</b>'; return; }
-  // Warm the browser cache so the loop plays smoothly.
-  FR.frames.forEach(f => { const im = new Image(); im.src = MAPS_BASE + f.src + '?g=' + FR.gen; });
+  FR.frames = wpcFrames(); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
+  FR.imgs = FR.frames.map(f => { const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
+    im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); };
+    im.src = f.url + '?v=' + FR.bust; return im; });
   const b = FR.frames[0].bounds; FR.map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { animate: false, padding: [10, 10] });
   frRenderStrip(); frNow();
 }
@@ -2676,9 +2721,9 @@ function frNow() {
 function frShow(i) {
   if (!FR.frames.length) return;
   FR.i = (i + FR.frames.length) % FR.frames.length;
-  const f = FR.frames[FR.i], url = MAPS_BASE + f.src + '?g=' + FR.gen, b = [[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[3]]];
-  if (!FR.layer) FR.layer = L.imageOverlay(url, b, { interactive: false }).addTo(FR.map);
-  else { FR.layer.setUrl(url); FR.layer.setBounds(L.latLngBounds(b)); }
+  const f = FR.frames[FR.i], b = [[f.bounds[0], f.bounds[1]], [f.bounds[2], f.bounds[3]]];
+  if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
+  FR.layer.setImg(FR.imgs[FR.i]);
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
   const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
