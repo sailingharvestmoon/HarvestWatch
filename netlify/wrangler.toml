@@ -1,0 +1,7 @@
+# Harvest Watch web app, served by Cloudflare (free, unlimited deploys).
+# Cloudflare Workers Builds: root directory = netlify, deploy command = npx wrangler deploy
+name = "harvest-watch"
+compatibility_date = "2026-09-01"
+
+[assets]
+directory = "."
