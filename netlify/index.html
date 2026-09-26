@@ -352,8 +352,6 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .fr-label { position:absolute; left:10px; top:58px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:8px 12px; box-shadow:var(--shadow); max-width:calc(100% - 20px); }
 .fr-label .k { font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-right:6px; }
 .fr-label .k.analysis { background:#6b7785; color:#fff; } .fr-label .k.forecast { background:var(--accent); color:var(--accent-ink); }
-.fr-label .tog { display:inline-block; margin-top:6px; font:600 12px system-ui, sans-serif; padding:4px 10px; border-radius:999px; border:1px solid var(--line); background:var(--surface2); color:var(--ink); pointer-events:auto; }
-.fr-label .tog.on { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 .fr-label b { font-size:16px; } .fr-label small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
 .fr-src { position:absolute; left:10px; bottom:10px; z-index:800; font-size:10.5px; color:#39424d; background:rgba(255,255,255,.75); padding:2px 6px; border-radius:4px; }
 .fr-bar { background:var(--surface); border-top:1px solid var(--line); padding:8px 10px 10px; }
@@ -400,6 +398,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="frNoGreen" color-interpolation-filters="sRGB"><feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  3 -3 3 0 0" result="m"/><feComposite in="m" in2="SourceAlpha" operator="in"/></filter></svg>
 <div class="app">
   <header class="appbar" style="position:relative;">
     <div class="brand"><b>Harvest Watch</b><span id="viewName">Anchor</span></div>
@@ -2725,7 +2724,7 @@ const FrontLayer = L.Layer.extend({
       g.font = '800 24px system-ui, sans-serif'; g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,.9)';
       g.strokeText(t, pt.x, pt.y); g.fillStyle = col; g.fillText(t, pt.x, pt.y);
       g.font = '700 12px system-ui, sans-serif'; g.lineWidth = 3;
-      g.strokeText(p, pt.x, pt.y + 18); g.fillText(p, pt.x, pt.y + 18);
+      if (p !== '' && p != null) { g.strokeText(p, pt.x, pt.y + 18); g.fillText(p, pt.x, pt.y + 18); }
     }
   }
 });
@@ -2880,17 +2879,18 @@ function frShow(i) {
   FR.i = (i + FR.frames.length) % FR.frames.length;
   const f = FR.frames[FR.i], b = [[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]];
   if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
-  const iso = frIsoFor(f.t), gfsOnly = !f.vec && FRISO.meta && FRISO.meta.times.some(x => Math.abs(x - f.t) <= 7200);
-  // Past 24 h there are no coded fronts: the clean view is GFS isobars + highs/lows.
-  // NOAA's chart (fronts, but low-res and its own isobars) is an opt-in underlay.
-  FR.layer.setImg(f.vec || (gfsOnly && !FR.showImg) ? null : FR.imgs[FR.i]);
-  FR.layer.setOpacity(gfsOnly ? .6 : 1);
-  FR.vec.setData(f.vec || null, iso, f.vec ? null : iso && iso.hl);
+  const iso = frIsoFor(f.t), gfsIso = !f.vec && FRISO.meta && FRISO.meta.times.some(x => Math.abs(x - f.t) <= 7200);
+  // Beyond the vector fronts NOAA only publishes a picture. Its fronts and highs/lows
+  // are kept; its own (blurry, green) isobars and labels are filtered out (#frNoGreen)
+  // so the sharp GFS isobars drawn on top don't double up.
+  FR.layer.setImg(f.vec ? null : FR.imgs[FR.i]);
+  if (FR.layer._image) FR.layer._image.style.filter = gfsIso ? 'url(#frNoGreen)' : '';
+  FR.vec.setData(f.vec || null, iso, null);
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
   const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
   const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
-  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}${gfsOnly ? ' · isobars: GFS' : ''}</small>${gfsOnly ? `<button class="tog ${FR.showImg ? 'on' : ''}" onclick="FR.showImg=!FR.showImg;frShow(FR.i)">NOAA fronts ${FR.showImg ? 'on' : 'off'}</button>` : ''}`;
+  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}${gfsIso ? ' · isobars: GFS' : ''}</small>`;
   document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
   const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }

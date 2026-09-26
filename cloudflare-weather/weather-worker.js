@@ -195,6 +195,43 @@ export function parseCOD(text, issuedMs) {
   close();
   return frames.filter(f => f.fr.length || f.hl.length);
 }
+// National Forecast Chart (mapservices.weather.noaa.gov): WPC's day 1-3 fronts
+// and highs/lows as vectors. Layers per day: 1 + 12(d-1) highs/lows, 2 + 12(d-1) fronts.
+const NFC = 'https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/natl_fcst_wx_chart/MapServer';
+const NFC_KIND = [[/cold/i, 'COLD'], [/warm/i, 'WARM'], [/stationary/i, 'STNRY'], [/occlu/i, 'OCFNT'], [/dry/i, 'DRYLINE'], [/trough|squall|outflow/i, 'TROF']];
+const MON3 = { JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5, JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11 };
+export function nfcTime(txt) {
+  const m = String(txt).match(/Valid:\s*\w+\s+(Morning|Afternoon|Evening|Night)\s+(\w{3})\w*\s+(\d{1,2})\s+(\d{4})/i);
+  if (!m || MON3[m[2].toUpperCase()] === undefined) return null;
+  const h = { morning: 12, afternoon: 18, evening: 24, night: 30 }[m[1].toLowerCase()];
+  return Date.UTC(+m[4], MON3[m[2].toUpperCase()], +m[3]) + h * 3600e3;
+}
+async function nfcFrames() {
+  const q = async id => {
+    const r = await fetch(`${NFC}/${id}/query?where=1%3D1&outFields=popupconte,feat&returnGeometry=true&outSR=4326&f=geojson`);
+    if (!r.ok) throw new Error(`layer ${id} HTTP ${r.status}`);
+    return (await r.json()).features || [];
+  };
+  const frames = [];
+  for (const d of [2, 3]) {
+    const [hl, fr] = await Promise.all([q(1 + 12 * (d - 1)), q(2 + 12 * (d - 1))]);
+    const t = [...fr, ...hl].map(f => nfcTime((f.properties || {}).popupconte)).find(Boolean);
+    if (!t) continue;
+    const F = { t, kind: 'forecast', src: 'nfc', day: d, hl: [], fr: [] };
+    for (const f of hl) {
+      const c = (f.geometry || {}).coordinates, k = /high/i.test((f.properties || {}).feat) ? 'H' : /low/i.test((f.properties || {}).feat) ? 'L' : null;
+      if (k && c) F.hl.push([k, '', Math.round(c[1] * 10) / 10, Math.round(c[0] * 10) / 10]);
+    }
+    for (const f of fr) {
+      const g = f.geometry || {}, feat = (f.properties || {}).feat || '';
+      const k = (NFC_KIND.find(([re]) => re.test(feat)) || [null, 'TROF'])[1];
+      const lines = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+      for (const ln of lines) if (ln.length > 1) F.fr.push([k, '', ln.flatMap(([lo, la]) => [Math.round(la * 100) / 100, Math.round(lo * 100) / 100])]);
+    }
+    if (F.fr.length || F.hl.length) frames.push(F);
+  }
+  return frames;
+}
 async function jobFronts(e, st) {
   const hdr = { 'User-Agent': e.NWS_UA, 'Accept': 'application/ld+json' };
   // NWS API product ids are 3+3: type COD, location SUS (analysis) / SRP (forecast)
@@ -216,10 +253,15 @@ async function jobFronts(e, st) {
     const p = srp.sort((a, b) => Date.parse(b.issuanceTime) - Date.parse(a.issuanceTime))[0];
     if (p) out.push(...parseCOD(await text(p.id), Date.parse(p.issuanceTime)).map(f => ({ ...f, issued: Date.parse(p.issuanceTime) })));
   } catch (err) { notes.push('CODSRP: ' + err.message); }
-  // one frame per valid time: analyses win over forecasts
+  // Days 2-3 from the National Forecast Chart map service (vector fronts, no pressures).
+  try { const nfc = await nfcFrames(); notes.push(`NFC: ${nfc.length} frames`); out.push(...nfc); } catch (err) { notes.push('NFC: ' + err.message); }
+  // one frame per valid time: analyses win over forecasts, coded bulletins over the NFC
   const byT = new Map();
-  for (const f of out) { const k = f.t, cur = byT.get(k); if (!cur || (cur.kind === 'forecast' && f.kind === 'analysis')) byT.set(k, f); }
-  const frames = [...byT.values()].sort((a, b) => a.t - b.t);
+  const rank = f => f.kind === 'analysis' ? 2 : f.src === 'nfc' ? 0 : 1;
+  for (const f of out) { const k = f.t, cur = byT.get(k); if (!cur || rank(f) > rank(cur)) byT.set(k, f); }
+  // NFC frames only extend past the coded forecasts
+  const lastCoded = Math.max(0, ...out.filter(f => f.src !== 'nfc').map(f => f.t));
+  const frames = [...byT.values()].filter(f => f.src !== 'nfc' || f.t > lastCoded).sort((a, b) => a.t - b.t);
   const at = Date.now();
   if (frames.length) await fsWrite(e, `weather/${e.VESSEL_ID}-fronts`, { data: JSON.stringify({ at, frames }), updatedAt: at });
   await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastFronts: frames.length ? at : at - (FRONTS_EVERY_MIN - 10) * 60000 }, true);
