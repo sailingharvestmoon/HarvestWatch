@@ -2669,14 +2669,14 @@ const WarpOverlay = L.ImageOverlay.extend({
 });
 // Valid times. WPC's files carry none, so they follow WPC's schedule:
 // analyses every 3 h (posted ~1¾ h after); day 0-2.5 forecasts from the
-// 00Z/12Z cycles (posted ~7 h after); day 3-7 at 12Z, issued ~19Z.
+// 00Z/12Z cycles (posted ~4 h after); day 3-7 at 12Z, issued ~19Z.
 function wpcFrames() {
   const now = Date.now() / 1000, H = 3600, D = 86400, day0 = Math.floor(now / D) * D, out = [];
   for (let hh = 0; hh < 24; hh += 3) {
     let t = day0 + hh * H; if (t + 1.75 * H > now) t -= D;
     out.push({ t, kind: 'analysis', name: `${String(hh).padStart(2, '0')}Z analysis`, url: `${WPC}conussfc${String(hh).padStart(2, '0')}_trans.png` });
   }
-  const base = Math.floor((now - 7 * H) / (12 * H)) * 12 * H;
+  const base = Math.floor((now - 4.5 * H) / (12 * H)) * 12 * H;
   [[1, 6], [2, 12], [3, 18], [4, 24], [5, 30], [6, 36], [8, 48], [9, 60]].forEach(([k, h]) =>
     out.push({ t: base + h * H, kind: 'forecast', name: `${h}-hour forecast`, url: `${WPC}9${k}f_trans_CED.png` }));
   const issue = Math.floor((now - 19 * H) / D) * D;
