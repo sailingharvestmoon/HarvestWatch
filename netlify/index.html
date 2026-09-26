@@ -2702,14 +2702,15 @@ const FrontLayer = L.Layer.extend({
     map.on('move zoom resize viewreset', this._draw, this); this._draw();
   },
   onRemove(map) { map.off('move zoom resize viewreset', this._draw, this); this._c.remove(); },
-  setData(d) { this._d = d; if (this._map) this._draw(); return this; },
+  setData(d, iso, hl) { this._d = d; this._iso = iso; this._hl = hl; if (this._map) this._draw(); return this; },
   _draw() {
     const map = this._map, c = this._c, sz = map.getSize(), dpr = window.devicePixelRatio || 1;
     L.DomUtil.setPosition(c, map.containerPointToLayerPoint([0, 0]));
     c.width = sz.x * dpr; c.height = sz.y * dpr; c.style.width = sz.x + 'px'; c.style.height = sz.y + 'px';
     const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sz.x, sz.y);
-    const d = this._d; if (!d) return;
     const P = (la, lo) => map.latLngToContainerPoint([la, lo]);
+    const d = this._d || { fr: [], hl: this._hl || [] };
+    if (this._iso) frIsobars(g, map, sz, this._iso, d.hl.map(h => { const p = P(h[2], h[3]); return [p.x, p.y + 8]; }));
     for (const [k, q, flat] of d.fr) {
       const st = FRONT_STYLE[k] || FRONT_STYLE.TROF, pts = [];
       for (let i = 0; i + 1 < flat.length; i += 2) pts.push(P(flat[i], flat[i + 1]));
@@ -2726,6 +2727,79 @@ const FrontLayer = L.Layer.extend({
     }
   }
 });
+// Isobars every 4 mb from the pre-built GFS pressure (tools/wxmaps/isobars.py),
+// contoured on a fine screen grid so they stay smooth at any zoom.
+function frIsobars(g, map, sz, F, avoid) {
+  const m = F.meta, [s0, w0, n0, e0] = m.bbox, res = (e0 - w0) / (m.nx - 1), u8 = F.u8;
+  const val = (la, lo) => {
+    const fx = (lo - w0) / res, fy = (la - s0) / res; if (fx < 0 || fy < 0 || fx > m.nx - 1 || fy > m.ny - 1) return NaN;
+    const x0 = Math.min(m.nx - 2, fx | 0), y0 = Math.min(m.ny - 2, fy | 0), tx = fx - x0, ty = fy - y0;
+    const q = (x, y) => { const b = u8[y * m.nx + x]; return b === 255 ? NaN : m.off + b * m.step; };
+    return (q(x0, y0) * (1 - tx) + q(x0 + 1, y0) * tx) * (1 - ty) + (q(x0, y0 + 1) * (1 - tx) + q(x0 + 1, y0 + 1) * tx) * ty;
+  };
+  const B = 6, cw = Math.ceil(sz.x / B) + 1, ch = Math.ceil(sz.y / B) + 1, v = new Float32Array(cw * ch);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) { const ll = map.containerPointToLatLng([x * B, y * B]); v[y * cw + x] = val(ll.lat, ll.lng); }
+  let lo = Infinity, hi = -Infinity; for (const a of v) if (a === a) { if (a < lo) lo = a; if (a > hi) hi = a; }
+  if (lo === Infinity) return;
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
+  const col = dark ? 'rgba(120,220,150,.9)' : 'rgba(34,130,70,.85)';
+  g.lineWidth = 1.3; g.strokeStyle = col; g.setLineDash([]);
+  const labels = [];
+  for (let lev = Math.ceil(lo / 4) * 4; lev <= hi; lev += 4) {
+    g.beginPath(); const cand = [];
+    for (let y = 0; y < ch - 1; y++) for (let x = 0; x < cw - 1; x++) {
+      const a = v[y * cw + x], b = v[y * cw + x + 1], c = v[(y + 1) * cw + x + 1], d = v[(y + 1) * cw + x];
+      if (a !== a || b !== b || c !== c || d !== d) continue;
+      const pts = [];
+      const ed = (v1, v2, x1, y1, x2, y2) => { if ((v1 < lev) !== (v2 < lev)) { const f = (lev - v1) / (v2 - v1); pts.push([(x1 + (x2 - x1) * f) * B, (y1 + (y2 - y1) * f) * B]); } };
+      ed(a, b, x, y, x + 1, y); ed(b, c, x + 1, y, x + 1, y + 1); ed(d, c, x, y + 1, x + 1, y + 1); ed(a, d, x, y, x, y + 1);
+      for (let i = 0; i + 1 < pts.length; i += 2) { g.moveTo(pts[i][0], pts[i][1]); g.lineTo(pts[i + 1][0], pts[i + 1][1]); }
+      if (pts.length && (x + y) % 5 === 0) cand.push(pts[0]);
+    }
+    g.stroke();
+    let n = 0;
+    for (const p of cand) {
+      if (n >= 4 || p[0] < 30 || p[1] < 30 || p[0] > sz.x - 30 || p[1] > sz.y - 30) continue;
+      if (labels.some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 170) || (avoid || []).some(q => Math.hypot(q[0] - p[0], q[1] - p[1]) < 45)) continue;
+      labels.push(p); n++;
+    }
+    g.font = '700 11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (const p of n ? labels.slice(-n) : []) {
+      const t = String(lev), w = g.measureText(t).width + 6;
+      g.fillStyle = dark ? 'rgba(20,28,36,.85)' : 'rgba(255,255,255,.9)'; g.fillRect(p[0] - w / 2, p[1] - 7, w, 14);
+      g.fillStyle = col; g.fillText(t, p[0], p[1]);
+    }
+  }
+}
+const FRISO = { meta: null, steps: {}, pend: {} };
+async function frIsoLoad() {
+  try { const r = await fetch(MAPS_BASE + 'iso/meta.json?t=' + Math.floor(Date.now() / 600000), { cache: 'no-store' }); FRISO.meta = r.ok ? await r.json() : null; }
+  catch (e) { FRISO.meta = null; }
+  FRISO.steps = {}; FRISO.pend = {};
+}
+// Pressure field nearest a frame time (within 2 h), loading it if needed.
+function frIsoFor(t) {
+  const m = FRISO.meta; if (!m) return null;
+  let bi = -1, bd = 7201; m.times.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; bi = i; } });
+  if (bi < 0) return null;
+  if (FRISO.steps[bi]) return { meta: m, u8: FRISO.steps[bi], hl: m.hl ? m.hl[bi] : [] };
+  if (!FRISO.pend[bi]) {
+    FRISO.pend[bi] = true;
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, img.width, img.height).data, u = new Uint8Array(img.width * img.height);
+      // PNG row 0 = south, so index = y * nx + x with y counting north from the south edge
+      for (let y = 0; y < img.height; y++) for (let xx = 0; xx < img.width; xx++) u[y * img.width + xx] = d[(y * img.width + xx) * 4];
+      FRISO.steps[bi] = u; delete FRISO.pend[bi];
+      if (FR.frames.length) frShow(FR.i);
+    };
+    img.onerror = () => { delete FRISO.pend[bi]; };
+    img.src = `${MAPS_BASE}iso/ps_${bi}.png?r=${m.run}`;
+  }
+  return null;
+}
 // Line plus symbols every ~40 px, on the left of the direction the points
 // run (WPC's convention: that's the side the front is moving toward).
 function frDrawFront(g, pts, k, st, w) {
@@ -2762,6 +2836,7 @@ async function openFronts() {
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
   $('frLabel').innerHTML = '<b>Loading charts…</b>';
   let vec = [];
+  const isoP = frIsoLoad();
   try {
     const r = await fetch(`${FSB}/weather/${VESSEL}-fronts`, { cache: 'no-store' });
     if (r.ok) { const j = await r.json(); const d = JSON.parse(((j.fields || {}).data || {}).stringValue || '{}');
@@ -2775,6 +2850,7 @@ async function openFronts() {
     im.src = f.url + '?v=' + FR.bust; return im; });
   if (!FR.vec) FR.vec = new FrontLayer().addTo(FR.map);
   if (!FR.fitted) { FR.map.fitBounds([[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]], { animate: false, padding: [10, 10] }); FR.fitted = true; }
+  await isoP;
   frRenderStrip(); frNow();
 }
 const frLocal = (t, o) => new Date(t * 1000).toLocaleString([], o);
@@ -2803,7 +2879,10 @@ function frShow(i) {
   const f = FR.frames[FR.i], b = [[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]];
   if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
   FR.layer.setImg(f.vec ? null : FR.imgs[FR.i]);
-  FR.vec.setData(f.vec || null);
+  const iso = frIsoFor(f.t);
+  // With our own isobars and highs/lows on top, NOAA's image is kept faint - it's there for its fronts.
+  FR.layer.setOpacity(f.vec ? 1 : iso ? .5 : 1);
+  FR.vec.setData(f.vec || null, iso, f.vec ? null : iso && iso.hl);
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
   const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
