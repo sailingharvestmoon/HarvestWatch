@@ -7,6 +7,10 @@
 //                  pressure trend; Open-Meteo "current" when outside NWS land)
 //   every hour    7-model point forecast -> weather/<vessel>-forecast
 //   on request    the same, within a minute of the app's Refresh button
+//   every 30 min  surface fronts (WPC coded bulletins + National Forecast Chart)
+//                 -> weather/<vessel>-fronts
+//   every hour    rain/snow/storm areas, days 1-3 (National Forecast Chart)
+//                 -> weather/<vessel>-fronts-wx
 //
 // It is deliberately a SEPARATE worker from the anchor watcher, so nothing
 // here can slow down or break a drag alarm.
@@ -20,10 +24,10 @@
 // CPU allowance. Bookkeeping lives in weather/<vessel>-wxstate.
 //
 // Variables (wrangler.toml [vars]): PROJECT_ID, VESSEL_ID, NWS_UA
-// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?status=1
+// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
-const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30;
+const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60;
 
 const FC_MODELS = [
   ['ecmwf', ['ecmwf_ifs025', 'ecmwf_ifs']],
@@ -50,6 +54,7 @@ export default {
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
       if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
+      if (u.searchParams.get('run') === 'wx') return json(await jobWx(e, await getState(e)));
       const st = await getState(e);
       return json({ ok: true, lastNow: ago(st.lastNow), lastForecast: ago(st.lastFc), station: st.station,
                     hint: 'Add ?run=now or ?run=forecast to run a job by hand.' });
@@ -110,7 +115,7 @@ const parse = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } 
 
 async function getState(e) {
   const f = await fsGet(e, `weather/${e.VESSEL_ID}-wxstate`) || {};
-  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0,
+  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0, lastWx: num(f.lastWx) || 0,
            station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []) };
 }
 async function boatPosition(e) {
@@ -139,6 +144,7 @@ async function tick(e) {
   if (fcDue) return jobForecast(e, st);
   if (now - st.lastNow > NOW_EVERY_MIN * 60000) return jobNow(e, st);
   if (now - st.lastFronts > FRONTS_EVERY_MIN * 60000) return jobFronts(e, st);
+  if (now - st.lastWx > WX_EVERY_MIN * 60000) return jobWx(e, st);
   return { idle: true };
 }
 
@@ -266,6 +272,76 @@ async function jobFronts(e, st) {
   if (frames.length) await fsWrite(e, `weather/${e.VESSEL_ID}-fronts`, { data: JSON.stringify({ at, frames }), updatedAt: at });
   await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastFronts: frames.length ? at : at - (FRONTS_EVERY_MIN - 10) * 60000 }, true);
   return { ok: frames.length > 0, frames: frames.map(f => `${new Date(f.t).toISOString().slice(5, 16)} ${f.kind}${f.lead ? ' +' + f.lead + 'h' : ''}: ${f.fr.length} fronts, ${f.hl.length} H/L`), notes };
+}
+
+// ═══ JOB: rain & weather areas (National Forecast Chart, days 1-3) ═══
+// WPC's precipitation areas as polygons, drawn under the fronts in the app.
+// Its own job so it gets its own budget of fetches (about 30 here; the free
+// plan allows 50 per run). Same map service and query as nfcFrames above.
+// Layer ids: 12 per day; these are the offsets within a day.
+const WX_LAYERS = [[4, 'RA'], [3, 'TSRA'], [5, 'MIX'], [6, 'SN'], [10, 'FZRA'], [11, 'HSN'], [8, 'FF'], [7, 'SVR']];
+async function nfcQuery(id) {
+  const r = await fetch(`${NFC}/${id}/query?where=1%3D1&outFields=popupconte,feat&returnGeometry=true&outSR=4326&f=geojson`);
+  if (!r.ok) throw new Error(`layer ${id} HTTP ${r.status}`);
+  return (await r.json()).features || [];
+}
+// One ring [[lon, lat], ...] -> flat [lat, lon, ...], thinned to points at least
+// `tol` degrees apart. Rings that thin to under 3 points are dropped.
+export function wxRing(pts, tol) {
+  const out = []; let pa = null, po = null;
+  for (const p of pts || []) {
+    const a = Math.round(p[1] * 100) / 100, o = Math.round(p[0] * 100) / 100;
+    if (pa !== null && Math.abs(a - pa) < tol && Math.abs(o - po) < tol) continue;
+    out.push(a, o); pa = a; po = o;
+  }
+  return out.length >= 6 ? out : null;
+}
+export function wxAreas(raw, tol) {
+  const areas = [];
+  for (const [k, g] of raw) {
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
+    for (const p of polys) { const rings = (p || []).map(r => wxRing(r, tol)).filter(Boolean); if (rings.length) areas.push([k, rings]); }
+  }
+  return areas;
+}
+async function jobWx(e, st) {
+  const raw = [], notes = []; let good = 0;
+  for (const d of [1, 2, 3]) {
+    const base = 12 * (d - 1), geo = []; let t = null;
+    for (const [off, k] of WX_LAYERS) {
+      try {
+        const feats = await nfcQuery(base + off); good++;
+        for (const f of feats) { t = t || nfcTime((f.properties || {}).popupconte); if (f.geometry) geo.push([k, f.geometry]); }
+      } catch (err) { notes.push(`day ${d} layer ${base + off}: ${err.message}`); }
+    }
+    // the areas' own popups may not carry the valid time; the day's highs/lows do
+    if (geo.length && !t) { try { t = (await nfcQuery(base + 1)).map(f => nfcTime((f.properties || {}).popupconte)).find(Boolean) || null; } catch (err) {} }
+    if (geo.length && !t) notes.push(`day ${d}: ${geo.length} areas but no valid time, skipped`);
+    if (geo.length && t) raw.push({ day: d, t, geo });
+    else if (!geo.length) notes.push(`day ${d}: no areas`);
+  }
+  const at = Date.now();
+  if (!good) {   // service down: keep the last good areas, try again in ~10 min
+    await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastWx: at - (WX_EVERY_MIN - 10) * 60000 }, true);
+    return { ok: false, notes };
+  }
+  // Firestore caps a field near 1 MB: thin the outlines further until it fits.
+  let data = '', days = [];
+  for (const tol of [0.04, 0.1, 0.25, 0.5]) {
+    days = raw.map(x => ({ day: x.day, t: x.t, areas: wxAreas(x.geo, tol) })).filter(x => x.areas.length);
+    data = JSON.stringify({ at, days });
+    if (data.length < 800000) { if (tol > 0.04) notes.push(`outlines thinned to ${tol} deg to fit`); break; }
+  }
+  if (data.length >= 800000) {
+    notes.push(`too large (${data.length} chars), not saved`);
+    await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastWx: at }, true);
+    return { ok: false, notes };
+  }
+  await fsWrite(e, `weather/${e.VESSEL_ID}-fronts-wx`, { data, updatedAt: at });
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastWx: at }, true);
+  const count = a => Object.entries(a.reduce((m, [k]) => (m[k] = (m[k] || 0) + 1, m), {})).map(([k, n]) => `${n} ${k}`).join(', ');
+  return { ok: true, days: days.map(x => `day ${x.day} valid ${new Date(x.t).toISOString().slice(5, 16)}: ${count(x.areas)}`),
+           size: data.length, notes };
 }
 
 // ═══ JOB: 7-model point forecast ══════════════════════════════════
