@@ -348,14 +348,11 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 /* fronts */
 #view-fronts { overflow:hidden; display:none; flex-direction:column; }
 #view-fronts.active { display:flex; }
-.fr-map .base-tiles { filter:none !important; }      /* WPC charts are drawn for a light map */
-.fr-label { position:absolute; left:10px; top:58px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:8px 12px; box-shadow:var(--shadow); max-width:calc(100% - 20px); }
+.fr-map { background:#fff; }                         /* NOAA charts are drawn on white */
+.fr-label { display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 6px; margin-bottom:8px; color:var(--ink); min-height:20px; }
 .fr-label .k { font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; padding:2px 7px; border-radius:5px; margin-right:6px; }
 .fr-label .k.analysis { background:#6b7785; color:#fff; } .fr-label .k.forecast { background:var(--accent); color:var(--accent-ink); }
-.fr-label b { font-size:16px; } .fr-label small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
-.fr-label .wxl { display:flex; flex-wrap:wrap; gap:3px 10px; margin-top:5px; font-size:11.5px; color:var(--ink); }
-.fr-label .wxl i { display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:4px; vertical-align:-2px; box-sizing:border-box; }
-.fr-src { position:absolute; left:10px; bottom:10px; z-index:800; font-size:10.5px; color:#39424d; background:rgba(255,255,255,.75); padding:2px 6px; border-radius:4px; }
+.fr-label b { font-size:15px; } .fr-label small { color:var(--muted); font-size:12px; }
 .fr-bar { background:var(--surface); border-top:1px solid var(--line); padding:8px 10px 10px; }
 .fr-ctrl { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
 .fr-ctrl .fab { box-shadow:none; width:40px; height:40px; font-size:20px; flex:none; }
@@ -538,11 +535,10 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
       <div class="wm-stage" id="frStage">
         <div class="wm-map fr-map" id="frMap"></div>
         <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button onclick="showView('maps')">Maps</button><button class="on">Fronts</button></div></div></div>
-        <div class="fr-label" id="frLabel"></div>
         <div class="wm-zoom" style="bottom:10px"><button class="fab" onclick="FR.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="FR.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
-        <div class="fr-src">WPC · NOAA</div>
       </div>
       <div class="fr-bar">
+        <div class="fr-label" id="frLabel"></div>
         <div class="fr-ctrl">
           <button class="fab" onclick="frStep(-1)" aria-label="Previous">‹</button>
           <button class="fab" id="frPlay" onclick="frTogglePlay()" aria-label="Play">▶</button>
@@ -2621,17 +2617,25 @@ function afterPlaceChange() {
   paintForecast();
 }
 
-// ═══ FRONTS: WPC surface analysis + forecasts, day 0-7 ════════════
-// WPC's day 0-7 fronts (wpc.ncep.noaa.gov/basicwx/day0-7loop.html) on the
-// real map, labelled in local time: vector fronts for the analyses and the
-// forecasts out to day 3, WPC's own images after that. No GFS isobars here.
-// Rain/snow/storm areas (days 1-3) are drawn under the fronts on forecast frames.
-const FR = { ready: false, map: null, frames: [], i: 0, layer: null, playing: null, speed: 1, fetched: 0 };
+// ═══ FRONTS: NOAA WPC charts, day 0-7 ═════════════════════════════
+// The same charts as WPC's "sea-level pressures and fronts through day 7" loop
+// (wpc.ncep.noaa.gov/basicwx/day0-7loop.html), shown exactly as NOAA draws
+// them - fronts, isobars, highs/lows with pressures, troughs, and for days
+// 1/2-2 1/2 NOAA's NDFD rain/snow/mix/ice/thunderstorm shading and legend.
+// The pictures load straight from WPC in this browser (nothing is stored);
+// pan and pinch-zoom like a map; labels in local time.
+//   analyses, last 24 h every 3 h    /sfc/usfntsfcHHwbg.gif
+//   days 1/2-2 1/2 with NDFD weather  /basicwx/9Nfndfd.gif
+//   days 3-7                         /medr/9[j-n]hwbg_conus.gif
+// Forecast valid times come from the harvest-weather worker
+// (weather/<vessel>-wpc); if that's missing they follow WPC's usual schedule.
+const WPC = 'https://www.wpc.ncep.noaa.gov';
+const FR = { ready: false, map: null, frames: [], imgs: [], i: 0, layer: null, size: '', playing: null, speed: 1, fetched: 0 };
 function frInit() {
   if (FR.ready) return; FR.ready = true;
-  FR.map = L.map('frMap', { zoomControl: false, attributionControl: false, zoomSnap: .5, minZoom: 2, maxZoom: 10, zoomAnimation: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(FR.map);
-  FR.map.setView([37, -85], 3.5, { animate: false });
+  FR.map = L.map('frMap', { crs: L.CRS.Simple, zoomControl: false, attributionControl: false, zoomSnap: .25, zoomDelta: .5,
+                            minZoom: -4, maxZoom: 3, zoomAnimation: false });
+  FR.map.setView([0, 0], 0, { animate: false });
   document.querySelectorAll('#frSpeed button').forEach(b => b.addEventListener('click', () => { FR.speed = +b.dataset.s; frPaintSpeed(); if (FR.playing) { frTogglePlay(); frTogglePlay(); } }));
   frPaintSpeed();
   document.addEventListener('keydown', e => {
@@ -2640,203 +2644,40 @@ function frInit() {
   });
 }
 function frPaintSpeed() { document.querySelectorAll('#frSpeed button').forEach(b => b.classList.toggle('on', +b.dataset.s === FR.speed)); }
-// NOAA WPC charts are loaded straight from WPC by this browser (WPC blocks
-// cloud servers, so they can't be pre-built). Nothing is stored.
-// WPC's images are plain lat/lon; WarpOverlay redraws them for the
-// web map (Mercator) row by row so fronts line up with the coastline.
-const WPC = 'https://www.wpc.ncep.noaa.gov/kml/conus_png/';
-const WPC_BOUNDS = [14.88, -130.08, 58.79, -64.06];
-const WarpOverlay = L.ImageOverlay.extend({
-  _initImage() {
-    const c = this._image = L.DomUtil.create('canvas', 'leaflet-image-layer');
-    if (this._zoomAnimated) L.DomUtil.addClass(c, 'leaflet-zoom-animated');
-    c.width = 16; c.height = 16; this._draw();
-  },
-  setImg(img) { this._img = img; if (!img && this._image) this._image.getContext('2d').clearRect(0, 0, this._image.width, this._image.height); this._draw(); return this; },
-  _draw() {
-    const c = this._image, img = this._img;
-    if (!c || !img || !img.naturalWidth) return;
-    const iw = img.naturalWidth, ih = img.naturalHeight;
-    if (c.width !== iw || c.height !== ih) { c.width = iw; c.height = ih; }
-    const ctx = c.getContext('2d'); ctx.clearRect(0, 0, iw, ih);
-    const b = this._bounds, n = b.getNorth(), s = b.getSouth();
-    const merc = la => Math.log(Math.tan(Math.PI / 4 + la * Math.PI / 360));
-    const mn = merc(n), ms = merc(s), latAt = y => (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
-    const rowOf = dy => (n - latAt(mn + (ms - mn) * dy / ih)) / (n - s) * ih;
-    const step = 2;
-    for (let dy = 0; dy < ih; dy += step) {
-      const s0 = rowOf(dy), s1 = rowOf(Math.min(ih, dy + step));
-      ctx.drawImage(img, 0, s0, iw, Math.max(.5, s1 - s0), 0, dy, iw, step);
-    }
-  }
-});
-// Valid times. WPC's files carry none, so they follow WPC's schedule:
-// analyses every 3 h (posted ~1¾ h after); day 0-2.5 forecasts from the
-// 00Z/12Z cycles (posted ~4 h after); day 3-7 at 12Z, issued ~19Z.
-function wpcFrames() {
+// wpc: { ndfd: [{img, t}], medr: [{img, day, t}] } from the worker (t in ms), or null.
+function frFrames(wpc) {
   const now = Date.now() / 1000, H = 3600, D = 86400, day0 = Math.floor(now / D) * D, out = [];
-  for (let hh = 0; hh < 24; hh += 3) {
+  for (let hh = 0; hh < 24; hh += 3) {                   // analyses, posted ~1¾ h after the hour
     let t = day0 + hh * H; if (t + 1.75 * H > now) t -= D;
-    out.push({ t, kind: 'analysis', name: `${String(hh).padStart(2, '0')}Z analysis`, url: `${WPC}conussfc${String(hh).padStart(2, '0')}_trans.png` });
+    out.push({ t, kind: 'analysis', url: `${WPC}/sfc/usfntsfc${String(hh).padStart(2, '0')}wbg.gif` });
   }
-  const base = Math.floor((now - 4.5 * H) / (12 * H)) * 12 * H;
-  [[1, 6], [2, 12], [3, 18], [4, 24], [5, 30], [6, 36], [8, 48], [9, 60]].forEach(([k, h]) =>
-    out.push({ t: base + h * H, kind: 'forecast', name: `${h}-hour forecast`, url: `${WPC}9${k}f_trans_CED.png` }));
-  const issue = Math.floor((now - 19 * H) / D) * D;
-  ['j', 'k', 'l', 'm', 'n'].forEach((c, i) =>
-    out.push({ t: issue + (3 + i) * D + 12 * H, kind: 'forecast', name: `Day ${3 + i}`, url: `${WPC}9${c}h_trans_CED.png` }));
+  const ndfd = wpc && wpc.ndfd && wpc.ndfd.length ? wpc.ndfd.map(x => ({ t: x.t / 1000, img: x.img })) : (() => {
+    const base = Math.floor((now - 7.5 * H) / (12 * H)) * 12 * H;   // 00Z/12Z cycle, posted ~7 h after
+    return [[92, 12], [93, 18], [94, 24], [98, 36], [99, 48]].map(([n, h]) => ({ t: base + h * H, img: `/basicwx/${n}fndfd.gif`, guess: true }));
+  })();
+  ndfd.forEach(x => out.push({ t: x.t, kind: 'forecast', ndfd: true, guess: !!x.guess, url: WPC + x.img }));
+  const medr = wpc && wpc.medr && wpc.medr.length ? wpc.medr.map(x => ({ t: x.t / 1000, img: x.img, day: x.day })) : (() => {
+    const issue = Math.floor((now - 16 * H) / D) * D;                  // valid 12Z, day 3-7 after issue
+    return ['j', 'k', 'l', 'm', 'n'].map((c, i) => ({ t: issue + (3 + i) * D + 12 * H, img: `/medr/9${c}hwbg_conus.gif`, day: 3 + i, guess: true }));
+  })();
+  medr.forEach(x => out.push({ t: x.t, kind: 'forecast', day: x.day, guess: !!x.guess, url: WPC + x.img }));
   const seen = new Set();
-  return out.sort((a, b) => a.t - b.t).filter(f => !seen.has(f.t) && seen.add(f.t))
-            .map(f => ({ ...f, bounds: WPC_BOUNDS }));
-}
-// Sharp fronts: WPC's coded bulletins (analysis every 3 h, forecasts to 48 h),
-// decoded by the harvest-weather Cloudflare worker into weather/<vessel>-fronts
-// and drawn here as vector lines with the usual symbols - crisp at any zoom.
-// Day 3-7 are still WPC's images (no coded version exists).
-const FRONT_STYLE = {
-  COLD: { c: '#1d5fd0' }, WARM: { c: '#d7263d' }, STNRY: { c: '#1d5fd0', c2: '#d7263d' },
-  OCFNT: { c: '#8b3fb5' }, TROF: { c: '#d9822b', dash: [9, 6] }, DRYLINE: { c: '#a0522d', dash: [2, 5] }
-};
-// ─── rain & weather areas (NOAA National Forecast Chart, days 1-3) ───
-// Written by the weather worker to weather/<vessel>-fronts-wx. Shown under the
-// fronts on forecast frames within 12 h of a day chart's valid time.
-const WX_STYLE = {
-  RA:   { label: 'Rain',                    fill: 'rgba(46,170,80,.30)',  line: 'rgba(30,130,60,.75)' },
-  TSRA: { label: 'Rain with thunderstorms', fill: 'rgba(20,120,50,.45)',  line: 'rgba(15,95,40,.85)' },
-  MIX:  { label: 'Mixed precip',            fill: 'rgba(160,90,200,.30)', line: 'rgba(120,60,160,.8)' },
-  SN:   { label: 'Snow',                    fill: 'rgba(70,140,230,.30)', line: 'rgba(40,100,190,.8)' },
-  FZRA: { label: 'Freezing rain possible',  hatch: '#c8328f' },
-  HSN:  { label: 'Heavy snow possible',     hatch: '#1f4fb0' },
-  FF:   { label: 'Flash flooding possible', hatch: '#0f6a2e' },
-  SVR:  { label: 'Severe storms possible',  hatch: '#d7263d' },
-};
-const WX_ORDER = ['RA', 'TSRA', 'MIX', 'SN', 'FZRA', 'HSN', 'FF', 'SVR'];
-const frHatchTile = {};
-function frHatch(g, col) {
-  if (!frHatchTile[col]) {
-    const c = document.createElement('canvas'); c.width = c.height = 10;
-    const x = c.getContext('2d'); x.strokeStyle = col; x.lineWidth = 1.6; x.beginPath();
-    x.moveTo(-2, 12); x.lineTo(12, -2); x.moveTo(-2, 2); x.lineTo(2, -2); x.moveTo(8, 12); x.lineTo(12, 8); x.stroke();
-    frHatchTile[col] = c;
-  }
-  return g.createPattern(frHatchTile[col], 'repeat');
-}
-function frDrawWx(g, P, wx) {
-  for (const k of WX_ORDER) {
-    const st = WX_STYLE[k];
-    for (const [kk, rings] of wx.areas) {
-      if (kk !== k) continue;
-      g.beginPath();
-      for (const r of rings) {
-        for (let i = 0; i + 1 < r.length; i += 2) { const p = P(r[i], r[i + 1]); if (i) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); }
-        g.closePath();
-      }
-      if (st.fill) { g.fillStyle = st.fill; g.fill('evenodd'); g.setLineDash([]); g.strokeStyle = st.line; g.lineWidth = 1; g.stroke(); }
-      else { g.fillStyle = frHatch(g, st.hatch); g.fill('evenodd'); g.setLineDash([6, 4]); g.strokeStyle = st.hatch; g.lineWidth = 1.6; g.stroke(); g.setLineDash([]); }
-    }
-  }
-}
-// The day chart for a frame: forecast frames with NOAA's vector fronts only.
-function frWxFor(f) {
-  if (!f || !f.vec || f.kind !== 'forecast' || !FR.wx || !FR.wx.length) return null;
-  let best = null, bd = 12 * 3600;
-  for (const w of FR.wx) { const d = Math.abs(w.t - f.t); if (d < bd) { bd = d; best = w; } }
-  return best;
-}
-function frWxLegend(wx) {
-  const have = new Set(wx.areas.map(a => a[0]));
-  const sw = st => st.fill ? `background:${st.fill};border:1px solid ${st.line}`
-    : `background:repeating-linear-gradient(45deg,${st.hatch} 0 1.5px,transparent 1.5px 4px);border:1px dashed ${st.hatch}`;
-  return `<small>Rain areas: NOAA day ${wx.day} chart, valid ${frLocal(wx.t, { weekday: 'short', hour: 'numeric' })}</small>`
-    + `<span class="wxl">${WX_ORDER.filter(k => have.has(k)).map(k => `<span><i style="${sw(WX_STYLE[k])}"></i>${WX_STYLE[k].label}</span>`).join('')}</span>`;
-}
-const FrontLayer = L.Layer.extend({
-  onAdd(map) {
-    this._map = map; this._c = L.DomUtil.create('canvas', 'fr-vec');
-    Object.assign(this._c.style, { position: 'absolute', pointerEvents: 'none' });
-    map.getPanes().overlayPane.appendChild(this._c);
-    map.on('move zoom resize viewreset', this._draw, this); this._draw();
-  },
-  onRemove(map) { map.off('move zoom resize viewreset', this._draw, this); this._c.remove(); },
-  setData(d, wx) { this._d = d; this._wx = wx || null; if (this._map) this._draw(); return this; },
-  _draw() {
-    const map = this._map, c = this._c, sz = map.getSize(), dpr = window.devicePixelRatio || 1;
-    L.DomUtil.setPosition(c, map.containerPointToLayerPoint([0, 0]));
-    c.width = sz.x * dpr; c.height = sz.y * dpr; c.style.width = sz.x + 'px'; c.style.height = sz.y + 'px';
-    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, sz.x, sz.y);
-    const P = (la, lo) => map.latLngToContainerPoint([la, lo]);
-    const d = this._d || { fr: [], hl: [] };
-    if (this._wx) frDrawWx(g, P, this._wx);
-    for (const [k, q, flat] of d.fr) {
-      const st = FRONT_STYLE[k] || FRONT_STYLE.TROF, pts = [];
-      for (let i = 0; i + 1 < flat.length; i += 2) pts.push(P(flat[i], flat[i + 1]));
-      frDrawFront(g, pts, k, st, q === 'STG' ? 3.2 : q === 'MDT' ? 2.7 : 2.3);
-    }
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
-    for (const [t, p, la, lo] of d.hl) {
-      const pt = P(la, lo); if (pt.x < -30 || pt.y < -30 || pt.x > sz.x + 30 || pt.y > sz.y + 30) continue;
-      const col = t === 'H' ? '#1d5fd0' : '#d7263d';
-      g.font = '800 24px system-ui, sans-serif'; g.lineWidth = 4; g.strokeStyle = 'rgba(255,255,255,.9)';
-      g.strokeText(t, pt.x, pt.y); g.fillStyle = col; g.fillText(t, pt.x, pt.y);
-      g.font = '700 12px system-ui, sans-serif'; g.lineWidth = 3;
-      if (p !== '' && p != null) { g.strokeText(p, pt.x, pt.y + 18); g.fillText(p, pt.x, pt.y + 18); }
-    }
-  }
-});
-// Line plus symbols every ~40 px, on the left of the direction the points
-// run (WPC's convention: that's the side the front is moving toward).
-function frDrawFront(g, pts, k, st, w) {
-  if (pts.length < 2) return;
-  const seg = [], len = [0];
-  for (let i = 1; i < pts.length; i++) { const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y; seg.push([dx, dy]); len.push(len[i - 1] + Math.hypot(dx, dy)); }
-  const L_ = len[len.length - 1]; if (L_ < 2) return;
-  const at = s => { let i = 1; while (i < len.length - 1 && len[i] < s) i++; const [dx, dy] = seg[i - 1], l = Math.hypot(dx, dy) || 1, f = (s - len[i - 1]) / l;
-    return { x: pts[i - 1].x + dx * f, y: pts[i - 1].y + dy * f, ux: dx / l, uy: dy / l }; };
-  const sub = (s0, s1) => { const out = [at(s0)]; for (let i = 1; i < len.length - 1; i++) if (len[i] > s0 && len[i] < s1) out.push(pts[i]); out.push(at(s1)); return out; };
-  const stroke = (ps, col) => { g.beginPath(); ps.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.strokeStyle = col; g.stroke(); };
-  g.lineWidth = w; g.lineCap = 'round'; g.lineJoin = 'round'; g.setLineDash(st.dash || []);
-  const S = 40;
-  if (k === 'STNRY') {                                   // alternating red/blue pieces
-    for (let s = 0, n = 0; s < L_; s += S / 2, n++) stroke(sub(s, Math.min(L_, s + S / 2)), n % 2 ? st.c2 : st.c);
-  } else stroke(pts, st.c);
-  g.setLineDash([]);
-  if (k === 'TROF' || k === 'DRYLINE') return;
-  const tri = (m, side, col) => { const nx = m.uy * side, ny = -m.ux * side, h = 8, b = 6;
-    g.beginPath(); g.moveTo(m.x - m.ux * b, m.y - m.uy * b); g.lineTo(m.x + nx * h * 1.3, m.y + ny * h * 1.3); g.lineTo(m.x + m.ux * b, m.y + m.uy * b); g.closePath(); g.fillStyle = col; g.fill(); };
-  const semi = (m, side, col) => { const a = Math.atan2(m.uy, m.ux);
-    g.beginPath(); g.arc(m.x, m.y, 6, a, a + Math.PI, side > 0); g.closePath(); g.fillStyle = col; g.fill(); };
-  for (let s = S / 2, n = 0; s < L_ - 6; s += S, n++) {
-    const m = at(s);
-    if (k === 'COLD') tri(m, 1, st.c);
-    else if (k === 'WARM') semi(m, 1, st.c);
-    else if (k === 'OCFNT') (n % 2 ? semi : tri)(m, 1, st.c);
-    else if (k === 'STNRY') { if (n % 2) semi(m, -1, st.c2); else tri(m, 1, st.c); }
-  }
+  return out.sort((a, b) => a.t - b.t).filter(f => !seen.has(f.t) && seen.add(f.t));
 }
 async function openFronts() {
   frInit();
   setTimeout(() => FR.map.invalidateSize(), 60);
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
-  $('frLabel').innerHTML = '<b>Loading charts…</b>';
-  const wxP = fetch(`${FSB}/weather/${VESSEL}-fronts-wx`, { cache: 'no-store' })
-    .then(r => r.ok ? r.json() : null)
-    .then(j => (JSON.parse((((j && j.fields) || {}).data || {}).stringValue || '{}').days || []).map(w => ({ ...w, t: Math.round(w.t / 1000) })))
-    .catch(() => []);
-  let vec = [];
+  $('frLabel').innerHTML = '<b>Loading NOAA charts…</b>';
+  let wpc = null;
   try {
-    const r = await fetch(`${FSB}/weather/${VESSEL}-fronts`, { cache: 'no-store' });
-    if (r.ok) { const j = await r.json(); const d = JSON.parse(((j.fields || {}).data || {}).stringValue || '{}');
-      vec = (d.frames || []).map(f => ({ t: Math.round(f.t / 1000), kind: f.kind, name: f.kind === 'analysis' ? 'Analysis' : `${f.lead}-hour forecast`, vec: f })); }
+    const r = await fetch(`${FSB}/weather/${VESSEL}-wpc`, { cache: 'no-store' });
+    if (r.ok) { const j = await r.json(); wpc = JSON.parse(((j.fields || {}).data || {}).stringValue || 'null'); }
   } catch (e) {}
-  const lastVec = vec.length ? vec[vec.length - 1].t : 0;
-  const imgs = wpcFrames().filter(f => !vec.length || f.t > lastVec + 3600);
-  FR.frames = [...vec, ...imgs].sort((a, b) => a.t - b.t); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
-  FR.imgs = FR.frames.map(f => { if (!f.url) return null; const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
-    im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); };
+  FR.frames = frFrames(wpc); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
+  FR.imgs = FR.frames.map(f => { const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
+    im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.src = f.url + '?v=' + FR.bust; return im; });
-  if (!FR.vec) FR.vec = new FrontLayer().addTo(FR.map);
-  if (!FR.fitted) { FR.map.fitBounds([[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]], { animate: false, padding: [10, 10] }); FR.fitted = true; }
-  FR.wx = await wxP;
   frRenderStrip(); frNow();
 }
 const frLocal = (t, o) => new Date(t * 1000).toLocaleString([], o);
@@ -2849,10 +2690,10 @@ function frRenderStrip() {
   });
   $('frStrip').innerHTML = days.map(g => `<div class="fr-day"><span>${esc(g.d)}</span><div>${g.items.map(i => {
     const f = FR.frames[i];
-    return `<button class="fr-chip ${f.kind}" data-i="${i}" onclick="frShow(${i})">${frLocal(f.t, { hour: 'numeric' }).replace(' ', '').toLowerCase()}</button>`;
+    return `<button class="fr-chip ${f.kind}${f.bad ? ' bad' : ''}" data-i="${i}" onclick="frShow(${i})">${frLocal(f.t, { hour: 'numeric' }).replace(' ', '').toLowerCase()}</button>`;
   }).join('')}</div></div>`).join('');
 }
-// The frame closest to now; the latest analysis if nothing is closer.
+// The frame closest to now (normally the latest analysis).
 function frNow() {
   const now = Date.now() / 1000; let best = 0, bd = Infinity;
   FR.frames.forEach((f, i) => { const d = Math.abs(f.t - now); if (d < bd) { bd = d; best = i; } });
@@ -2862,18 +2703,23 @@ function frNow() {
 function frShow(i) {
   if (!FR.frames.length) return;
   FR.i = (i + FR.frames.length) % FR.frames.length;
-  const f = FR.frames[FR.i], b = [[WPC_BOUNDS[0], WPC_BOUNDS[1]], [WPC_BOUNDS[2], WPC_BOUNDS[3]]];
-  if (!FR.layer) FR.layer = new WarpOverlay('', b, { interactive: false }).addTo(FR.map);
-  // NOAA only: WPC's vector fronts where it publishes them (analyses, coded
-  // forecasts, National Forecast Chart to day 3), otherwise WPC's own chart as drawn.
-  FR.layer.setImg(f.vec ? null : FR.imgs[FR.i]);
-  const wx = frWxFor(f);
-  FR.vec.setData(f.vec || null, wx);
+  const f = FR.frames[FR.i], im = FR.imgs[FR.i];
+  if (im && im.naturalWidth) {
+    const w = im.naturalWidth, h = im.naturalHeight, b = [[0, 0], [h, w]];
+    if (!FR.layer) FR.layer = L.imageOverlay(im.src, b, { interactive: false, className: 'fr-img' }).addTo(FR.map);
+    else { FR.layer.setUrl(im.src); FR.layer.setBounds(L.latLngBounds(b)); }
+    if (FR.size !== w + 'x' + h) {                       // new picture size: fit it to the screen
+      FR.size = w + 'x' + h;
+      FR.map.fitBounds(b, { animate: false, paddingTopLeft: [6, 52], paddingBottomRight: [6, 6] });
+      FR.map.setMaxBounds(L.latLngBounds(b).pad(.25));
+    }
+  }
+  if (FR.layer) FR.layer.setOpacity(im && im.naturalWidth ? 1 : 0);   // never show one chart under another's label
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
-  const lastAn = FR.frames.filter(x => x.kind === 'analysis').map(x => x.t).pop();
-  const lead = f.kind === 'forecast' && lastAn ? ` +${Math.round((f.t - lastAn) / 3600)} h` : '';
+  const lead = f.day ? ` · day ${f.day}` : '';
   const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
-  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b><small>${zStr} · ${rel}</small>${wx ? frWxLegend(wx) : ''}`;
+  const note = f.bad ? ' · not available from NOAA right now' : !im || !im.naturalWidth ? ' · loading…' : f.guess ? ' · time from WPC schedule' : '';
+  $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b> <small>${zStr} · ${rel}${note}</small>`;
   document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
   const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
 }

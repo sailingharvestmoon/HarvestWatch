@@ -7,10 +7,11 @@
 //                  pressure trend; Open-Meteo "current" when outside NWS land)
 //   every hour    7-model point forecast -> weather/<vessel>-forecast
 //   on request    the same, within a minute of the app's Refresh button
-//   every 30 min  surface fronts (WPC coded bulletins + National Forecast Chart)
-//                 -> weather/<vessel>-fronts
-//   every hour    rain/snow/storm areas, days 1-3 (National Forecast Chart)
-//                 -> weather/<vessel>-fronts-wx
+//   every 30 min  valid times of NOAA WPC's day 0-7 fronts charts (the app
+//                 shows WPC's own pictures) -> weather/<vessel>-wpc
+//   by hand only  ?run=fronts (coded fronts -> weather/<vessel>-fronts) and
+//                 ?run=wx (rain areas -> weather/<vessel>-fronts-wx); the app
+//                 no longer uses these, so they are not scheduled
 //
 // It is deliberately a SEPARATE worker from the anchor watcher, so nothing
 // here can slow down or break a drag alarm.
@@ -24,10 +25,10 @@
 // CPU allowance. Bookkeeping lives in weather/<vessel>-wxstate.
 //
 // Variables (wrangler.toml [vars]): PROJECT_ID, VESSEL_ID, NWS_UA
-// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
+// Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=charts | ?run=fronts | ?run=wx | ?status=1
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
-const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60;
+const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60, CHARTS_EVERY_MIN = 30;
 
 const FC_MODELS = [
   ['ecmwf', ['ecmwf_ifs025', 'ecmwf_ifs']],
@@ -55,6 +56,7 @@ export default {
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
       if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
       if (u.searchParams.get('run') === 'wx') return json(await jobWx(e, await getState(e)));
+      if (u.searchParams.get('run') === 'charts') return json(await jobCharts(e, await getState(e)));
       const st = await getState(e);
       return json({ ok: true, lastNow: ago(st.lastNow), lastForecast: ago(st.lastFc), station: st.station,
                     hint: 'Add ?run=now or ?run=forecast to run a job by hand.' });
@@ -115,7 +117,7 @@ const parse = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } 
 
 async function getState(e) {
   const f = await fsGet(e, `weather/${e.VESSEL_ID}-wxstate`) || {};
-  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0, lastWx: num(f.lastWx) || 0,
+  return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0, lastWx: num(f.lastWx) || 0, lastCharts: num(f.lastCharts) || 0,
            station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []) };
 }
 async function boatPosition(e) {
@@ -143,8 +145,7 @@ async function tick(e) {
   const fcDue = now - st.lastFc > FC_EVERY_MIN * 60000 || (req > st.lastFc && now - st.lastFc > FC_MIN_GAP_MIN * 60000);
   if (fcDue) return jobForecast(e, st);
   if (now - st.lastNow > NOW_EVERY_MIN * 60000) return jobNow(e, st);
-  if (now - st.lastFronts > FRONTS_EVERY_MIN * 60000) return jobFronts(e, st);
-  if (now - st.lastWx > WX_EVERY_MIN * 60000) return jobWx(e, st);
+  if (now - st.lastCharts > CHARTS_EVERY_MIN * 60000) return jobCharts(e, st);
   return { idle: true };
 }
 
@@ -342,6 +343,72 @@ async function jobWx(e, st) {
   const count = a => Object.entries(a.reduce((m, [k]) => (m[k] = (m[k] || 0) + 1, m), {})).map(([k, n]) => `${n} ${k}`).join(', ');
   return { ok: true, days: days.map(x => `day ${x.day} valid ${new Date(x.t).toISOString().slice(5, 16)}: ${count(x.areas)}`),
            size: data.length, notes };
+}
+
+// ═══ JOB: valid times for NOAA WPC's day 0-7 charts ═══════════════
+// The app's Fronts view shows WPC's own chart pictures, exactly as on
+// wpc.ncep.noaa.gov/basicwx/day0-7loop.html. The pictures carry their valid
+// time only as printed text, so this job works the times out for the app:
+//   days 1/2-2 1/2 (fronts + NDFD rain/snow/ice/storms): read from WPC's own
+//     page, which lists each chart with its valid day and hour
+//   days 3-7: valid 12Z; the issue day comes from the picture's Last-Modified
+//     time (same rule the old GitHub map build used)
+// Analyses need nothing: their file names carry the hour.
+const WPCB = 'https://www.wpc.ncep.noaa.gov';
+const WPC_UA = { 'User-Agent': 'Mozilla/5.0 (compatible; harvest-watch)' };
+const DOW = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+// The next time (from 18 h ago on) that falls on weekday `dow` at `hh` UTC.
+export function dowTime(dow, hh, now) {
+  const D = 86400e3, from = now - 18 * 3600e3;
+  let t = Math.floor(from / D) * D + hh * 3600e3;
+  for (let k = 0; k < 9; k++, t += D) if (t >= from && new Date(t).getUTCDay() === DOW[dow]) return t;
+  return null;
+}
+// WPC's short-range page: nav links carry arrval (order) + vtime ("Mon_00Z");
+// the pictures are 9Nfndfd.gif, numbered in the same (time) order.
+export function ndfdTimes(html, now) {
+  const imgs = [...new Set([...String(html).matchAll(/(9\d)fndfd\.gif/g)].map(m => m[1]))].sort();
+  const byArr = new Map();
+  for (const m of String(html).matchAll(/arrval=(\d+)(?:&amp;|&)vtime=(\w{3})_(\d{2})Z/g)) if (!byArr.has(+m[1])) byArr.set(+m[1], [m[2], +m[3]]);
+  const vt = [...byArr.entries()].sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  if (!imgs.length || imgs.length !== vt.length) return [];
+  const out = imgs.map((n, i) => ({ img: `/basicwx/${n}fndfd.gif`, t: dowTime(vt[i][0], vt[i][1], now) }));
+  return out.every((x, i) => x.t && (!i || x.t > out[i - 1].t)) ? out : [];
+}
+async function lastModified(url) {
+  for (const method of ['HEAD', 'GET']) {
+    try {
+      const r = await fetch(url, { method, headers: WPC_UA });
+      const lm = Date.parse(r.headers.get('last-modified') || '');
+      if (r.ok && lm) return lm;
+    } catch (err) {}
+  }
+  return null;
+}
+export function medrTime(lm, day) {
+  const H = 3600e3, D = 24 * H;
+  return Math.floor((lm - 12 * H) / D) * D + 12 * H + day * D;
+}
+async function jobCharts(e, st) {
+  const at = Date.now(), notes = [], out = { at, ndfd: [], medr: [] };
+  try {
+    const r = await fetch(`${WPCB}/basicwx/basicwx_ndfd.php`, { headers: WPC_UA });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    out.ndfd = ndfdTimes(await r.text(), at);
+    notes.push(`NDFD: ${out.ndfd.length} charts`);
+  } catch (err) { notes.push('NDFD page: ' + err.message); }
+  for (const [i, c] of ['j', 'k', 'l', 'm', 'n'].entries()) {
+    const img = `/medr/9${c}hwbg_conus.gif`, lm = await lastModified(WPCB + img);
+    if (lm) out.medr.push({ img, day: 3 + i, t: medrTime(lm, 3 + i) }); else notes.push(`day ${3 + i}: no Last-Modified`);
+  }
+  if (!out.ndfd.length && !out.medr.length) {   // WPC unreachable: keep the last good times, retry in ~10 min
+    await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastCharts: at - (CHARTS_EVERY_MIN - 10) * 60000 }, true);
+    return { ok: false, notes };
+  }
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wpc`, { data: JSON.stringify(out), updatedAt: at });
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastCharts: at }, true);
+  const iso = t => new Date(t).toISOString().slice(5, 16);
+  return { ok: true, ndfd: out.ndfd.map(x => `${x.img} valid ${iso(x.t)}`), medr: out.medr.map(x => `day ${x.day} valid ${iso(x.t)}`), notes };
 }
 
 // ═══ JOB: 7-model point forecast ══════════════════════════════════
