@@ -2625,10 +2625,12 @@ function afterPlaceChange() {
 // The pictures load straight from WPC in this browser (nothing is stored);
 // pan and pinch-zoom like a map; labels in local time.
 //   analyses, last 24 h every 3 h    /sfc/usfntsfcHHwbg.gif
-//   days 1/2-2 1/2 with NDFD weather  /basicwx/9Nfndfd.gif
+//   12-60 h with NDFD weather        /basicwx/9Nfndfd.gif  N: 2 3 4 5 6 8 9 = 12 18 24 30 36 48 60 h
 //   days 3-7                         /medr/9[j-n]hwbg_conus.gif
-// Forecast valid times come from the harvest-weather worker
-// (weather/<vessel>-wpc); if that's missing they follow WPC's usual schedule.
+// WPC's files carry their valid time only as printed text, so labels follow
+// WPC's schedule (checked against the charts 4 Oct 2026): analyses posted
+// ~1 3/4 h after the hour; the 12-60 h charts from the 00Z/12Z cycle, posted
+// ~7 h after (1901-1904Z for 12Z); day 3-7 valid 12Z, issued ~1722Z daily.
 const WPC = 'https://www.wpc.ncep.noaa.gov';
 const FR = { ready: false, map: null, frames: [], imgs: [], i: 0, layer: null, size: '', playing: null, speed: 1, fetched: 0 };
 function frInit() {
@@ -2644,23 +2646,18 @@ function frInit() {
   });
 }
 function frPaintSpeed() { document.querySelectorAll('#frSpeed button').forEach(b => b.classList.toggle('on', +b.dataset.s === FR.speed)); }
-// wpc: { ndfd: [{img, t}], medr: [{img, day, t}] } from the worker (t in ms), or null.
-function frFrames(wpc) {
+function frFrames() {
   const now = Date.now() / 1000, H = 3600, D = 86400, day0 = Math.floor(now / D) * D, out = [];
   for (let hh = 0; hh < 24; hh += 3) {                   // analyses, posted ~1¾ h after the hour
     let t = day0 + hh * H; if (t + 1.75 * H > now) t -= D;
     out.push({ t, kind: 'analysis', url: `${WPC}/sfc/usfntsfc${String(hh).padStart(2, '0')}wbg.gif` });
   }
-  const ndfd = wpc && wpc.ndfd && wpc.ndfd.length ? wpc.ndfd.map(x => ({ t: x.t / 1000, img: x.img })) : (() => {
-    const base = Math.floor((now - 7.5 * H) / (12 * H)) * 12 * H;   // 00Z/12Z cycle, posted ~7 h after
-    return [[92, 12], [93, 18], [94, 24], [98, 36], [99, 48]].map(([n, h]) => ({ t: base + h * H, img: `/basicwx/${n}fndfd.gif`, guess: true }));
-  })();
-  ndfd.forEach(x => out.push({ t: x.t, kind: 'forecast', ndfd: true, guess: !!x.guess, url: WPC + x.img }));
-  const medr = wpc && wpc.medr && wpc.medr.length ? wpc.medr.map(x => ({ t: x.t / 1000, img: x.img, day: x.day })) : (() => {
-    const issue = Math.floor((now - 16 * H) / D) * D;                  // valid 12Z, day 3-7 after issue
-    return ['j', 'k', 'l', 'm', 'n'].map((c, i) => ({ t: issue + (3 + i) * D + 12 * H, img: `/medr/9${c}hwbg_conus.gif`, day: 3 + i, guess: true }));
-  })();
-  medr.forEach(x => out.push({ t: x.t, kind: 'forecast', day: x.day, guess: !!x.guess, url: WPC + x.img }));
+  const base = Math.floor((now - 7.2 * H) / (12 * H)) * 12 * H;      // 00Z/12Z cycle, posted ~7 h after
+  [[2, 12], [3, 18], [4, 24], [5, 30], [6, 36], [8, 48], [9, 60]].forEach(([n, h]) =>
+    out.push({ t: base + h * H, kind: 'forecast', ndfd: true, url: `${WPC}/basicwx/9${n}fndfd.gif` }));
+  const issue = Math.floor((now - 18 * H) / D) * D;                   // day 3-7 issued ~1722Z, valid 12Z
+  ['j', 'k', 'l', 'm', 'n'].forEach((c, i) =>
+    out.push({ t: issue + (3 + i) * D + 12 * H, kind: 'forecast', day: 3 + i, url: `${WPC}/medr/9${c}hwbg_conus.gif` }));
   const seen = new Set();
   return out.sort((a, b) => a.t - b.t).filter(f => !seen.has(f.t) && seen.add(f.t));
 }
@@ -2669,12 +2666,7 @@ async function openFronts() {
   setTimeout(() => FR.map.invalidateSize(), 60);
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
   $('frLabel').innerHTML = '<b>Loading NOAA charts…</b>';
-  let wpc = null;
-  try {
-    const r = await fetch(`${FSB}/weather/${VESSEL}-wpc`, { cache: 'no-store' });
-    if (r.ok) { const j = await r.json(); wpc = JSON.parse(((j.fields || {}).data || {}).stringValue || 'null'); }
-  } catch (e) {}
-  FR.frames = frFrames(wpc); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
+  FR.frames = frFrames(); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
   FR.imgs = FR.frames.map(f => { const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.src = f.url + '?v=' + FR.bust; return im; });
@@ -2718,7 +2710,7 @@ function frShow(i) {
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lead = f.day ? ` · day ${f.day}` : '';
   const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
-  const note = f.bad ? ' · not available from NOAA right now' : !im || !im.naturalWidth ? ' · loading…' : f.guess ? ' · time from WPC schedule' : '';
+  const note = f.bad ? ' · not available from NOAA right now' : !im || !im.naturalWidth ? ' · loading…' : '';
   $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b> <small>${zStr} · ${rel}${note}</small>`;
   document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
   const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
