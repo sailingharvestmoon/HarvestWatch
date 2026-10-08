@@ -16,5 +16,9 @@ service cloud.firestore {
 
     // NEW - AIS targets near the boat, written by guard.py on the Pi.
     match /ais/harvest-moon       { allow read, write: if true; }
+
+    // NEW - daily deck camera photo, written by camera.py on the Pi,
+    // shown by the Wix camera widget.
+    match /camera/harvest-moon    { allow read, write: if true; }
   }
 }

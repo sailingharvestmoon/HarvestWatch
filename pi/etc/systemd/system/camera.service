@@ -1,0 +1,29 @@
+[Unit]
+Description=Harvest Moon deck camera (daily still via Neolink -> Firebase)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PROJECT_ID=harvest-moon-watch
+Environment=VESSEL_ID=harvest-moon
+# When to take the photo, boat time, 24 h. More than one: SNAP_TIMES=07:30,15:00
+Environment=SNAP_TIMES=15:00
+Environment=CAM_TZ=America/New_York
+# Must match name = "..." in /etc/harvest-moon/neolink.toml
+Environment=CAM_NAME=HarvestMoon
+# PTZ preset to move to before each photo. Blank = leave the camera where it is.
+Environment=CAM_PRESET=
+Environment=NEOLINK=/home/harvestmoon/neolink/neolink_linux_armhf/neolink
+Environment=NEOLINK_CONF=/etc/harvest-moon/neolink.toml
+# Runs as the normal user, who owns neolink.toml (the camera password).
+User=harvestmoon
+WorkingDirectory=/home/harvestmoon/camera
+ExecStart=/usr/bin/python3 /home/harvestmoon/camera/camera.py
+Restart=always
+RestartSec=60
+# Lower priority than the anchor watch and sensors.
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

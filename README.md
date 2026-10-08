@@ -41,6 +41,7 @@ Michael DataHub Files/
 | `pi/home/harvestmoon/weather/wxgrid.py` | `/home/harvestmoon/weather/wxgrid.py` | `wxgrid` | `sudo systemctl restart wxgrid` |
 | `pi/home/harvestmoon/polar/polar_logger.py` | `/home/harvestmoon/polar/polar_logger.py` | `harvest-moon-polar` | `sudo systemctl restart harvest-moon-polar` |
 | `pi/home/harvestmoon/polar/polar_build.py` | `/home/harvestmoon/polar/polar_build.py` | run by hand | — |
+| `pi/home/harvestmoon/camera/camera.py` | `/home/harvestmoon/camera/camera.py` | `camera` | `sudo systemctl restart camera` |
 | `pi/etc/systemd/system/*.service` | `/etc/systemd/system/` | — | `sudo systemctl daemon-reload` then restart that unit |
 | `pi/etc/harvest-moon/ntfy.env.example` | template for `/etc/harvest-moon/ntfy.env` (secret, never stored here) | read by `guard` | `sudo systemctl restart guard` |
 
@@ -52,6 +53,8 @@ What each service does:
 - **wxgrid** — pulls forecast map grids (~225 points) for the area the app's Maps view is showing, for just the models on screen, and keeps them fresh every 6 h while someone has looked in the last 2 days → `weather/harvest-moon-grid-<model>`. The app asks for a new area via `weather/harvest-moon-gridview` when you pan or zoom off the data. Each new area costs ~225 of Open-Meteo's 10,000 free daily calls per model shown.
 - **frame** — drives the e-ink display (photos / dashboard / info screen), mode set from `netlify/frame.html`.
 - **harvest-moon-polar** — logs 1 Hz sailing data to `~/polar_logs/` for building polars.
+- **camera** — once a day (`SNAP_TIMES` in `camera.service`, default 15:00 boat time) gets a still from the Reolink Argus PT Ultra through Neolink, shrinks it to 1600 px and saves it to `camera/harvest-moon`. Optional PTZ preset first (`CAM_PRESET`). Test by hand: `python3 ~/camera/camera.py --once` (no sudo). Log: `journalctl -u camera -n 50`.
+  Not in this repo: the Neolink program at `~/neolink/neolink_linux_armhf/` (release 0.6.3-rc.2, armhf, from github.com/QuantumEntangledAndy/neolink) and its config `/etc/harvest-moon/neolink.toml` (camera password; chmod 600, owned by harvestmoon). Needs `python3-pil`.
 
 Files the programs create on the Pi (don't copy these over): `~/sensors/tide_stations.json`,
 `~/weather/tide_stations.json`, `~/weather/pressure_log.json`, `~/polar_logs/*.csv`.
@@ -140,10 +143,14 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 | `health/` | worker + guard | heartbeats, push results, ntfy quota |
 | `ais/` | guard | nearby AIS targets |
 | `modes/` | Harvest Watch (Boat tab) | e-ink display mode |
+| `camera/` | camera | latest deck photo (`image` bytes, `takenAt`, battery, `lastError`) |
 
 ## Wix
 
 `wix/wix-conditions-widget.html` → Wix editor → Add → Embed Code → Embed HTML → paste the whole file.
+
+`wix/wix-camera-widget.html` → same way, on a password-protected page. Shows the latest daily camera photo.
+The Wix password guards the page only; the photo itself is readable by anyone who queries Firestore, like everything else there.
 
 ---
 
