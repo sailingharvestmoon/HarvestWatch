@@ -3,8 +3,13 @@
 Harvest Moon - Deck camera snapshot (Reolink Argus PT Ultra -> Firebase)
 ------------------------------------------------------------------------
 Once a day (SNAP_TIMES, boat time) this asks the camera for a still through
-Neolink, shrinks it so it fits in one Firestore document, and saves it to
-camera/harvest-moon. The Wix camera widget shows whatever is there.
+Neolink and saves it to camera/harvest-moon. The Wix camera widget shows
+whatever is there.
+
+Full quality: the camera's own 4K JPEG is uploaded untouched whenever it fits
+in one Firestore document (1 MiB limit). Busy scenes can come out bigger; only
+then is it re-saved, still at full size, at the best JPEG quality that fits,
+and scaled down only if even that is too big.
 
 The camera is a battery/solar camera with no RTSP. Neolink talks Reolink's own
 protocol to it over the boat Wi-Fi. Each Neolink command wakes the camera for a
@@ -27,13 +32,13 @@ Environment variables (set in camera.service; the defaults match):
   CAM_PRESET    PTZ preset id to move to first; blank = don't move (default blank)
   NEOLINK       path to the Neolink program
   NEOLINK_CONF  path to the Neolink config  (default /etc/harvest-moon/neolink.toml)
-  MAX_W         longest side of the uploaded photo, px (default 1600)
+  MAX_W         force a smaller photo, longest side in px; 0 = full size (default 0)
   RETRY_MIN     if a scheduled photo fails, try once more this many minutes later (default 10)
 
 Neolink config with the camera password: /etc/harvest-moon/neolink.toml
 (chmod 600, owned by harvestmoon). Never in this file or the unit file.
 
-Standard library, plus Pillow (python3-pil) for shrinking the photo.
+Standard library, plus Pillow (python3-pil) for reading and, if needed, re-saving the photo.
 """
 
 import os, sys, re, io, json, time, base64, subprocess
@@ -49,11 +54,11 @@ CAM_NAME     = os.environ.get("CAM_NAME", "HarvestMoon").strip()
 CAM_PRESET   = os.environ.get("CAM_PRESET", "").strip()
 NEOLINK      = os.environ.get("NEOLINK", "/home/harvestmoon/neolink/neolink_linux_armhf/neolink").strip()
 NEOLINK_CONF = os.environ.get("NEOLINK_CONF", "/etc/harvest-moon/neolink.toml").strip()
-MAX_W        = int(os.environ.get("MAX_W", "1600"))
+MAX_W        = int(os.environ.get("MAX_W", "0"))
 RETRY_MIN    = int(os.environ.get("RETRY_MIN", "10"))
 
 WORK_DIR     = f"/tmp/hm-camera-{os.getuid()}"   # per user, so a sudo test run can't block the service
-MAX_BYTES    = 850_000          # Firestore's limit is 1 MiB per document; leave room
+MAX_BYTES    = 1_040_000        # Firestore's limit is 1,048,576 bytes per document; room for the other fields
 NEOLINK_SEC  = 120              # give up on any one Neolink command after this
 ONCE_SEC     = 420              # give up on a whole photo run after this
 
@@ -167,27 +172,38 @@ def read_battery():
     return info
 
 
-def shrink(jpeg):
-    """Scale to MAX_W on the long side and re-save under MAX_BYTES."""
+def prepare(jpeg):
+    """
+    The camera's JPEG byte for byte when it fits under MAX_BYTES. Otherwise
+    re-save at full size at the highest quality that fits, then at 2880 and
+    1920 px as a last resort. MAX_W > 0 forces that size instead.
+    Returns (bytes, (w, h), (camera w, camera h), quality or "original").
+    """
     from PIL import Image                      # only loaded in the --once process
-    im = Image.open(io.BytesIO(jpeg))
-    im.load()
+    im = Image.open(io.BytesIO(jpeg))          # reads the header only
     src = im.size
+    if MAX_W <= 0 and len(jpeg) <= MAX_BYTES:
+        return jpeg, src, src, "original"
+    im.load()
     if im.mode != "RGB":
         im = im.convert("RGB")
-    im.thumbnail((MAX_W, MAX_W), Image.LANCZOS)
-    for q in (82, 72, 62, 52, 42):
-        buf = io.BytesIO()
-        im.save(buf, "JPEG", quality=q, optimize=True, progressive=True)
-        out = buf.getvalue()
-        if len(out) <= MAX_BYTES:
-            return out, im.size, src, q
-    raise RuntimeError(f"photo still {len(out)//1024} KB at quality 42 - lower MAX_W")
+    sizes = [MAX_W] if MAX_W > 0 else [max(src), 2880, 1920]
+    out = b""
+    for side in sizes:
+        if side < max(im.size):
+            im.thumbnail((side, side), Image.LANCZOS)   # sizes only ever shrink
+        for q in (92, 86, 80, 72, 64):
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=q, optimize=True, progressive=True)
+            out = buf.getvalue()
+            if len(out) <= MAX_BYTES:
+                return out, im.size, src, q
+    raise RuntimeError(f"photo still {len(out)//1024} KB after re-saving - set MAX_W")
 
 
 # ---- one photo ---------------------------------------------------------------
 def take_one():
-    """Take, shrink and upload one photo. Returns True on success."""
+    """Take and upload one photo. Returns True on success."""
     t0 = time.time()
     tried = now_ms()
     log(f"photo run: camera {CAM_NAME}, preset {CAM_PRESET or 'none'}")
@@ -196,15 +212,19 @@ def take_one():
         raw = grab_still()
         taken = now_ms()
         batt = read_battery()
-        jpeg, size, src, q = shrink(raw)
+        jpeg, size, src, q = prepare(raw)
     except Exception as e:
         reason = str(e) or e.__class__.__name__
         log(f"photo run FAILED: {reason}")
         fs_patch({"lastTryAt": tried, "lastError": reason[:300]}, only_these=True)
         return False
 
-    log(f"photo: camera {src[0]}x{src[1]} {len(raw)//1024} KB -> "
-        f"{size[0]}x{size[1]} {len(jpeg)//1024} KB (quality {q})")
+    if q == "original":
+        log(f"photo: {src[0]}x{src[1]} {len(raw)//1024} KB, uploading the camera's original")
+    else:
+        why = f"MAX_W={MAX_W}" if MAX_W > 0 else "too big for one record"
+        log(f"photo: camera {src[0]}x{src[1]} {len(raw)//1024} KB {why} -> "
+            f"{size[0]}x{size[1]} {len(jpeg)//1024} KB (JPEG quality {q})")
     fields = {
         "image": jpeg,
         "mime": "image/jpeg",
@@ -216,6 +236,7 @@ def take_one():
         "sizeKB": round(len(jpeg) / 1024),
         "cameraWidth": src[0],
         "cameraHeight": src[1],
+        "quality": q,
         "preset": preset,
         "camera": CAM_NAME,
         "source": "pi camera.py via neolink",
