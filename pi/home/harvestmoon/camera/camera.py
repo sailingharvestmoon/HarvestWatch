@@ -19,6 +19,13 @@ Two ways to run it:
   python3 camera.py           the service: sleeps, takes a photo at SNAP_TIMES
   python3 camera.py --once    take one photo right now and upload it (testing)
 
+"Take a photo now" from the Harvest Watch app: the app writes requestAt into
+camera/<vessel>; the service looks every REQ_POLL_SEC, takes the photo, and
+writes requestDoneAt (and requestNote if it has to wait or refuse). To spare
+the camera battery - anyone who can reach Firestore can write requestAt - it
+takes at most one photo every REQ_GAP_MIN minutes and REQ_PER_DAY a day on
+request, and ignores requests older than REQ_MAX_AGE_MIN.
+
 The service never photographs at start-up, so a code update or a reboot does
 not wake the camera. Each photo runs as a separate short-lived process, so the
 picture handling (Pillow) only uses memory for the few seconds it runs.
@@ -34,6 +41,10 @@ Environment variables (set in camera.service; the defaults match):
   NEOLINK_CONF  path to the Neolink config  (default /etc/harvest-moon/neolink.toml)
   MAX_W         force a smaller photo, longest side in px; 0 = full size (default 0)
   RETRY_MIN     if a scheduled photo fails, try once more this many minutes later (default 10)
+  REQ_POLL_SEC  how often to look for a "take a photo now" request; 0 = never (default 120)
+  REQ_GAP_MIN   at most one photo every this many minutes, on request (default 10)
+  REQ_PER_DAY   at most this many photos a day on request (default 12)
+  REQ_MAX_AGE_MIN  ignore requests older than this, e.g. made while the Pi was off (default 30)
 
 Neolink config with the camera password: /etc/harvest-moon/neolink.toml
 (chmod 600, owned by harvestmoon). Never in this file or the unit file.
@@ -56,6 +67,10 @@ NEOLINK      = os.environ.get("NEOLINK", "/home/harvestmoon/neolink/neolink_linu
 NEOLINK_CONF = os.environ.get("NEOLINK_CONF", "/etc/harvest-moon/neolink.toml").strip()
 MAX_W        = int(os.environ.get("MAX_W", "0"))
 RETRY_MIN    = int(os.environ.get("RETRY_MIN", "10"))
+REQ_POLL_SEC = int(os.environ.get("REQ_POLL_SEC", "120"))
+REQ_GAP_MIN  = int(os.environ.get("REQ_GAP_MIN", "10"))
+REQ_PER_DAY  = int(os.environ.get("REQ_PER_DAY", "12"))
+REQ_MAX_AGE_MIN = int(os.environ.get("REQ_MAX_AGE_MIN", "30"))
 
 WORK_DIR     = f"/tmp/hm-camera-{os.getuid()}"   # per user, so a sudo test run can't block the service
 MAX_BYTES    = 1_040_000        # Firestore's limit is 1,048,576 bytes per document; room for the other fields
@@ -64,6 +79,7 @@ ONCE_SEC     = 420              # give up on a whole photo run after this
 
 DOC_URL = (f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}"
            f"/databases/(default)/documents/camera/{VESSEL_ID}")
+BATTERY_KEYS = ("batteryPct", "chargeStatus", "adapterStatus")
 
 
 def log(msg):
@@ -84,15 +100,18 @@ def fs_value(v):
     return {"stringValue": str(v)}
 
 
-def fs_patch(values, only_these=False):
+def fs_patch(values, only_these=False, mask=None):
     """
-    Write fields to camera/<vessel>. With only_these=True the other fields
-    (the last good photo) are left alone; otherwise the document is replaced.
-    Returns True on success. Never raises.
+    Write fields to camera/<vessel>. With only_these=True (or a mask) every
+    other field is left alone - the last good photo, the app's requestAt. A
+    field named in the mask but missing from values is deleted. Without
+    either, the whole document is replaced. Returns True on success. Never raises.
     """
     url = DOC_URL
-    if only_these:
-        url += "?" + "&".join("updateMask.fieldPaths=" + urllib.parse.quote(k) for k in values)
+    if only_these and mask is None:
+        mask = list(values)
+    if mask is not None:
+        url += "?" + "&".join("updateMask.fieldPaths=" + urllib.parse.quote(k) for k in mask)
     body = json.dumps({"fields": {k: fs_value(v) for k, v in values.items()}}).encode()
     req = urllib.request.Request(url, data=body, method="PATCH",
                                  headers={"Content-Type": "application/json"})
@@ -106,6 +125,27 @@ def fs_patch(values, only_these=False):
     except Exception as e:
         log(f"firestore write failed: {e}")
     return False
+
+
+def fs_get(paths):
+    """
+    Read a few small fields of camera/<vessel> (never the photo). Returns a
+    dict of plain values, {} if the document doesn't exist yet, None on error.
+    """
+    url = DOC_URL + "?" + "&".join("mask.fieldPaths=" + urllib.parse.quote(p) for p in paths)
+    try:
+        with urllib.request.urlopen(url, timeout=20) as r:
+            f = json.load(r).get("fields", {})
+    except urllib.error.HTTPError as e:
+        return {} if e.code == 404 else None
+    except Exception:
+        return None
+    out = {}
+    for k, v in f.items():
+        if "integerValue" in v:  out[k] = int(v["integerValue"])
+        elif "doubleValue" in v: out[k] = float(v["doubleValue"])
+        elif "stringValue" in v: out[k] = v["stringValue"]
+    return out
 
 
 # ---- Neolink ---------------------------------------------------------------
@@ -242,7 +282,9 @@ def take_one():
         "source": "pi camera.py via neolink",
     }
     fields.update(batt)
-    ok = fs_patch(fields)
+    # Masked write: keeps the app's requestAt/requestDoneAt; a battery field
+    # we couldn't read this time is cleared rather than left stale.
+    ok = fs_patch(fields, mask=list(fields) + [k for k in BATTERY_KEYS if k not in fields])
     log(f"photo run {'done' if ok else 'took the photo but the upload FAILED'} "
         f"in {time.time() - t0:.0f} s")
     return ok
@@ -290,6 +332,72 @@ def run_once_subprocess():
         return False
 
 
+class Requests:
+    """
+    "Take a photo now" from the app. poll() reads requestAt / requestDoneAt /
+    lastTryAt (a small read, every REQ_POLL_SEC). ready_at() says when the
+    pending request may be served; done() records it as handled.
+    """
+    def __init__(self, tz):
+        self.tz = tz
+        self.pending = None          # requestAt (ms) not yet served
+        self.last_try = 0            # ms, last photo attempt of any kind
+        self.waiting_note = None     # request we already told "waiting until ..."
+        self.day, self.count = None, 0
+        self.failing = False
+
+    def poll(self):
+        st = fs_get(["requestAt", "requestDoneAt", "lastTryAt"])
+        if st is None:
+            if not self.failing:
+                log("request check: can't reach Firestore - will keep trying")
+            self.failing = True
+            return
+        if self.failing:
+            log("request check: Firestore reachable again")
+        self.failing = False
+        # min(): a lastTryAt in the future (a clock that was wrong) mustn't block requests
+        self.last_try = min(max(self.last_try, st.get("lastTryAt", 0)), now_ms())
+        req, done = st.get("requestAt", 0), st.get("requestDoneAt", 0)
+        if not req or req <= done or req == self.pending:
+            return
+        age_min = (now_ms() - req) / 60000
+        if age_min > REQ_MAX_AGE_MIN:
+            log(f"request from {age_min:.0f} min ago is too old - ignored")
+            self.done(req, f"Ignored: the request was more than {REQ_MAX_AGE_MIN} min old "
+                           "when the Pi saw it.")
+            return
+        log("photo requested from the app")
+        self.pending = req
+
+    def ready_at(self):
+        """Epoch seconds when the pending request may run, or None if none/refused."""
+        if not self.pending:
+            return None
+        today = datetime.now(self.tz).date()
+        if self.day != today:
+            self.day, self.count = today, 0
+        if self.count >= REQ_PER_DAY:
+            log(f"request refused: already {self.count} on-request photos today")
+            self.done(self.pending, f"Not taken: the limit is {REQ_PER_DAY} photos a day on "
+                                    "request, to save the camera battery.")
+            return None
+        at = self.last_try / 1000 + REQ_GAP_MIN * 60
+        if at > time.time() and self.waiting_note != self.pending:
+            self.waiting_note = self.pending
+            when = datetime.fromtimestamp(at, self.tz)
+            log(f"request waiting until {when:%H:%M} (one photo per {REQ_GAP_MIN} min)")
+            fs_patch({"requestNote": f"Waiting until {when:%-I:%M %p} - the camera takes at "
+                                     f"most one photo every {REQ_GAP_MIN} minutes."},
+                     only_these=True)
+        return at
+
+    def done(self, req, note=""):
+        fs_patch({"requestDoneAt": req, "requestNote": note}, only_these=True)
+        if self.pending == req:
+            self.pending = None
+
+
 def service():
     tz = ZoneInfo(CAM_TZ)
     times = parse_times(SNAP_TIMES)
@@ -298,33 +406,61 @@ def service():
     if not os.access(NEOLINK_CONF, os.R_OK):
         log(f"WARNING: cannot read {NEOLINK_CONF} - photos will fail")
     log(f"camera service up: photos at {', '.join(f'{h:02d}:{m:02d}' for h, m in times)} "
-        f"({CAM_TZ}), camera {CAM_NAME}, preset {CAM_PRESET or 'none'}")
+        f"({CAM_TZ}), camera {CAM_NAME}, preset {CAM_PRESET or 'none'}; "
+        + (f"app requests checked every {REQ_POLL_SEC} s" if REQ_POLL_SEC > 0 else "app requests off"))
 
+    reqs = Requests(tz)
+    next_poll = 0.0
     retry_at = None
     target = next_slot(times, tz, datetime.now(tz))
     log(f"next photo {target:%a %b %d %H:%M %Z}")
     while True:
+        if REQ_POLL_SEC > 0 and time.time() >= next_poll:
+            next_poll = time.time() + REQ_POLL_SEC
+            reqs.poll()
+
         now = datetime.now(tz)
         due = target if retry_at is None else min(target, retry_at)
-        if now < due:
-            # Short sleeps so a clock jump (NTP after a reboot, DST) can't make us miss it.
-            time.sleep(min(60, max(1, (due - now).total_seconds())))
+
+        # ---- scheduled photo (and its one retry)
+        if now >= due:
+            is_retry = retry_at is not None and due == retry_at
+            log("taking the retry photo" if is_retry else f"taking the {due:%H:%M} photo")
+            started = now_ms()
+            reqs.last_try = started
+            ok = run_once_subprocess()
+            if ok and reqs.pending and reqs.pending <= started:
+                reqs.done(reqs.pending)              # this photo answers the app's request too
+            if is_retry:
+                retry_at = None
+            else:
+                target = next_slot(times, tz, datetime.now(tz))
+                retry_at = None if ok else datetime.now(tz) + timedelta(minutes=RETRY_MIN)
+                if retry_at and retry_at >= target:
+                    retry_at = None
+            if retry_at:
+                log(f"will try again at {retry_at:%H:%M}")
+            log(f"next photo {target:%a %b %d %H:%M %Z}")
             continue
 
-        is_retry = retry_at is not None and due == retry_at
-        log("taking the retry photo" if is_retry else f"taking the {due:%H:%M} photo")
-        ok = run_once_subprocess()
+        # ---- "take a photo now" from the app
+        ready = reqs.ready_at()
+        if ready is not None and time.time() >= ready:
+            req = reqs.pending
+            log("taking a photo on request")
+            reqs.last_try = now_ms()
+            reqs.count += 1
+            ok = run_once_subprocess()
+            reqs.done(req)          # if it failed, lastError says why; the app shows it
+            continue
 
-        if is_retry:
-            retry_at = None
-        else:
-            target = next_slot(times, tz, datetime.now(tz))
-            retry_at = None if ok else datetime.now(tz) + timedelta(minutes=RETRY_MIN)
-            if retry_at and retry_at >= target:
-                retry_at = None
-        if retry_at:
-            log(f"will try again at {retry_at:%H:%M}")
-        log(f"next photo {target:%a %b %d %H:%M %Z}")
+        # Short sleeps so a clock jump (NTP after a reboot, DST) can't make us miss anything.
+        wake = [(due - now).total_seconds(), 60]
+        if REQ_POLL_SEC > 0:
+            wake.append(next_poll - time.time())
+        if ready is not None:
+            wake.append(ready - time.time())
+        time.sleep(max(1, min(wake)))
 
 
 if __name__ == "__main__":

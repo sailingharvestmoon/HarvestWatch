@@ -394,6 +394,23 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .anchor-ico { font-size:18px; line-height:18px; transform:translate(-50%,-50%); filter:drop-shadow(0 0 3px rgba(0,0,0,.5)); }
 .ais-ico { transform:translate(-50%,-50%); }
 .leaflet-tooltip { font:inherit; font-size:12px; }
+
+/* deck camera (Boat tab) */
+.cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
+.cam-frame img { display:block; width:100%; height:100%; object-fit:cover; cursor:zoom-in; }
+.cam-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:16px; text-align:center; color:var(--muted); font-size:13.5px; line-height:1.5; }
+.cam-meta { display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:10px 14px 0; font-size:12.5px; color:var(--muted); }
+.cam-meta b { color:var(--ink); font-weight:600; }
+.cam-note { margin:8px 14px 0; }
+.cam-note[hidden] { display:none; }
+.cam-actions { padding:12px 14px 14px; }
+.cam-actions .btn[disabled] { opacity:.6; }
+.cam-full { position:fixed; inset:0; z-index:2000; background:#000; overflow:auto; -webkit-overflow-scrolling:touch; }
+.cam-full[hidden] { display:none; }
+.cam-full img { display:block; width:100%; height:100%; object-fit:contain; }
+.cam-full.zoom img { height:auto; max-width:none; object-fit:fill; }
+.cam-x { position:fixed; top:calc(10px + env(safe-area-inset-top)); right:12px; width:42px; height:42px; border-radius:21px; background:rgba(0,0,0,.6); color:#fff; font-size:18px; z-index:2001; border:1px solid rgba(255,255,255,.25); }
+.cam-hint { position:fixed; left:0; right:0; bottom:calc(14px + env(safe-area-inset-bottom)); text-align:center; color:rgba(255,255,255,.8); font-size:12px; pointer-events:none; text-shadow:0 1px 3px #000; }
 </style>
 </head>
 <body>
@@ -553,6 +570,15 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
     <!-- BOAT -->
     <section class="view scroll" id="view-boat">
+      <div class="section-title">Deck camera</div>
+      <div class="card">
+        <div class="cam-frame" id="camFrame"><div class="cam-empty" id="camEmpty">Loading the latest photo…</div></div>
+        <div class="cam-meta"><b id="camTaken"></b><span id="camInfo"></span></div>
+        <p class="note cam-note" id="camNote" hidden></p>
+        <div class="cam-actions"><button class="btn primary block" id="btnCamNow" onclick="requestCamPhoto()">📷 Take a photo now</button></div>
+      </div>
+      <p class="note" style="margin:8px 4px 0;">The Pi takes a photo every afternoon at 3:00. “Take a photo now” asks it for one: it looks every 2 minutes and takes at most one every 10 minutes. Tap the photo to see it full size.</p>
+
       <div class="section-title">Cabin display</div>
       <div class="seg" id="frameSeg">
         <button data-m="auto">Auto</button><button data-m="dashboard">Instruments</button><button data-m="info">Weather</button><button data-m="photo">Photos</button>
@@ -617,6 +643,13 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- deck camera, full size -->
+<div class="cam-full" id="camFull" hidden onclick="camFullZoom(event)">
+  <button class="cam-x" onclick="closeCamFull(event)" aria-label="Close">✕</button>
+  <img id="camFullImg" alt="Deck camera, full size">
+  <div class="cam-hint" id="camHint">Tap to see actual pixels · ✕ to close</div>
+</div>
 
 <script>
 'use strict';
@@ -2788,6 +2821,111 @@ $('phoneGps').addEventListener('change', e => {
   } else if (phoneWatch !== null) { navigator.geolocation.clearWatch(phoneWatch); phoneWatch = null; }
 });
 
+// ═══ DECK CAMERA (Boat tab) ════════════════════════════════════════
+// camera.py on the Pi saves the camera's full-quality photo (up to ~1 MB)
+// in camera/harvest-moon. The photo is downloaded only while the Boat tab
+// is open and only when it has changed; otherwise a small status read.
+// "Take a photo now" writes requestAt; the Pi answers with requestDoneAt,
+// and requestNote when it has to wait or refuse (battery limits).
+const CAM = { shownAt: null, url: null, timer: null, f: {} };
+const CAM_SMALL = ['takenAt', 'lastTryAt', 'lastError', 'requestAt', 'requestDoneAt', 'requestNote',
+                   'batteryPct', 'chargeStatus', 'adapterStatus'];
+async function camGet(full) {
+  const q = full ? '' : '?' + CAM_SMALL.map(k => 'mask.fieldPaths=' + k).join('&');
+  try {
+    const r = await fetch(`${FSB}/camera/${VESSEL}${q}`, { cache: 'no-store' });
+    if (r.status === 404) return {};
+    if (!r.ok) return null;
+    return (await r.json()).fields || {};
+  } catch (e) { return null; }
+}
+const camWhen = ms => new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+const camPending = f => (num(f.requestAt) || 0) > (num(f.requestDoneAt) || 0) && Date.now() - num(f.requestAt) < 30 * 60000;
+function camEmpty(msg) {
+  if (CAM.shownAt !== null) return;           // keep the photo we have
+  $('camFrame').innerHTML = `<div class="cam-empty">${esc(msg)}</div>`;
+}
+function camShow(f) {
+  const bin = atob(f.image.bytesValue), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  if (CAM.url) URL.revokeObjectURL(CAM.url);
+  CAM.url = URL.createObjectURL(new Blob([u8], { type: str(f.mime) || 'image/jpeg' }));
+  const fr = $('camFrame'), w = num(f.width), h = num(f.height);
+  if (w && h) fr.style.aspectRatio = w + '/' + h;   // no cropping, whatever size the camera sends
+  fr.innerHTML = '';
+  const img = new Image(); img.alt = 'Deck camera'; img.src = CAM.url; img.onclick = openCamFull;
+  fr.appendChild(img);
+  CAM.shownAt = num(f.takenAt);
+}
+async function loadCam() {
+  clearTimeout(CAM.timer);
+  const f = await camGet(false);
+  if (f === null) { camEmpty("Couldn't reach the cloud. Try again in a minute."); camSchedule(); return; }
+  CAM.f = f;
+  const t = num(f.takenAt);
+  if (!t) camEmpty('No photo yet. The Pi takes one each afternoon.');
+  else if (t !== CAM.shownAt) {
+    const full = await camGet(true);
+    if (full && full.image && full.image.bytesValue) { CAM.f = full; camShow(full); }
+  }
+  paintCam(); camSchedule();
+}
+function paintCam() {
+  const f = CAM.f, t = num(f.takenAt), tried = num(f.lastTryAt), err = str(f.lastError);
+  $('camTaken').textContent = t ? 'Taken ' + camWhen(t) + ' · ' + ago(t) : '';
+  const pct = num(f.batteryPct), ch = str(f.chargeStatus).toLowerCase(), src = str(f.adapterStatus);
+  const bits = [];
+  if (pct !== null) bits.push('Battery ' + pct + '%');
+  if (/charg/.test(ch) && !/complete|full/.test(ch)) bits.push('charging');
+  else if (/solar/i.test(src)) bits.push('on solar');
+  $('camInfo').textContent = bits.join(' · ');
+
+  const pending = camPending(f), rnote = str(f.requestNote), done = num(f.requestDoneAt) || 0;
+  const notes = [];
+  if (pending) notes.push(rnote || 'Asked the Pi ' + ago(num(f.requestAt)) + '. It looks every 2 minutes.');
+  else if (rnote && Date.now() - done < 60 * 60000) notes.push(rnote);           // waited, refused or ignored
+  if (!pending && err && tried && (!t || tried > t)) notes.push("The camera didn't send a photo at " + camWhen(tried) + ': ' + err);
+  $('camNote').textContent = notes.join(' ');
+  $('camNote').hidden = !notes.length;
+  const b = $('btnCamNow');
+  b.disabled = pending;
+  b.textContent = pending ? '⏳ Waiting for the Pi…' : '📷 Take a photo now';
+}
+function camSchedule() {
+  clearTimeout(CAM.timer);
+  if (document.hidden || !$('view-boat').classList.contains('active')) return;
+  CAM.timer = setTimeout(loadCam, camPending(CAM.f) ? 20000 : 300000);   // 20 s while asking, else 5 min
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && $('view-boat').classList.contains('active')) loadCam();
+  else clearTimeout(CAM.timer);
+});
+async function requestCamPhoto() {
+  const now = Date.now();
+  if (!(await fsPatch('camera', { requestAt: fI(now) }))) { toast('Could not reach the cloud'); return; }
+  CAM.f.requestAt = fI(now); CAM.f.requestNote = fS('');
+  paintCam(); camSchedule();
+  toast('Asked the Pi — the photo usually arrives within 3 minutes');
+}
+// Full size: opens fitted to the screen; tap for actual pixels (scroll to look around), tap again to fit.
+function openCamFull() {
+  if (!CAM.url) return;
+  const box = $('camFull'), img = $('camFullImg');
+  img.src = CAM.url; img.style.width = '';
+  box.classList.remove('zoom'); box.hidden = false;
+}
+function camFullZoom(e) {
+  if (e.target.closest('.cam-x')) return;
+  const box = $('camFull'), img = $('camFullImg');
+  const zoom = !box.classList.contains('zoom');
+  const rx = e.clientX / box.clientWidth, ry = e.clientY / box.clientHeight;
+  box.classList.toggle('zoom', zoom);
+  img.style.width = zoom ? Math.round(img.naturalWidth / (window.devicePixelRatio || 1)) + 'px' : '';
+  $('camHint').textContent = zoom ? 'Tap to fit the screen · ✕ to close' : 'Tap to see actual pixels · ✕ to close';
+  if (zoom) { box.scrollLeft = rx * (box.scrollWidth - box.clientWidth); box.scrollTop = ry * (box.scrollHeight - box.clientHeight); }
+}
+function closeCamFull(e) { e.stopPropagation(); $('camFull').hidden = true; $('camFull').classList.remove('zoom'); }
+
 // ═══ NAV ═══════════════════════════════════════════════════════════
 const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', fronts: 'Fronts · day 0–7', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of forecast / maps you left it on
@@ -2800,7 +2938,8 @@ function showView(v) {
   $('viewName').textContent = VIEW_NAMES[v];
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
-  if (v === 'boat') { paintBoat(); loadFrameMode(); }
+  if (v === 'boat') { paintBoat(); loadFrameMode(); loadCam(); }
+  else clearTimeout(CAM.timer);
   if (v === 'weather') loadForecast(false);
   if (v === 'maps') openMaps();
   else if (WM.playing) wmTogglePlay();
