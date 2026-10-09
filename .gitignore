@@ -13,3 +13,7 @@ For Netlify/
 # Python byproducts
 __pycache__/
 *.pyc
+
+# Google Drive sync temp folders
+.tmp.driveupload/
+.tmp.drivedownload/

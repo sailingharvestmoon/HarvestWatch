@@ -144,11 +144,12 @@ and the secrets `FB_EMAIL`, `FB_PASSWORD` (the boat systems Firebase login, so i
 signed in once per phone (Boat tab → Sign-in; the phone keeps only the sign-in pass, `hwAuth`). The one public write:
 anyone may set `requestAt` / `liveRequestAt` / `liveWatchAt` on `camera/harvest-moon` (the Wix widget's buttons).
 
-- `firestore-rules-locked.txt` — the locked rules. `firestore-rules-ROLLBACK.txt` — the open rules from before the
-  lock: paste it to undo everything in 30 seconds.
+- Locked Oct 9, 2026. `firestore-rules-ROLLBACK.txt` — the open rules from before the lock: paste it to undo
+  everything in 30 seconds.
 - `authcheck/` — each program writes `authcheck/<name>` after signing in (`pi-sensors`, `pi-guard`, `pi-camera`,
   `cloud-anchor`, `cloud-weather`, `app`); only a signed-in writer can, so fresh times there prove sign-in works.
-- `rulecheck/` — scratch area for `lib/rulecheck.py`, which tests the locked logic against the real rules.
+- `rulecheck/` — scratch area for `lib/rulecheck.py`, which tested the locked logic before the lock went live.
+  `rulecheck.py --status` still works any time; the full test needs the check-stage rules (git history, commit 9d0d693).
 
 | Collection | Written by | Holds |
 |---|---|---|

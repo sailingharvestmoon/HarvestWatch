@@ -12,6 +12,10 @@ signed in and not, and reports whether Firebase allowed or refused each one.
 
 Every line should end in "ok". It only writes to rulecheck/ - nothing the boat
 uses. Needs the boat systems login in /etc/harvest-moon/firebase.env.
+
+Since the lock went live (Oct 9, 2026) the live rules no longer include the
+check-stage test areas, so the two "public may ask" tests now report FAIL - that
+is expected. --status still works any time.
 """
 
 import os, sys, json, time, urllib.request, urllib.error

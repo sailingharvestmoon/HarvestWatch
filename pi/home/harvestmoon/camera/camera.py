@@ -119,6 +119,8 @@ MOSQ_PUB     = os.environ.get("MOSQ_PUB", "/usr/bin/mosquitto_pub").strip()
 WORK_DIR     = f"/tmp/hm-camera-{os.getuid()}"   # per user, so a sudo test run can't block the service
 MAX_BYTES    = 1_040_000        # Firestore's limit is 1,048,576 bytes per document; room for the other fields
 NEOLINK_SEC  = 120              # give up on any one Neolink command after this
+BATTERY_SEC  = int(os.environ.get("BATTERY_SEC", "20"))   # the battery reading is a nice-to-have:
+                                # never let it hold up a photo or a waiting live-view request
 ONCE_SEC     = 420              # give up on a whole photo run after this
 
 DOC_URL = (f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}"
@@ -199,13 +201,14 @@ def fs_get(paths):
 
 
 # ---- Neolink ---------------------------------------------------------------
-def neolink(*args):
+def neolink(*args, timeout=None):
     """Run one Neolink command. Returns (ok, stdout). Never raises."""
     cmd = [NEOLINK] + list(args)
+    limit = timeout or NEOLINK_SEC
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=NEOLINK_SEC)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=limit)
     except subprocess.TimeoutExpired:
-        log(f"neolink {args[0]} timed out after {NEOLINK_SEC} s")
+        log(f"neolink {args[0]} timed out after {limit} s")
         return False, ""
     except Exception as e:
         log(f"neolink {args[0]} could not run: {e}")
@@ -246,7 +249,7 @@ def grab_still():
 
 def read_battery():
     """Battery percent and charge state from the camera's XML, or {}. Never raises."""
-    ok, out = neolink("battery", f"--config={NEOLINK_CONF}", CAM_NAME)
+    ok, out = neolink("battery", f"--config={NEOLINK_CONF}", CAM_NAME, timeout=BATTERY_SEC)
     info = {}
     m = re.search(r"<batteryPercent>\s*(\d+)\s*<", out or "")
     if m:
