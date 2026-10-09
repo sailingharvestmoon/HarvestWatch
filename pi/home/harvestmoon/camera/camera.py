@@ -34,7 +34,9 @@ every LIVE_EVERY_MS over one open connection and hands each one to Mosquitto
 on the Pi. This program shrinks each still to LIVE_W px and writes it into
 camera/<vessel>-live, which the widget shows as it changes. A session ends
 after LIVE_MIN minutes, or LIVE_IDLE_SEC after the last viewer stops watching;
-LIVE_DAY_MIN caps the camera's awake time per day. While a live session runs,
+LIVE_DAY_MIN caps the camera's awake time per day. Each live picture is a
+full-size still from the camera, so when a session ends the last one is saved,
+at full quality, as the latest photo in camera/<vessel>. While a live session runs,
 scheduled and requested photos wait for it to finish.
 
 The service never photographs at start-up, so a code update or a reboot does
@@ -389,6 +391,7 @@ def live_session(req, max_sec):
     lock = threading.Lock()
     procs, conf, error, reason, sent = [], None, "", "ended", 0
     bad_frames = 0
+    last_b64, last_at = None, 0.0     # the newest picture that went out, full size
 
     def live_doc(fields, mask=None):
         return fs_patch(fields, mask=mask, url=LIVE_DOC_URL)
@@ -451,6 +454,7 @@ def live_session(req, max_sec):
                              "state": "live", "startedAt": started, "endsAt": ends,
                              "width": size[0], "height": size[1], "error": ""}):
                     sent += 1
+                    last_b64, last_at = b64, at
                     if sent == 1:
                         log(f"live: first picture after {at - t0:.0f} s, "
                             f"{size[0]}x{size[1]} {len(jpeg) // 1024} KB")
@@ -478,7 +482,34 @@ def live_session(req, max_sec):
         live_doc({"state": "error" if error else "ended", "endedAt": now_ms(), "error": error[:300]},
                  mask=["state", "endedAt", "error"])
         log(f"live view {reason}: {sent} pictures in {time.time() - t0:.0f} s")
+        if last_b64:
+            save_live_photo(last_b64, last_at)
     return sent > 0
+
+
+def save_live_photo(b64, at):
+    """
+    Save the session's last live picture - a full-size camera still - as the
+    latest photo, so the widget and the app don't fall back to an older one.
+    Battery fields are left as they were (live view doesn't read them). Never raises.
+    """
+    try:
+        raw = base64.b64decode(b64)
+        jpeg, size, src, q = prepare(raw)
+    except Exception as e:
+        log(f"live: couldn't save the last picture as the photo ({e})")
+        return False
+    fields = {
+        "image": jpeg, "mime": "image/jpeg",
+        "takenAt": int(at * 1000), "lastTryAt": int(at * 1000), "lastError": "",
+        "width": size[0], "height": size[1], "sizeKB": round(len(jpeg) / 1024),
+        "cameraWidth": src[0], "cameraHeight": src[1], "quality": q,
+        "preset": None, "camera": CAM_NAME, "source": "live view (last picture)",
+    }
+    ok = fs_patch(fields, mask=list(fields))
+    if ok:
+        log(f"live: saved the last picture as the latest photo, {src[0]}x{src[1]} {len(jpeg) // 1024} KB")
+    return ok
 
 
 def run_live_subprocess(req, max_sec):

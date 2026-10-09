@@ -6,8 +6,11 @@
      Shows the latest photo the Pi saved to camera/harvest-moon, and a
      "See live view" button: the Pi wakes the camera and sends a fresh
      picture about every 2 seconds to camera/harvest-moon-live for up to
-     5 minutes, or until nobody is watching. The Pi caps live view per day
-     to spare the camera battery; this widget explains any wait or refusal.
+     5 minutes, or until nobody is watching. When live view ends the last
+     live picture stays on screen, and the Pi saves it at full quality as
+     the latest photo, which replaces it here a minute or so later.
+     The Pi caps live view per day to spare the camera battery; this widget
+     explains any wait or refusal.
      Self-contained: no libraries, no dependencies. HTTPS only.
      ============================================================ -->
 <div id="hm-camera">
@@ -95,7 +98,7 @@
     var photo = null;        // latest daily photo document (fields)
     var mode = "photo";      // photo | waking | live
     var reqAt = 0, wakeStart = 0, lastFrameAt = 0, lastFrameSeen = 0, endsAt = 0;
-    var pollTimer = null, watchTimer = null;
+    var pollTimer = null, watchTimer = null, savedTimer = null;
 
     function num(f){ return f && f.integerValue!==undefined ? parseInt(f.integerValue,10)
                    : f && f.doubleValue!==undefined ? f.doubleValue : null; }
@@ -181,7 +184,7 @@
       btn.className = "hmc-btn" + (m === "photo" ? "" : " stop");
     }
     function startLive(){
-      say("");
+      say(""); clearTimeout(savedTimer);
       // Someone may already be watching: join their session instead of asking for a new one.
       getJSON(LIVE_SMALL, function(lf){
         var now = Date.now();
@@ -212,8 +215,27 @@
     function stopLive(msg, kind){
       clearTimeout(pollTimer); clearInterval(watchTimer);
       setMode("photo");
-      showPhoto();
+      if (lastFrameAt){
+        // Keep the last live picture: it's the newest view there is. The Pi saves it
+        // (full size) as the latest photo when the session ends; swap that in when it lands.
+        pill.hidden = true;
+        taken.textContent = "Last live picture";
+        ago.textContent = clock(lastFrameAt);
+        awaitSavedPhoto(lastFrameAt);
+      } else showPhoto();
       if (msg) say(msg, kind); else photoNotes();
+    }
+    function awaitSavedPhoto(since){
+      var tries = 0;
+      clearTimeout(savedTimer);
+      (function check(){
+        if (mode !== "photo") return;
+        getJSON(SMALL, function(f){
+          if (mode !== "photo") return;
+          if (f && (num(f.takenAt) || 0) >= since - 15000){ loadPhoto(); return; }
+          if (++tries < 18) savedTimer = setTimeout(check, 10000);     // up to 3 minutes
+        });
+      })();
     }
     function poll(){
       if (mode === "photo") return;
