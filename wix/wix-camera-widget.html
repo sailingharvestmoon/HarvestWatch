@@ -1,16 +1,19 @@
 <!-- ============================================================
      Harvest Moon - "Deck camera" widget for Wix
      Paste this ENTIRE block into a Wix  Embed Code  element
-     (Add -> Embed Code -> Embed HTML -> Enter Code) on a page
-     you have password protected. Size the element about 760 x 560.
-     Shows the latest daily photo the Pi saved to camera/harvest-moon.
+     (Add -> Embed Code -> Embed HTML -> Enter Code).
+     Size the element about 760 x 620.
+     Shows the latest photo the Pi saved to camera/harvest-moon, and a
+     "See live view" button that asks the Pi for a fresh photo right now.
+     The Pi limits those to one every 10 minutes and 12 a day (camera
+     battery); this widget explains the wait instead of failing silently.
      Self-contained: no libraries, no dependencies. HTTPS only.
      ============================================================ -->
 <div id="hm-camera">
   <style>
     #hm-camera{
       --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#0e7490; --bg:#ffffff;
-      --warn:#b45309; --warnbg:#fffbeb;
+      --warn:#b45309; --warnbg:#fffbeb; --info:#0e7490; --infobg:#ecfeff;
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
       max-width:760px; margin:0 auto; color:var(--ink);
       background:var(--bg); border:1px solid var(--line); border-radius:14px;
@@ -25,11 +28,19 @@
     #hm-camera .hmc-frame img{display:block; width:100%; height:100%; object-fit:cover;}
     #hm-camera .hmc-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
       padding:20px; text-align:center; color:var(--muted); font-size:15px; line-height:1.5;}
-    #hm-camera .hmc-foot{display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    #hm-camera .hmc-busy{position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:20px;
+      background:rgba(15,23,42,.72); color:#fff; font-size:12.5px; font-weight:600;}
+    #hm-camera .hmc-busy[hidden]{display:none;}
+    #hm-camera .hmc-foot{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
       margin-top:10px; font-size:12px; color:var(--muted);}
     #hm-camera .hmc-taken{color:var(--ink); font-weight:600;}
-    #hm-camera .hmc-note{margin-top:10px; padding:8px 12px; border-radius:8px; font-size:12px; line-height:1.45;
+    #hm-camera .hmc-btn{display:block; width:100%; margin-top:12px; padding:12px 16px; border-radius:10px;
+      border:1px solid var(--accent); background:var(--accent); color:#fff; font:inherit; font-size:14.5px;
+      font-weight:600; cursor:pointer;}
+    #hm-camera .hmc-btn:disabled{opacity:.6; cursor:default;}
+    #hm-camera .hmc-note{margin-top:10px; padding:8px 12px; border-radius:8px; font-size:12.5px; line-height:1.45;
       color:var(--warn); background:var(--warnbg); border:1px solid #fde68a;}
+    #hm-camera .hmc-note.info{color:var(--info); background:var(--infobg); border-color:#a5f3fc;}
     #hm-camera .hmc-note[hidden]{display:none;}
   </style>
 
@@ -40,6 +51,7 @@
 
   <div class="hmc-frame" id="hmc-frame">
     <div class="hmc-empty" id="hmc-empty">Loading the latest photo…</div>
+    <div class="hmc-busy" id="hmc-busy" hidden>Taking a fresh photo…</div>
   </div>
 
   <div class="hmc-foot">
@@ -47,6 +59,7 @@
     <span id="hmc-ago"></span>
   </div>
 
+  <button class="hmc-btn" id="hmc-btn" type="button">📷 See live view</button>
   <div class="hmc-note" id="hmc-note" hidden></div>
 
   <script>
@@ -55,26 +68,34 @@
     var PROJECT_ID = "harvest-moon-watch";
     var VESSEL_ID  = "harvest-moon";
     var CHECK_MS   = 10 * 60 * 1000;   // look for a newer photo every 10 min
-    var STALE_H    = 36;               // older than this => say the daily photo was missed
+    var STALE_H    = 20;               // older than this => say a scheduled photo was missed
+    var GAP_MIN    = 10;               // must match REQ_GAP_MIN in camera.service
+    var WAIT_MS    = 4 * 60 * 1000;    // give up waiting for a requested photo after this
+    var POLL_MS    = 6000;             // while waiting, look this often
 
     var DOC = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID +
               "/databases/(default)/documents/camera/" + VESSEL_ID;
-    // Small check first (no picture), so the 10-minute look costs almost nothing.
-    var SMALL = DOC + "?mask.fieldPaths=takenAt&mask.fieldPaths=lastTryAt&mask.fieldPaths=lastError";
+    // Small reads (no picture) so checking costs almost nothing.
+    var SMALL = DOC + "?" + ["takenAt","lastTryAt","lastError","requestAt","requestDoneAt","requestNote"]
+                  .map(function(k){ return "mask.fieldPaths=" + k; }).join("&");
 
     var frame=document.getElementById("hmc-frame"), empty=document.getElementById("hmc-empty"),
-        batt=document.getElementById("hmc-batt"), taken=document.getElementById("hmc-taken"),
-        ago=document.getElementById("hmc-ago"), note=document.getElementById("hmc-note");
-    var shownAt = null;                 // takenAt of the photo on screen
+        busy=document.getElementById("hmc-busy"), batt=document.getElementById("hmc-batt"),
+        taken=document.getElementById("hmc-taken"), ago=document.getElementById("hmc-ago"),
+        note=document.getElementById("hmc-note"), btn=document.getElementById("hmc-btn");
+    var shownAt = null;     // takenAt of the photo on screen
+    var last = {};          // latest small fields
+    var waitFor = null;     // requestAt we're waiting on
+    var waitStart = 0, pollTimer = null, extended = false;
 
     function num(f){ return f && f.integerValue!==undefined ? parseInt(f.integerValue,10)
                    : f && f.doubleValue!==undefined ? f.doubleValue : null; }
     function str(f){ return f && f.stringValue!==undefined ? f.stringValue : ""; }
-
     function when(ms){
       return new Date(ms).toLocaleString([], {weekday:"short", month:"short", day:"numeric",
                                                hour:"numeric", minute:"2-digit"});
     }
+    function clock(ms){ return new Date(ms).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}); }
     function agoText(ms){
       var s = Math.max(0, Math.floor((Date.now()-ms)/1000));
       if (s < 90)    return "just now";
@@ -82,35 +103,48 @@
       if (s < 86400) return Math.floor(s/3600) + " h ago";
       var d = Math.floor(s/86400); return d + (d===1 ? " day ago" : " days ago");
     }
+    function say(msg, kind){
+      note.textContent = msg || "";
+      note.className = "hmc-note" + (kind === "info" ? " info" : "");
+      note.hidden = !msg;
+    }
     function showEmpty(msg){
-      frame.innerHTML = ""; empty.textContent = msg; frame.appendChild(empty);
+      if (shownAt !== null) return;          // keep the photo we have
+      empty.textContent = msg;
+      if (!empty.parentNode) frame.insertBefore(empty, busy);
+    }
+    function setWaiting(on){
+      busy.hidden = !on;
+      btn.disabled = on;
+      btn.textContent = on ? "Taking a fresh photo…" : "📷 See live view";
     }
 
-    function showNotes(f){
+    // Notes when nobody is waiting on a request.
+    function idleNotes(f){
       var t = num(f.takenAt), tried = num(f.lastTryAt), err = str(f.lastError);
-      var msgs = [];
-      if (err && tried && (!t || tried > t))
-        msgs.push("The camera didn't send a photo at " + when(tried) + ". Showing the last one that worked.");
-      else if (t && Date.now()-t > STALE_H*3600*1000)
-        msgs.push("No new photo since " + when(t) + ". The Pi or the camera may be off.");
-      note.textContent = msgs.join(" ");
-      note.hidden = msgs.length === 0;
       if (t) ago.textContent = agoText(t);
+      if (err && tried && (!t || tried > t))
+        say("The camera didn't send a photo at " + clock(tried) + ". Showing the last one that worked.");
+      else if (t && Date.now()-t > STALE_H*3600*1000)
+        say("No new photo since " + when(t) + ". The boat's internet or the camera may be off.");
+      else say("");
     }
 
     function render(f){
-      var t = num(f.takenAt);
-      var b64 = f.image && f.image.bytesValue;
-      if (!t || !b64){ showEmpty("No photo yet. The Pi takes one each afternoon."); showNotes(f); return; }
-
+      var t = num(f.takenAt), b64 = f.image && f.image.bytesValue;
+      if (!t || !b64){ showEmpty("No photo yet. The camera takes one after sunrise and before sunset."); return; }
       var img = new Image();
       img.alt = "Photo from aboard Harvest Moon, " + when(t);
       img.src = "data:" + (str(f.mime) || "image/jpeg") + ";base64," + b64;
       var w = num(f.width), h = num(f.height);
       if (w && h) frame.style.aspectRatio = w + "/" + h;   // no cropping whatever the camera sends
-      frame.innerHTML = ""; frame.appendChild(img);
+      var old = frame.querySelector("img");
+      if (old) frame.removeChild(old);
+      if (empty.parentNode) frame.removeChild(empty);
+      frame.insertBefore(img, busy);
       shownAt = t;
       taken.textContent = "Taken " + when(t);
+      ago.textContent = agoText(t);
 
       var pct = num(f.batteryPct), charge = str(f.chargeStatus).toLowerCase(), src = str(f.adapterStatus);
       var bits = [];
@@ -118,32 +152,100 @@
       if (/charg/.test(charge) && !/complete|full/.test(charge)) bits.push("charging");
       else if (/solar/i.test(src)) bits.push("on solar");
       batt.textContent = bits.join(" · ");
-      showNotes(f);
     }
 
-    function loadFull(){
-      fetch(DOC).then(function(r){
+    function getJSON(url, cb){
+      fetch(url, {cache:"no-store"}).then(function(r){
         if (r.status === 404) return {fields:{}};
         return r.ok ? r.json() : null;
-      }).then(function(d){
-        if (d && d.fields) render(d.fields);
-        else if (shownAt === null) showEmpty("Couldn't reach the photo right now. Try again in a minute.");
-      }).catch(function(){
-        if (shownAt === null) showEmpty("Couldn't reach the photo right now. Try again in a minute.");
+      }).then(function(d){ cb(d && d.fields ? d.fields : null); })
+        .catch(function(){ cb(null); });
+    }
+    function loadFull(after){
+      getJSON(DOC, function(f){
+        if (f){ render(f); last = f; }
+        else showEmpty("Couldn't reach the photo right now. Try again in a minute.");
+        if (after) after(f);
       });
     }
 
-    function check(){
-      fetch(SMALL).then(function(r){ return r.ok ? r.json() : null; })
-        .then(function(d){
-          if (!d || !d.fields) return;
-          if (num(d.fields.takenAt) !== shownAt) loadFull();
-          else showNotes(d.fields);
-        }).catch(function(){});
+    // ---- "See live view": ask the Pi for a fresh photo --------------------
+    function request(){
+      var lastTry = Math.max(num(last.lastTryAt) || 0, num(last.takenAt) || 0);
+      var readyAt = lastTry + GAP_MIN*60000;
+      if (lastTry && Date.now() < readyAt){
+        say("This is the live view from " + agoText(num(last.takenAt) || lastTry) +
+            ". To save the camera's battery it takes at most one photo every " + GAP_MIN +
+            " minutes. Try again after " + clock(readyAt) + ".", "info");
+        return;
+      }
+      var now = Date.now();
+      fetch(DOC + "?updateMask.fieldPaths=requestAt", {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({fields:{requestAt:{integerValue:String(now)}}})
+      }).then(function(r){
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        waitFor = now; waitStart = now; extended = false;
+        setWaiting(true);
+        say("Asking the boat for a fresh photo. This usually takes under a minute.", "info");
+        clearTimeout(pollTimer); pollTimer = setTimeout(poll, POLL_MS);
+      }).catch(function(){
+        say("Couldn't reach the boat's camera service right now. Try again in a minute.");
+      });
     }
 
-    loadFull();
+    function poll(){
+      getJSON(SMALL, function(f){
+        if (f) last = mergeSmall(f);
+        var t = f ? num(f.takenAt) : null;
+        var done = f ? num(f.requestDoneAt) : null;
+        if (t && t >= waitFor){                           // the new photo is in
+          loadFull(function(){ finish(""); });
+          return;
+        }
+        if (done && done >= waitFor){                     // the Pi answered without a new photo
+          var why = str(f.requestNote) || (str(f.lastError) ? "The camera didn't send a photo." : "");
+          finish(why || "The camera didn't send a new photo this time.");
+          return;
+        }
+        if (f && /^Waiting/.test(str(f.requestNote))){   // someone else just took one; the Pi will do ours shortly
+          say(str(f.requestNote), "info");
+          if (!extended){ extended = true; waitStart = Date.now() + GAP_MIN*60000; }
+        }
+        if (Date.now() - waitStart > WAIT_MS){
+          finish("The boat didn't answer. Its internet or the camera may be off right now; the photo above is the latest.");
+          return;
+        }
+        pollTimer = setTimeout(poll, POLL_MS);
+      });
+    }
+    function mergeSmall(f){
+      var m = {}; for (var k in last) m[k] = last[k];
+      for (var j in f) m[j] = f[j];
+      return m;
+    }
+    function finish(msg){
+      clearTimeout(pollTimer);
+      waitFor = null;
+      setWaiting(false);
+      if (msg) say(msg); else idleNotes(last);
+    }
+
+    // ---- background check for scheduled photos ----------------------------
+    function check(){
+      if (waitFor) return;
+      getJSON(SMALL, function(f){
+        if (!f) return;
+        last = mergeSmall(f);
+        if (num(f.takenAt) !== shownAt) loadFull(function(full){ if (full) idleNotes(full); });
+        else idleNotes(last);
+      });
+    }
+
+    btn.addEventListener("click", request);
+    loadFull(function(f){ if (f) idleNotes(f); });
     setInterval(check, CHECK_MS);
+    setInterval(function(){ if (shownAt) ago.textContent = agoText(shownAt); }, 60000);
   })();
   </script>
 </div>

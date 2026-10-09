@@ -2,8 +2,9 @@
 """
 Harvest Moon - Deck camera snapshot (Reolink Argus PT Ultra -> Firebase)
 ------------------------------------------------------------------------
-Once a day (SNAP_TIMES, boat time) this asks the camera for a still through
-Neolink and saves it to camera/harvest-moon. The Wix camera widget shows
+At the SNAP_TIMES (default 30 min after sunrise and 30 min before sunset,
+worked out each day from the boat's position) this asks the camera for a
+still through Neolink and saves it to camera/harvest-moon. The Wix camera widget shows
 whatever is there.
 
 Full quality: the camera's own 4K JPEG is uploaded untouched whenever it fits
@@ -33,15 +34,18 @@ picture handling (Pillow) only uses memory for the few seconds it runs.
 Environment variables (set in camera.service; the defaults match):
   PROJECT_ID    Firebase project            (default harvest-moon-watch)
   VESSEL_ID     document id                 (default harvest-moon)
-  SNAP_TIMES    when to shoot, 24 h, comma-separated  (default 15:00)
-  CAM_TZ        time zone for SNAP_TIMES    (default America/New_York)
+  SNAP_TIMES    when to shoot, comma-separated: sunrise+30, sunset-30, or a
+                clock time like 15:00 (default sunrise+30,sunset-30)
+  CAM_TZ        time zone for clock times and the log (default America/New_York)
+  CAM_LAT, CAM_LON  position for sunrise/sunset only if the Pi has never seen
+                one in vessels/<vessel> (default Coney Island, 40.574, -73.986)
   CAM_NAME      camera name in neolink.toml (default HarvestMoon)
   CAM_PRESET    PTZ preset id to move to first; blank = don't move (default blank)
   NEOLINK       path to the Neolink program
   NEOLINK_CONF  path to the Neolink config  (default /etc/harvest-moon/neolink.toml)
   MAX_W         force a smaller photo, longest side in px; 0 = full size (default 0)
   RETRY_MIN     if a scheduled photo fails, try once more this many minutes later (default 10)
-  REQ_POLL_SEC  how often to look for a "take a photo now" request; 0 = never (default 120)
+  REQ_POLL_SEC  how often to look for a "take a photo now" request; 0 = never (default 30)
   REQ_GAP_MIN   at most one photo every this many minutes, on request (default 10)
   REQ_PER_DAY   at most this many photos a day on request (default 12)
   REQ_MAX_AGE_MIN  ignore requests older than this, e.g. made while the Pi was off (default 30)
@@ -52,14 +56,14 @@ Neolink config with the camera password: /etc/harvest-moon/neolink.toml
 Standard library, plus Pillow (python3-pil) for reading and, if needed, re-saving the photo.
 """
 
-import os, sys, re, io, json, time, base64, subprocess
+import os, sys, re, io, json, math, time, base64, subprocess
 import urllib.request, urllib.parse, urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 PROJECT_ID   = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
 VESSEL_ID    = os.environ.get("VESSEL_ID", "harvest-moon").strip()
-SNAP_TIMES   = os.environ.get("SNAP_TIMES", "15:00").strip()
+SNAP_TIMES   = os.environ.get("SNAP_TIMES", "sunrise+30,sunset-30").strip()
 CAM_TZ       = os.environ.get("CAM_TZ", "America/New_York").strip()
 CAM_NAME     = os.environ.get("CAM_NAME", "HarvestMoon").strip()
 CAM_PRESET   = os.environ.get("CAM_PRESET", "").strip()
@@ -67,7 +71,10 @@ NEOLINK      = os.environ.get("NEOLINK", "/home/harvestmoon/neolink/neolink_linu
 NEOLINK_CONF = os.environ.get("NEOLINK_CONF", "/etc/harvest-moon/neolink.toml").strip()
 MAX_W        = int(os.environ.get("MAX_W", "0"))
 RETRY_MIN    = int(os.environ.get("RETRY_MIN", "10"))
-REQ_POLL_SEC = int(os.environ.get("REQ_POLL_SEC", "120"))
+REQ_POLL_SEC = int(os.environ.get("REQ_POLL_SEC", "30"))
+CAM_LAT      = float(os.environ.get("CAM_LAT", "40.574"))
+CAM_LON      = float(os.environ.get("CAM_LON", "-73.986"))
+POS_CACHE    = os.path.expanduser("~/.cache/hm-camera-position.json")
 REQ_GAP_MIN  = int(os.environ.get("REQ_GAP_MIN", "10"))
 REQ_PER_DAY  = int(os.environ.get("REQ_PER_DAY", "12"))
 REQ_MAX_AGE_MIN = int(os.environ.get("REQ_MAX_AGE_MIN", "30"))
@@ -290,30 +297,122 @@ def take_one():
     return ok
 
 
-# ---- the service: wait for SNAP_TIMES ----------------------------------------
-def parse_times(spec):
+# ---- when to shoot ------------------------------------------------------------
+def sun_times(day, lat, lon):
+    """
+    Sunrise and sunset (UTC datetimes) for a calendar date at lat/lon (degrees,
+    east positive), NOAA solar calculator equations; within about a minute.
+    Returns (None, None) when the sun doesn't rise or set that day.
+    """
     out = []
-    for part in spec.split(","):
-        part = part.strip()
+    for rising in (True, False):
+        t = datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc) - timedelta(hours=lon / 15)
+        for _ in range(2):                     # second pass uses the first answer's time
+            jd = t.timestamp() / 86400 + 2440587.5
+            jc = (jd - 2451545) / 36525
+            l0 = (280.46646 + jc * (36000.76983 + jc * 0.0003032)) % 360
+            m = 357.52911 + jc * (35999.05029 - 0.0001537 * jc)
+            e = 0.016708634 - jc * (0.000042037 + 0.0000001267 * jc)
+            mr = math.radians(m)
+            c = (math.sin(mr) * (1.914602 - jc * (0.004817 + 0.000014 * jc))
+                 + math.sin(2 * mr) * (0.019993 - 0.000101 * jc) + math.sin(3 * mr) * 0.000289)
+            app = l0 + c - 0.00569 - 0.00478 * math.sin(math.radians(125.04 - 1934.136 * jc))
+            obl = (23 + (26 + (21.448 - jc * (46.815 + jc * (0.00059 - jc * 0.001813))) / 60) / 60
+                   + 0.00256 * math.cos(math.radians(125.04 - 1934.136 * jc)))
+            dec = math.asin(math.sin(math.radians(obl)) * math.sin(math.radians(app)))
+            y = math.tan(math.radians(obl / 2)) ** 2
+            l0r = math.radians(l0)
+            eqt = 4 * math.degrees(y * math.sin(2 * l0r) - 2 * e * math.sin(mr)
+                                   + 4 * e * y * math.sin(mr) * math.cos(2 * l0r)
+                                   - 0.5 * y * y * math.sin(4 * l0r) - 1.25 * e * e * math.sin(2 * mr))
+            la = math.radians(lat)
+            cos_ha = (math.cos(math.radians(90.833)) / (math.cos(la) * math.cos(dec))
+                      - math.tan(la) * math.tan(dec))
+            if not -1 <= cos_ha <= 1:
+                return None, None
+            ha = math.degrees(math.acos(cos_ha))
+            minutes = 720 - 4 * (lon + (ha if rising else -ha)) - eqt
+            t = datetime(day.year, day.month, day.day, tzinfo=timezone.utc) + timedelta(minutes=minutes)
+        out.append(t)
+    return out[0], out[1]
+
+
+def boat_position():
+    """
+    The boat's last known position from vessels/<vessel> (sensors.py keeps it
+    there; it stays put while the Vesper is off). Remembered in POS_CACHE so a
+    reboot without internet still knows roughly where we are. Never raises.
+    """
+    url = (f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}"
+           f"/databases/(default)/documents/vessels/{VESSEL_ID}?mask.fieldPaths=lat&mask.fieldPaths=lon")
+    try:
+        with urllib.request.urlopen(url, timeout=20) as r:
+            f = json.load(r).get("fields", {})
+        lat = float(f["lat"].get("doubleValue", f["lat"].get("integerValue")))
+        lon = float(f["lon"].get("doubleValue", f["lon"].get("integerValue")))
+        if -90 <= lat <= 90 and -180 <= lon <= 180 and (lat, lon) != (0.0, 0.0):
+            try:
+                os.makedirs(os.path.dirname(POS_CACHE), exist_ok=True)
+                with open(POS_CACHE, "w") as fh:
+                    json.dump({"lat": lat, "lon": lon, "at": now_ms()}, fh)
+            except OSError:
+                pass
+            return lat, lon, "boat"
+    except Exception:
+        pass
+    try:
+        with open(POS_CACHE) as fh:
+            d = json.load(fh)
+        return float(d["lat"]), float(d["lon"]), "last known"
+    except Exception:
+        return CAM_LAT, CAM_LON, "default"
+
+
+def parse_times(spec):
+    """'sunrise+30, sunset-30, 15:00' -> [('sunrise', 30), ('sunset', -30), ('clock', 900)]"""
+    out = []
+    for part in spec.lower().replace(" ", "").split(","):
         if not part:
             continue
-        h, _, m = part.partition(":")
-        h, m = int(h), int(m or 0)
-        if not (0 <= h < 24 and 0 <= m < 60):
+        m = re.fullmatch(r"(sunrise|sunset)([+-]\d+)?", part)
+        if m:
+            out.append((m.group(1), int(m.group(2) or 0)))
+            continue
+        h, _, mi = part.partition(":")
+        h, mi = int(h), int(mi or 0)
+        if not (0 <= h < 24 and 0 <= mi < 60):
             raise ValueError(f"bad time {part!r}")
-        out.append((h, m))
+        out.append(("clock", h * 60 + mi))
     if not out:
         raise ValueError("SNAP_TIMES is empty")
-    return sorted(set(out))
+    return out
 
 
-def next_slot(times, tz, after):
+def label(tok):
+    kind, n = tok
+    return f"{n // 60:02d}:{n % 60:02d}" if kind == "clock" else f"{kind}{n:+d} min"
+
+
+def next_slot(times, tz, after, pos):
+    """The first shooting time after 'after': (datetime in tz, label)."""
+    lat, lon = pos[0], pos[1]
+    found = []
     for days in range(0, 3):
         d = (after + timedelta(days=days)).date()
-        for h, m in times:
-            t = datetime(d.year, d.month, d.day, h, m, tzinfo=tz)
+        rise, set_ = sun_times(d, lat, lon)
+        for tok in times:
+            kind, n = tok
+            if kind == "clock":
+                t = datetime(d.year, d.month, d.day, n // 60, n % 60, tzinfo=tz)
+            else:
+                base = rise if kind == "sunrise" else set_
+                if base is None:              # no sunrise/sunset that day (polar) - skip
+                    continue
+                t = (base + timedelta(minutes=n)).astimezone(tz)
             if t > after:
-                return t
+                found.append((t, label(tok)))
+        if found:
+            return min(found)
     raise RuntimeError("no next time found")
 
 
@@ -405,15 +504,16 @@ def service():
         log(f"WARNING: Neolink not found at {NEOLINK} - photos will fail")
     if not os.access(NEOLINK_CONF, os.R_OK):
         log(f"WARNING: cannot read {NEOLINK_CONF} - photos will fail")
-    log(f"camera service up: photos at {', '.join(f'{h:02d}:{m:02d}' for h, m in times)} "
+    log(f"camera service up: photos at {', '.join(label(t) for t in times)} "
         f"({CAM_TZ}), camera {CAM_NAME}, preset {CAM_PRESET or 'none'}; "
         + (f"app requests checked every {REQ_POLL_SEC} s" if REQ_POLL_SEC > 0 else "app requests off"))
 
     reqs = Requests(tz)
     next_poll = 0.0
     retry_at = None
-    target = next_slot(times, tz, datetime.now(tz))
-    log(f"next photo {target:%a %b %d %H:%M %Z}")
+    pos = boat_position()
+    target, what = next_slot(times, tz, datetime.now(tz), pos)
+    log(f"next photo {target:%a %b %d %H:%M %Z} ({what}, {pos[2]} position {pos[0]:.3f}, {pos[1]:.3f})")
     while True:
         if REQ_POLL_SEC > 0 and time.time() >= next_poll:
             next_poll = time.time() + REQ_POLL_SEC
@@ -425,7 +525,7 @@ def service():
         # ---- scheduled photo (and its one retry)
         if now >= due:
             is_retry = retry_at is not None and due == retry_at
-            log("taking the retry photo" if is_retry else f"taking the {due:%H:%M} photo")
+            log("taking the retry photo" if is_retry else f"taking the {due:%H:%M} photo ({what})")
             started = now_ms()
             reqs.last_try = started
             ok = run_once_subprocess()
@@ -434,13 +534,14 @@ def service():
             if is_retry:
                 retry_at = None
             else:
-                target = next_slot(times, tz, datetime.now(tz))
+                pos = boat_position()             # the boat may have moved since yesterday
+                target, what = next_slot(times, tz, datetime.now(tz), pos)
                 retry_at = None if ok else datetime.now(tz) + timedelta(minutes=RETRY_MIN)
                 if retry_at and retry_at >= target:
                     retry_at = None
             if retry_at:
                 log(f"will try again at {retry_at:%H:%M}")
-            log(f"next photo {target:%a %b %d %H:%M %Z}")
+            log(f"next photo {target:%a %b %d %H:%M %Z} ({what}, {pos[2]} position {pos[0]:.3f}, {pos[1]:.3f})")
             continue
 
         # ---- "take a photo now" from the app

@@ -7,9 +7,15 @@ Wants=network-online.target
 Type=simple
 Environment=PROJECT_ID=harvest-moon-watch
 Environment=VESSEL_ID=harvest-moon
-# When to take the photo, boat time, 24 h. More than one: SNAP_TIMES=07:30,15:00
-Environment=SNAP_TIMES=15:00
+# When to take the daily photos: sunrise+N / sunset-N minutes (from the boat's
+# position in Firestore) and/or clock times, e.g. SNAP_TIMES=sunrise+30,15:00,sunset-30
+Environment=SNAP_TIMES=sunrise+30,sunset-30
 Environment=CAM_TZ=America/New_York
+# "Take a photo now" / "See live view": how often the Pi looks for a request,
+# and the battery limits on requested photos.
+Environment=REQ_POLL_SEC=30
+Environment=REQ_GAP_MIN=10
+Environment=REQ_PER_DAY=12
 # Must match name = "..." in /etc/harvest-moon/neolink.toml
 Environment=CAM_NAME=HarvestMoon
 # PTZ preset to move to before each photo. Blank = leave the camera where it is.

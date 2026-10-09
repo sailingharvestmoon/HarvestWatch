@@ -577,7 +577,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
         <p class="note cam-note" id="camNote" hidden></p>
         <div class="cam-actions"><button class="btn primary block" id="btnCamNow" onclick="requestCamPhoto()">📷 Take a photo now</button></div>
       </div>
-      <p class="note" style="margin:8px 4px 0;">The Pi takes a photo every afternoon at 3:00. “Take a photo now” asks it for one: it looks every 2 minutes and takes at most one every 10 minutes. Tap the photo to see it full size.</p>
+      <p class="note" style="margin:8px 4px 0;">The camera takes a photo 30 minutes after sunrise and 30 minutes before sunset. “Take a photo now” gets one in about a minute, at most one every 10 minutes. Tap the photo to see it full size.</p>
 
       <div class="section-title">Cabin display</div>
       <div class="seg" id="frameSeg">
@@ -2863,7 +2863,7 @@ async function loadCam() {
   if (f === null) { camEmpty("Couldn't reach the cloud. Try again in a minute."); camSchedule(); return; }
   CAM.f = f;
   const t = num(f.takenAt);
-  if (!t) camEmpty('No photo yet. The Pi takes one each afternoon.');
+  if (!t) camEmpty('No photo yet. The camera takes one after sunrise and before sunset.');
   else if (t !== CAM.shownAt) {
     const full = await camGet(true);
     if (full && full.image && full.image.bytesValue) { CAM.f = full; camShow(full); }
@@ -2882,7 +2882,7 @@ function paintCam() {
 
   const pending = camPending(f), rnote = str(f.requestNote), done = num(f.requestDoneAt) || 0;
   const notes = [];
-  if (pending) notes.push(rnote || 'Asked the Pi ' + ago(num(f.requestAt)) + '. It looks every 2 minutes.');
+  if (pending) notes.push(rnote || 'Asked the Pi ' + ago(num(f.requestAt)) + '. It usually answers within a minute.');
   else if (rnote && Date.now() - done < 60 * 60000) notes.push(rnote);           // waited, refused or ignored
   if (!pending && err && tried && (!t || tried > t)) notes.push("The camera didn't send a photo at " + camWhen(tried) + ': ' + err);
   $('camNote').textContent = notes.join(' ');
@@ -2894,7 +2894,7 @@ function paintCam() {
 function camSchedule() {
   clearTimeout(CAM.timer);
   if (document.hidden || !$('view-boat').classList.contains('active')) return;
-  CAM.timer = setTimeout(loadCam, camPending(CAM.f) ? 20000 : 300000);   // 20 s while asking, else 5 min
+  CAM.timer = setTimeout(loadCam, camPending(CAM.f) ? 8000 : 300000);    // 8 s while asking, else 5 min
 }
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && $('view-boat').classList.contains('active')) loadCam();
@@ -2905,7 +2905,7 @@ async function requestCamPhoto() {
   if (!(await fsPatch('camera', { requestAt: fI(now) }))) { toast('Could not reach the cloud'); return; }
   CAM.f.requestAt = fI(now); CAM.f.requestNote = fS('');
   paintCam(); camSchedule();
-  toast('Asked the Pi — the photo usually arrives within 3 minutes');
+  toast('Asked the Pi — the photo usually arrives within a minute');
 }
 // Full size: opens fitted to the screen; tap for actual pixels (scroll to look around), tap again to fit.
 function openCamFull() {

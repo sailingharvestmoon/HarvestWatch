@@ -53,7 +53,7 @@ What each service does:
 - **wxgrid** — pulls forecast map grids (~225 points) for the area the app's Maps view is showing, for just the models on screen, and keeps them fresh every 6 h while someone has looked in the last 2 days → `weather/harvest-moon-grid-<model>`. The app asks for a new area via `weather/harvest-moon-gridview` when you pan or zoom off the data. Each new area costs ~225 of Open-Meteo's 10,000 free daily calls per model shown.
 - **frame** — drives the e-ink display (photos / dashboard / info screen), mode set from `netlify/frame.html`.
 - **harvest-moon-polar** — logs 1 Hz sailing data to `~/polar_logs/` for building polars.
-- **camera** — once a day (`SNAP_TIMES` in `camera.service`, default 15:00 boat time) gets a still from the Reolink Argus PT Ultra through Neolink and saves it to `camera/harvest-moon` at full quality: the camera's own 4K JPEG untouched when it fits in one Firestore record (1 MiB), otherwise re-saved at full size at the best quality that fits. Optional PTZ preset first (`CAM_PRESET`). The app's **Take a photo now** (Boat tab) writes `requestAt`; the service looks every 2 min and answers with `requestDoneAt`, at most one photo per 10 min and 12 a day on request, to spare the camera battery. Test by hand: `python3 ~/camera/camera.py --once` (no sudo). Log: `journalctl -u camera -n 50`.
+- **camera** — at `SNAP_TIMES` in `camera.service` (30 min after sunrise and 30 min before sunset, worked out each day from the boat's position in `vessels/`) gets a still from the Reolink Argus PT Ultra through Neolink and saves it to `camera/harvest-moon` at full quality: the camera's own 4K JPEG untouched when it fits in one Firestore record (1 MiB), otherwise re-saved at full size at the best quality that fits. Optional PTZ preset first (`CAM_PRESET`). The app's **Take a photo now** (Boat tab) and the Wix widget's **See live view** write `requestAt`; the service looks every 30 s and answers with `requestDoneAt`, at most one photo per 10 min and 12 a day on request, to spare the camera battery. Test by hand: `python3 ~/camera/camera.py --once` (no sudo). Log: `journalctl -u camera -n 50`.
   Not in this repo: the Neolink program at `~/neolink/neolink_linux_armhf/` (release 0.6.3-rc.2, armhf, from github.com/QuantumEntangledAndy/neolink) and its config `/etc/harvest-moon/neolink.toml` (camera password; chmod 600, owned by harvestmoon). Needs `python3-pil`.
 
 Files the programs create on the Pi (don't copy these over): `~/sensors/tide_stations.json`,
@@ -149,7 +149,7 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 
 `wix/wix-conditions-widget.html` → Wix editor → Add → Embed Code → Embed HTML → paste the whole file.
 
-`wix/wix-camera-widget.html` → same way. Shows the latest camera photo (no Take-a-photo button on the public site).
+`wix/wix-camera-widget.html` → same way. Shows the latest camera photo, with a **See live view** button that asks the Pi for a fresh one (same battery limits).
 The Wix password guards the page only; the photo itself is readable by anyone who queries Firestore, like everything else there.
 
 ---
