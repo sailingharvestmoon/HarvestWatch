@@ -1,6 +1,39 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Who may write: the "boat systems" login (the Pi and both Cloudflare
+    // workers) and the app's shared login. Both made in Firebase ->
+    // Authentication -> Users; the UIDs are copied from there:
+    // first the boat systems login, then the app's shared login.
+    function crew() {
+      return request.auth != null
+          && request.auth.uid in ['hhEF6TtgEjVs2aGEuPuASJeQX513', '4IeeyMKCIoOGqbgvtp3GynSg7BI2'];
+    }
+    // The public Wix camera widget may ask for a photo or live view: it may
+    // change only these three fields, and only to whole numbers (times).
+    function cameraRequestOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['requestAt', 'liveRequestAt', 'liveWatchAt'])
+          && request.resource.data.get('requestAt', 0) is int
+          && request.resource.data.get('liveRequestAt', 0) is int
+          && request.resource.data.get('liveWatchAt', 0) is int;
+    }
+
+    // CHECK STAGE (temporary) - everything below works exactly as before.
+    // Only these two test areas use the locked logic, so each piece of the
+    // system can prove it signs in, and rulecheck.py can test the rules,
+    // before the real lock (firestore-rules-locked.txt) is switched on.
+    match /authcheck/{who} {
+      allow read: if true;
+      allow write: if crew();
+    }
+    match /rulecheck/{doc} {
+      allow read: if true;
+      allow write: if crew();
+    }
+    match /rulecheck/camera {
+      allow update: if cameraRequestOnly();
+    }
     match /vessels/harvest-moon   { allow read, write: if true; }
     match /alarms/harvest-moon    { allow read, write: if true; }
     match /state/harvest-moon     { allow read, write: if true; }

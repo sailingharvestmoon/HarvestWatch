@@ -79,6 +79,18 @@ import urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+# Firebase sign-in for writes (shared helper: ~/lib/fsauth.py, login file
+# /etc/harvest-moon/firebase.env). If either is missing, writes go out
+# unsigned - exactly as before the database rules were locked.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+try:
+    import fsauth
+    def fs_auth():
+        return fsauth.headers()
+except Exception:
+    def fs_auth():
+        return {}
+
 PROJECT_ID   = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
 VESSEL_ID    = os.environ.get("VESSEL_ID", "harvest-moon").strip()
 SNAP_TIMES   = os.environ.get("SNAP_TIMES", "sunrise+30,sunset-30").strip()
@@ -150,7 +162,7 @@ def fs_patch(values, only_these=False, mask=None, url=None):
         url += "?" + "&".join("updateMask.fieldPaths=" + urllib.parse.quote(k) for k in mask)
     body = json.dumps({"fields": {k: fs_value(v) for k, v in values.items()}}).encode()
     req = urllib.request.Request(url, data=body, method="PATCH",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **fs_auth()})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
             if "seq" not in values:                         # don't log every live picture

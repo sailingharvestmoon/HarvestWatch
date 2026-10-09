@@ -374,6 +374,10 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-toprow .seg.wxmode button { font-size:12.5px; padding:8px 2px; }
 .wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:150px; }
 .loc-sheet { position:fixed; z-index:950; max-height:88%; }
+.sign-sheet { position:fixed; z-index:960; max-height:88%; }
+.signin-pill { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); font-weight:600; }
+.signin-pill[hidden] { display:none; }
+.sign-err { color:var(--bad); font-size:13px; margin-top:10px; min-height:18px; }
 .pl-map { position:relative; height:190px; border-radius:10px; overflow:hidden; margin-top:10px; border:1px solid var(--line); }
 .pl-map #plMap { position:absolute; inset:0; }
 .pl-map svg { position:absolute; left:50%; top:50%; width:34px; height:34px; margin:-17px 0 0 -17px; z-index:500; pointer-events:none; }
@@ -418,6 +422,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
   <header class="appbar" style="position:relative;">
     <div class="brand"><b>Harvest Watch</b><span id="viewName">Anchor</span></div>
     <div class="grow"></div>
+    <button class="pill signin-pill" id="signinPill" hidden onclick="openSignIn()">🔒 Sign in</button>
     <div class="pill" id="linkPill"><span class="dot" id="linkDot"></span><span id="linkTxt">Connecting…</span></div>
     <div class="alarm-banner" id="alarmBanner">
       <span id="alarmTxt">⚠ ANCHOR DRAGGING</span>
@@ -591,6 +596,8 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
       <div class="section-title">This phone</div>
       <div class="list">
+        <div class="row"><div class="ico">🔑</div><div class="txt"><b>Sign-in</b><small id="signTxt">Not signed in — changes won't save</small></div>
+          <button class="btn" id="signBtn" style="padding:9px 14px;" onclick="AUTH.refresh ? authSignOut() : openSignIn()">Sign in</button></div>
         <div class="row"><div class="txt"><b>Appearance</b></div>
           <div class="seg" id="themeSeg" style="width:190px;"><button data-t="auto">Auto</button><button data-t="light">Light</button><button data-t="dark">Dark</button></div></div>
         <label class="row"><div class="txt"><b>Alarm sound</b><small>Siren on this phone when the boat drags</small></div><span class="switch"><input type="checkbox" id="prefSound"><span></span></span></label>
@@ -636,6 +643,23 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 </div>
 
 <!-- forecast location sheet -->
+<!-- sign-in sheet -->
+<div class="sheet sign-sheet" id="signSheet">
+  <div class="grab"></div>
+  <div class="sheet-head"><b>Sign in</b><button class="x-btn" onclick="closeSignIn()" aria-label="Close">✕</button></div>
+  <div class="sheet-body">
+    <p class="note">Sign in once on this phone and it stays signed in. Only the sign-in is kept on the phone — no boat data. Anyone can look at Harvest Watch, but only a signed-in phone can set the anchor or change settings.</p>
+    <form id="signForm" onsubmit="event.preventDefault(); doSignIn();" autocomplete="on">
+      <label class="in-label" for="signEmail">Email</label>
+      <input class="text-in" id="signEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false">
+      <label class="in-label" for="signPass">Password</label>
+      <input class="text-in" id="signPass" type="password" autocomplete="current-password">
+      <div class="sign-err" id="signErr"></div>
+      <button class="btn primary block" id="signGo" type="submit" style="margin-top:6px;">Sign in</button>
+    </form>
+  </div>
+</div>
+
 <div class="sheet loc-sheet" id="locSheet">
   <div class="grab"></div>
   <div class="sheet-head"><b>Forecast location</b><button class="x-btn" onclick="closeLoc()" aria-label="Close">✕</button></div>
@@ -680,11 +704,18 @@ async function fsGet(coll) {
 async function fsPatch(coll, fields, mask) {
   mask = mask || Object.keys(fields);
   const q = mask.map(k => 'updateMask.fieldPaths=' + encodeURIComponent(k)).join('&');
+  return fsSend(`${FSB}/${coll}/${VESSEL}?${q}`, fields);
+}
+// Every write goes through here, carrying this phone's sign-in. Anyone can
+// read; only a signed-in phone (or the boat's own systems) can write. A write
+// refused for want of a sign-in opens the sign-in sheet.
+async function fsSend(url, fields) {
   try {
-    const r = await fetch(`${FSB}/${coll}/${VESSEL}?${q}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    const r = await fetch(url, {
+      method: 'PATCH', headers: Object.assign({ 'Content-Type': 'application/json' }, await authHeaders()),
       body: JSON.stringify({ fields })
     });
+    if (r.status === 401 || r.status === 403) authDenied();
     return r.ok;
   } catch (e) { return false; }
 }
@@ -729,7 +760,94 @@ const S = {
 // Nothing is kept on the phone. Preferences ride along in the alarms
 // document (ui* / fc* fields - the Pi and the worker ignore them), so every
 // device that opens the app sees the same settings.
-try { localStorage.clear(); sessionStorage.clear(); } catch (e) {}   // sweep anything older versions left
+// The one exception: this phone's sign-in pass (hwAuth) - no boat data.
+try { const keep = localStorage.getItem('hwAuth'); localStorage.clear(); sessionStorage.clear(); if (keep) localStorage.setItem('hwAuth', keep); } catch (e) {}   // sweep anything older versions left
+
+// ─── Sign-in ────────────────────────────────────────────────────────
+// The database lets anyone read but only signed-in phones (and the boat's own
+// systems) write. Sign in once per phone; the refresh token in hwAuth renews
+// the 1-hour ID token automatically, so the phone stays signed in until you
+// sign out or the password changes.
+const FB_API_KEY = 'AIzaSyCC_GubRIr1TV6pGHs0FgV7BoYfzQGuANE';   // public by design - every Firebase web app carries it
+const AUTH = { id: null, exp: 0, refresh: null, email: '', busy: null, deniedAt: 0 };
+(function authLoad() {
+  try { const a = JSON.parse(localStorage.getItem('hwAuth') || 'null'); if (a && a.refresh) { AUTH.refresh = a.refresh; AUTH.email = a.email || ''; } } catch (e) {}
+})();
+function authSave() {
+  try { if (AUTH.refresh) localStorage.setItem('hwAuth', JSON.stringify({ refresh: AUTH.refresh, email: AUTH.email })); else localStorage.removeItem('hwAuth'); } catch (e) {}
+}
+async function authToken() {
+  if (!AUTH.refresh) return null;
+  if (AUTH.id && Date.now() < AUTH.exp - 300000) return AUTH.id;
+  if (AUTH.busy) return AUTH.busy;
+  AUTH.busy = (async () => {
+    try {
+      const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_API_KEY}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(AUTH.refresh) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {                                   // pass revoked (password changed, login removed)
+        if (r.status === 400) { authSignOut(true); toast('Signed out — please sign in again', 4000); }
+        return null;
+      }
+      AUTH.id = d.id_token; AUTH.exp = Date.now() + (+d.expires_in || 3600) * 1000;
+      if (d.refresh_token && d.refresh_token !== AUTH.refresh) { AUTH.refresh = d.refresh_token; authSave(); }
+      return AUTH.id;
+    } catch (e) { return AUTH.id && Date.now() < AUTH.exp ? AUTH.id : null; }   // offline: use what we have
+    finally { AUTH.busy = null; }
+  })();
+  return AUTH.busy;
+}
+async function authHeaders() { const t = await authToken(); return t ? { Authorization: 'Bearer ' + t } : {}; }
+async function authSignIn(email, password) {
+  let r, d;
+  try {
+    r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB_API_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, returnSecureToken: true }) });
+    d = await r.json().catch(() => ({}));
+  } catch (e) { throw new Error("Couldn't reach Firebase. Check this phone's internet."); }
+  if (!r.ok) {
+    const m = (d.error && d.error.message) || '';
+    if (/TOO_MANY_ATTEMPTS/.test(m)) throw new Error('Too many tries. Wait a few minutes and try again.');
+    if (/INVALID|EMAIL_NOT_FOUND|PASSWORD|MISSING/.test(m)) throw new Error('Wrong email or password.');
+    if (/USER_DISABLED/.test(m)) throw new Error('This login has been turned off in Firebase.');
+    throw new Error('Sign-in failed (' + (m || r.status) + ').');
+  }
+  AUTH.id = d.idToken; AUTH.exp = Date.now() + (+d.expiresIn || 3600) * 1000;
+  AUTH.refresh = d.refreshToken; AUTH.email = d.email || email; authSave();
+  // authcheck/app: only a signed-in writer can write it - proof this phone passes the locked rules.
+  fsSend(`${FSB}/authcheck/app?updateMask.fieldPaths=at&updateMask.fieldPaths=email`, { at: fI(Date.now()), email: fS(AUTH.email) });
+}
+function authSignOut(quiet) {
+  AUTH.id = null; AUTH.exp = 0; AUTH.refresh = null; authSave(); paintSignIn();
+  if (!quiet) toast('Signed out on this phone');
+}
+function authDenied() {
+  AUTH.deniedAt = Date.now();
+  if (!AUTH.refresh) openSignIn("That change wasn't saved — sign in first.");
+}
+const authJustDenied = () => Date.now() - AUTH.deniedAt < 4000;
+function paintSignIn() {
+  const on = !!AUTH.refresh;
+  $('signinPill').hidden = on;
+  $('signTxt').textContent = on ? 'Signed in' + (AUTH.email ? ' as ' + AUTH.email : '') : "Not signed in — changes won't save";
+  $('signBtn').textContent = on ? 'Sign out' : 'Sign in';
+}
+function openSignIn(msg) {
+  $('signErr').textContent = msg || '';
+  if (AUTH.email && !$('signEmail').value) $('signEmail').value = AUTH.email;
+  $('signSheet').classList.add('open');
+}
+function closeSignIn() { $('signSheet').classList.remove('open'); $('signPass').value = ''; }
+async function doSignIn() {
+  const email = $('signEmail').value.trim(), pw = $('signPass').value;
+  if (!email || !pw) { $('signErr').textContent = 'Enter the email and password.'; return; }
+  $('signGo').disabled = true; $('signGo').textContent = 'Signing in…'; $('signErr').textContent = '';
+  try { await authSignIn(email, pw); closeSignIn(); paintSignIn(); toast('Signed in — this phone stays signed in'); }
+  catch (e) { $('signErr').textContent = e.message; }
+  finally { $('signGo').disabled = false; $('signGo').textContent = 'Sign in'; }
+}
 const P = { theme: 'auto', sound: true, wake: true, poll: 15, warnPct: 80 };
 const PREF_FIELDS = { theme: ['uiTheme', 's'], sound: ['uiSound', 'b'], wake: ['uiWake', 'b'], poll: ['uiPoll', 'n'], warnPct: ['uiWarnPct', 'n'] };
 function savePrefs() {
@@ -797,6 +915,7 @@ function ago(ms) {
 }
 const ageMin = ms => ms ? (Date.now() - ms) / 60000 : null;
 function toast(msg, ms) {
+  if (authJustDenied() && /Could not reach the cloud/.test(msg)) msg = 'Not saved — this phone needs to sign in (Boat tab).';
   const t = $('toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms || 2600);
 }
@@ -1440,7 +1559,9 @@ async function endWatch() {
   const ok = await writeAlarms({ armed: fB(false), snoozeUntil: fI(0) }, ['anchorLat', 'anchorLon']);
   S.anchor = null; S.armed = false; clearAlarm(); drawAnchor(); S.trail = []; saveTrail(); drawTrail(); saveLocalAnchor(); syncWake();
   paintAll();
-  if (!ok) alert('Could not reach the cloud. This phone is cleared, but the boat may still be armed and alerting. Try again when you have signal.');
+  if (!ok) alert(authJustDenied()
+    ? 'This phone is not signed in, so the boat was NOT told. It may still be armed and alerting. Sign in (Boat tab), then end the watch again.'
+    : 'Could not reach the cloud. This phone is cleared, but the boat may still be armed and alerting. Try again when you have signal.');
   else toast('Anchor watch ended');
 }
 async function writeAlarms(fields, extraMask) {
@@ -1774,9 +1895,7 @@ let FC_REQ = 0;
 async function requestForecast() {
   let ok = false;
   try {
-    const r = await fetch(FC_URL + '?updateMask.fieldPaths=requestAt', { method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { requestAt: fI(Date.now()) } }) });
-    ok = r.ok;
+    ok = await fsSend(FC_URL + '?updateMask.fieldPaths=requestAt', { requestAt: fI(Date.now()) });
   } catch (e) {}
   toast(ok ? 'Refreshing the forecast — about a minute' : 'Could not reach the cloud', 3500);
   if (ok) { FC_REQ = Date.now(); paintForecast(); setTimeout(() => loadForecast(true), 75000); setTimeout(() => loadForecast(true), 150000); }
@@ -2443,10 +2562,9 @@ async function wmAsk(force) {
   const names = wmNames();
   const now = Date.now();
   try {
-    const r = await fetch(GRIDVIEW_URL + '?updateMask.fieldPaths=bbox&updateMask.fieldPaths=models&updateMask.fieldPaths=at', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fields: { bbox: fS(JSON.stringify(bbox)), models: fS(JSON.stringify(names)), at: fI(now) } }) });
-    if (!r.ok) throw new Error();
+    const ok = await fsSend(GRIDVIEW_URL + '?updateMask.fieldPaths=bbox&updateMask.fieldPaths=models&updateMask.fieldPaths=at',
+      { bbox: fS(JSON.stringify(bbox)), models: fS(JSON.stringify(names)), at: fI(now) });
+    if (!ok) throw new Error();
   } catch (e) { toast('Could not reach the cloud'); return; }
   WM.askedAt = now; WM.pending = { at: now, names };
   wmPaintStatus(); wmPollPending();
@@ -2539,11 +2657,7 @@ async function loadPlaces() {
 }
 async function savePlaces(mask) {
   const fields = { active: fS(PL.active ? JSON.stringify(PL.active) : ''), places: fS(JSON.stringify(PL.list)), updatedAt: fI(Date.now()) };
-  try {
-    const r = await fetch(PLACES_URL + '?' + mask.concat('updatedAt').map(k => 'updateMask.fieldPaths=' + k).join('&'),
-      { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
-    return r.ok;
-  } catch (e) { return false; }
+  return fsSend(PLACES_URL + '?' + mask.concat('updatedAt').map(k => 'updateMask.fieldPaths=' + k).join('&'), fields);
 }
 function paintPlaceChips() {
   const t = PL.active ? PL.active.name : 'Boat position';
@@ -2963,6 +3077,7 @@ function startPolling() {
   posTimer = setInterval(pollPosition, Math.max(5, P.poll) * 1000);
 }
 (function init() {
+  paintSignIn();
   drawAnchor(); drawTrail();
   if (S.anchor) map.setView([S.anchor.lat, S.anchor.lon], 17, { animate: false });
   loadPlaces();

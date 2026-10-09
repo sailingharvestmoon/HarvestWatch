@@ -44,6 +44,9 @@ Michael DataHub Files/
 | `pi/home/harvestmoon/camera/camera.py` | `/home/harvestmoon/camera/camera.py` | `camera` | `sudo systemctl restart camera` |
 | `pi/etc/systemd/system/*.service` | `/etc/systemd/system/` | — | `sudo systemctl daemon-reload` then restart that unit |
 | `pi/etc/harvest-moon/ntfy.env.example` | template for `/etc/harvest-moon/ntfy.env` (secret, never stored here) | read by `guard` | `sudo systemctl restart guard` |
+| `pi/home/harvestmoon/lib/fsauth.py` | `/home/harvestmoon/lib/fsauth.py` | imported by sensors, guard, camera | restart those three |
+| `pi/home/harvestmoon/lib/rulecheck.py` | `/home/harvestmoon/lib/rulecheck.py` | run by hand (tests the database rules) | — |
+| `pi/etc/harvest-moon/firebase.env.example` | template for `/etc/harvest-moon/firebase.env` (secret, never stored here; `root:harvestmoon`, `chmod 640`) | read by `fsauth.py` | restart sensors, guard, camera |
 
 What each service does:
 
@@ -118,19 +121,34 @@ the "Now" summary + tides + sun/moon every 30 min → `weather/harvest-moon`, an
 position, so it keeps working with the boat shut down. Deployed by Cloudflare Workers Builds from this repo
 (root directory `cloudflare-weather`). Check it: `https://harvest-weather.<your-subdomain>.workers.dev/`.
 Kept separate from the anchor watcher so weather can never slow an alarm.
+Secrets (Cloudflare dashboard → the worker → Settings → Variables and Secrets, type **Secret**): `FB_EMAIL`, `FB_PASSWORD`
+— the boat systems Firebase login, so its writes pass the locked database rules.
 
 ## Cloudflare worker
 
 `cloudflare-worker/anchor-watcher-worker.js` → Cloudflare dashboard → the worker → Edit code → paste → Deploy.
 Runs every minute: boat-gone-dark, scope, depth, daily all-clear, track recording, backup drag alarm.
-Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY_TOPIC`, `NTFY_TOKEN`.
+Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY_TOPIC`, `NTFY_TOKEN`,
+and the secrets `FB_EMAIL`, `FB_PASSWORD` (the boat systems Firebase login, so its writes pass the locked database rules).
 
 ⚠ This is the 9/7 evening version (records the swing track at the bow). An earlier same-day version
 (records at the GPS) is in `archive/cloudflare-worker-older/`. Confirm which one is actually deployed.
 
 ## Firebase
 
-`firebase/firestore-rules.txt` → Firebase console → Firestore → Rules → paste → Publish.
+`firebase/firestore-rules.txt` → Firebase console → Firestore → Rules → paste → Publish. It is always the rules that are live.
+
+**Who can write.** Anyone may *read* everything (the boat's position is public on purpose). Only two Firebase logins
+(Firebase → Authentication → Users) may *write*: **boat systems** — the Pi (`/etc/harvest-moon/firebase.env`, used by
+`lib/fsauth.py`) and both Cloudflare workers (secrets `FB_EMAIL` / `FB_PASSWORD`) — and the **app's shared login**,
+signed in once per phone (Boat tab → Sign-in; the phone keeps only the sign-in pass, `hwAuth`). The one public write:
+anyone may set `requestAt` / `liveRequestAt` / `liveWatchAt` on `camera/harvest-moon` (the Wix widget's buttons).
+
+- `firestore-rules-locked.txt` — the locked rules. `firestore-rules-ROLLBACK.txt` — the open rules from before the
+  lock: paste it to undo everything in 30 seconds.
+- `authcheck/` — each program writes `authcheck/<name>` after signing in (`pi-sensors`, `pi-guard`, `pi-camera`,
+  `cloud-anchor`, `cloud-weather`, `app`); only a signed-in writer can, so fresh times there prove sign-in works.
+- `rulecheck/` — scratch area for `lib/rulecheck.py`, which tests the locked logic against the real rules.
 
 | Collection | Written by | Holds |
 |---|---|---|
@@ -143,6 +161,7 @@ Variables (set in Cloudflare, not in the file): `PROJECT_ID`, `VESSEL_ID`, `NTFY
 | `health/` | worker + guard | heartbeats, push results, ntfy quota |
 | `ais/` | guard | nearby AIS targets |
 | `modes/` | Harvest Watch (Boat tab) | e-ink display mode |
+| `authcheck/`, `rulecheck/` | every signed-in program / `rulecheck.py` | sign-in proofs and rule tests (see above) |
 | `camera/` | camera + app + Wix widget | `harvest-moon`: latest deck photo (`image` bytes, `takenAt`, battery, `lastError`), the app's `requestAt` / the Pi's `requestDoneAt`, the widget's `liveRequestAt` / `liveWatchAt` / the Pi's `liveDoneAt` / `liveNote`. `harvest-moon-live`: the current live picture (`frame`, `frameAt`, `state`, `endsAt`) |
 
 ## Wix

@@ -40,6 +40,18 @@ Standard library only.
 import os, sys, signal, socket, json, time, math, urllib.request
 from collections import deque
 
+# Firebase sign-in for writes (shared helper: ~/lib/fsauth.py, login file
+# /etc/harvest-moon/firebase.env). If either is missing, writes go out
+# unsigned - exactly as before the database rules were locked.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "lib"))
+try:
+    import fsauth
+    def fs_auth():
+        return fsauth.headers()
+except Exception:
+    def fs_auth():
+        return {}
+
 XB_HOST     = os.environ.get("XB_HOST", "192.168.1.167")
 XB_PORT     = int(os.environ.get("XB_PORT", "39150"))
 PROJECT_ID  = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
@@ -328,7 +340,7 @@ def fs_patch(coll, doc, fields):
     url = f"{FS}/{coll}/{doc}?{mask}"
     body = json.dumps({"fields": fields}).encode()
     req = urllib.request.Request(url, data=body, method="PATCH",
-                                 headers={"Content-Type": "application/json"})
+                                 headers={"Content-Type": "application/json", **fs_auth()})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return r.status < 300

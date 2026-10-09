@@ -1,0 +1,32 @@
+// ROLLBACK - the open rules in use before the database was locked (Oct 2026).
+// If anything breaks after locking: Firebase console -> Firestore Database ->
+// Rules -> select all -> paste this whole file -> Publish. Everything then works
+// exactly as it did before (anyone can read and write).
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /vessels/harvest-moon   { allow read, write: if true; }
+    match /alarms/harvest-moon    { allow read, write: if true; }
+    match /state/harvest-moon     { allow read, write: if true; }
+    match /telemetry/harvest-moon { allow read, write: if true; }
+    match /tracks/harvest-moon    { allow read, write: if true; }
+    match /modes/harvest-moon     { allow read, write: if true; }
+    match /weather/{vesselId}     { allow read, write: if true; }
+
+    // NEW - watcher heartbeats and push outcomes. The worker and the Pi guard
+    // each write their own fields here; the watch page reads it to show you
+    // whether both watchers are actually alive.
+    match /health/harvest-moon    { allow read, write: if true; }
+
+    // NEW - AIS targets near the boat, written by guard.py on the Pi.
+    match /ais/harvest-moon       { allow read, write: if true; }
+
+    // NEW - daily deck camera photo, written by camera.py on the Pi,
+    // shown by the Wix camera widget.
+    match /camera/harvest-moon    { allow read, write: if true; }
+
+    // NEW - the current live-view picture (Wix widget "See live view"),
+    // written by camera.py on the Pi about every 2 seconds while someone watches.
+    match /camera/harvest-moon-live { allow read, write: if true; }
+  }
+}

@@ -36,6 +36,8 @@
 //   VESSEL_ID        harvest-moon
 //   NTFY_TOPIC       secret ntfy topic (treat like a password)
 //   NTFY_TOKEN       ntfy account token  <-- strongly recommended, see above
+//   FB_EMAIL, FB_PASSWORD  (type "Secret") the boat systems Firebase login,
+//                    so writes pass the locked database rules (see FIREBASE SIGN-IN)
 // Optional:
 //   NTFY_SERVER      default https://ntfy.sh
 //   RENOTIFY_MIN     default 10
@@ -134,12 +136,72 @@ function clean(env) {
   const t = (v) => (typeof v === 'string' ? v.trim() : v);
   return { ...env,
     PROJECT_ID: t(env.PROJECT_ID), VESSEL_ID: t(env.VESSEL_ID), NTFY_TOPIC: t(env.NTFY_TOPIC),
-    NTFY_SERVER: t(env.NTFY_SERVER), NTFY_TOKEN: t(env.NTFY_TOKEN), TZ_NAME: t(env.TZ_NAME) };
+    NTFY_SERVER: t(env.NTFY_SERVER), NTFY_TOKEN: t(env.NTFY_TOKEN), TZ_NAME: t(env.TZ_NAME),
+    FB_API_KEY: t(env.FB_API_KEY), FB_EMAIL: t(env.FB_EMAIL), FB_PASSWORD: t(env.FB_PASSWORD) };
 }
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj, null, 2), {
     status, headers: { 'content-type': 'application/json; charset=utf-8' } });
+}
+
+// --- FIREBASE SIGN-IN --------------------------------------------
+// The database rules let anyone read, but only signed-in boat systems (and the
+// signed-in app) write. This worker signs in with the "boat systems" login:
+//   Cloudflare dashboard -> this worker -> Settings -> Variables and Secrets,
+//   type "Secret":  FB_EMAIL, FB_PASSWORD
+// FB_API_KEY is the project's public Web API key (default below; a variable of
+// the same name overrides it). Without the secrets, writes go out unsigned -
+// exactly as before the rules were locked. Sign-in failures never throw.
+// The token is reused between runs while Cloudflare keeps the worker warm;
+// otherwise it signs in again, well inside Firebase's limits.
+const FB_API_KEY_DEFAULT = 'AIzaSyCC_GubRIr1TV6pGHs0FgV7BoYfzQGuANE';
+const FB = { id: null, exp: 0, refresh: null, uid: null, nextTry: 0, lastCheck: 0, failing: false };
+async function fbHeaders(env, name) {
+  const key = env.FB_API_KEY || FB_API_KEY_DEFAULT, email = env.FB_EMAIL, pw = env.FB_PASSWORD;
+  if (!key || key.startsWith('__') || !email || !pw) return {};
+  const now = Date.now();
+  if (!(FB.id && now < FB.exp - 300000) && now >= FB.nextTry) {
+    try {
+      let d = null;
+      if (FB.refresh) {
+        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(FB.refresh) });
+        if (r.ok) { const j = await r.json(); d = { id: j.id_token, refresh: j.refresh_token, exp: +j.expires_in, uid: j.user_id }; }
+        else FB.refresh = null;
+      }
+      if (!d) {
+        const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${key}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: pw, returnSecureToken: true }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+        d = { id: j.idToken, refresh: j.refreshToken, exp: +j.expiresIn, uid: j.localId };
+      }
+      Object.assign(FB, { id: d.id, refresh: d.refresh || FB.refresh, exp: now + (d.exp || 3600) * 1000,
+                          uid: d.uid || FB.uid, nextTry: 0 });
+      if (FB.failing) console.log('firebase sign-in: working again');
+      FB.failing = false;
+    } catch (err) {
+      if (!FB.failing) console.log(`firebase sign-in FAILED: ${err.message} - will keep retrying`);
+      FB.failing = true; FB.nextTry = now + 120000;
+    }
+  }
+  if (!(FB.id && now < FB.exp)) return {};
+  // Every 10 minutes: authcheck/<name>, which only a signed-in writer can do -
+  // a live check that this worker will pass the locked rules.
+  if (now - FB.lastCheck > 9 * 60000 && new Date(now).getUTCMinutes() % 10 === 0) {
+    FB.lastCheck = now;
+    try {
+      const r = await fetch(`https://firestore.googleapis.com/v1/projects/${env.PROJECT_ID}/databases/(default)/documents/authcheck/${name}` +
+        '?updateMask.fieldPaths=at&updateMask.fieldPaths=uid', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + FB.id },
+        body: JSON.stringify({ fields: { at: { integerValue: String(now) }, uid: { stringValue: FB.uid || '' } } }) });
+      if (!r.ok) console.log(`authcheck/${name} write refused: ${r.status}`);
+    } catch (err) {}
+  }
+  return { Authorization: 'Bearer ' + FB.id };
 }
 
 // --- FIRESTORE ---------------------------------------------------
@@ -165,7 +227,7 @@ async function fsPatch(env, coll, doc, fields) {
   const mask = Object.keys(fields).map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
   const res = await fetch(`${FS(env)}/${coll}/${doc}?${mask}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(await fbHeaders(env, 'cloud-anchor')) },
     body: JSON.stringify({ fields })
   });
   if (!res.ok) {

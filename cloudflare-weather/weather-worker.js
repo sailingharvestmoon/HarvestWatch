@@ -25,6 +25,8 @@
 // CPU allowance. Bookkeeping lives in weather/<vessel>-wxstate.
 //
 // Variables (wrangler.toml [vars]): PROJECT_ID, VESSEL_ID, NWS_UA
+// Secrets (Cloudflare dashboard, type "Secret"): FB_EMAIL, FB_PASSWORD - the boat
+//   systems Firebase login, so writes pass the locked database rules (FIREBASE SIGN-IN)
 // Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
@@ -46,7 +48,11 @@ const FC_DAYS = 7;
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(tick(cfg(env)).catch(e => console.log('tick failed:', String(e && e.stack || e))));
+    const e = cfg(env);
+    // Most minutes this worker writes nothing, so give the sign-in check-in
+    // (authcheck/cloud-weather, every 10 min) a chance of its own.
+    if (new Date().getUTCMinutes() % 10 === 0) ctx.waitUntil(fbHeaders(e, 'cloud-weather').catch(() => {}));
+    ctx.waitUntil(tick(e).catch(e => console.log('tick failed:', String(e && e.stack || e))));
   },
   async fetch(request, env) {
     const e = cfg(env), u = new URL(request.url);
@@ -81,7 +87,8 @@ async function wpcRelay(request, u) {
 function cfg(env) {
   const t = v => typeof v === 'string' ? v.trim() : v;
   return { PROJECT_ID: t(env.PROJECT_ID) || 'harvest-moon-watch', VESSEL_ID: t(env.VESSEL_ID) || 'harvest-moon',
-           NWS_UA: t(env.NWS_UA) || 'harvest-watch (sailingharvestmoon@gmail.com)' };
+           NWS_UA: t(env.NWS_UA) || 'harvest-watch (sailingharvestmoon@gmail.com)',
+           FB_API_KEY: t(env.FB_API_KEY), FB_EMAIL: t(env.FB_EMAIL), FB_PASSWORD: t(env.FB_PASSWORD) };
 }
 const json = (o, s = 200) => new Response(JSON.stringify(o, null, 2), { status: s, headers: { 'content-type': 'application/json' } });
 const ago = ms => ms ? Math.round((Date.now() - ms) / 60000) + ' min ago' : 'never';
@@ -95,6 +102,65 @@ async function fsGet(e, path, mask) {
   if (!r.ok) throw new Error(`GET ${path} -> ${r.status}`);
   return (await r.json()).fields || {};
 }
+// --- FIREBASE SIGN-IN --------------------------------------------
+// The database rules let anyone read, but only signed-in boat systems (and the
+// signed-in app) write. This worker signs in with the "boat systems" login:
+//   Cloudflare dashboard -> this worker -> Settings -> Variables and Secrets,
+//   type "Secret":  FB_EMAIL, FB_PASSWORD
+// FB_API_KEY is the project's public Web API key (default below; a variable of
+// the same name overrides it). Without the secrets, writes go out unsigned -
+// exactly as before the rules were locked. Sign-in failures never throw.
+// The token is reused between runs while Cloudflare keeps the worker warm;
+// otherwise it signs in again, well inside Firebase's limits.
+const FB_API_KEY_DEFAULT = 'AIzaSyCC_GubRIr1TV6pGHs0FgV7BoYfzQGuANE';
+const FB = { id: null, exp: 0, refresh: null, uid: null, nextTry: 0, lastCheck: 0, failing: false };
+async function fbHeaders(env, name) {
+  const key = env.FB_API_KEY || FB_API_KEY_DEFAULT, email = env.FB_EMAIL, pw = env.FB_PASSWORD;
+  if (!key || key.startsWith('__') || !email || !pw) return {};
+  const now = Date.now();
+  if (!(FB.id && now < FB.exp - 300000) && now >= FB.nextTry) {
+    try {
+      let d = null;
+      if (FB.refresh) {
+        const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${key}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(FB.refresh) });
+        if (r.ok) { const j = await r.json(); d = { id: j.id_token, refresh: j.refresh_token, exp: +j.expires_in, uid: j.user_id }; }
+        else FB.refresh = null;
+      }
+      if (!d) {
+        const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${key}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password: pw, returnSecureToken: true }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error((j.error && j.error.message) || ('HTTP ' + r.status));
+        d = { id: j.idToken, refresh: j.refreshToken, exp: +j.expiresIn, uid: j.localId };
+      }
+      Object.assign(FB, { id: d.id, refresh: d.refresh || FB.refresh, exp: now + (d.exp || 3600) * 1000,
+                          uid: d.uid || FB.uid, nextTry: 0 });
+      if (FB.failing) console.log('firebase sign-in: working again');
+      FB.failing = false;
+    } catch (err) {
+      if (!FB.failing) console.log(`firebase sign-in FAILED: ${err.message} - will keep retrying`);
+      FB.failing = true; FB.nextTry = now + 120000;
+    }
+  }
+  if (!(FB.id && now < FB.exp)) return {};
+  // Every 10 minutes: authcheck/<name>, which only a signed-in writer can do -
+  // a live check that this worker will pass the locked rules.
+  if (now - FB.lastCheck > 9 * 60000 && new Date(now).getUTCMinutes() % 10 === 0) {
+    FB.lastCheck = now;
+    try {
+      const r = await fetch(`https://firestore.googleapis.com/v1/projects/${env.PROJECT_ID}/databases/(default)/documents/authcheck/${name}` +
+        '?updateMask.fieldPaths=at&updateMask.fieldPaths=uid', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + FB.id },
+        body: JSON.stringify({ fields: { at: { integerValue: String(now) }, uid: { stringValue: FB.uid || '' } } }) });
+      if (!r.ok) console.log(`authcheck/${name} write refused: ${r.status}`);
+    } catch (err) {}
+  }
+  return { Authorization: 'Bearer ' + FB.id };
+}
+
 async function fsWrite(e, path, obj, masked) {
   const fields = {};
   for (const [k, v] of Object.entries(obj)) {
@@ -107,7 +173,7 @@ async function fsWrite(e, path, obj, masked) {
   // (as weather.py did) so a field that failed this time is not left behind
   // looking current.
   const q = masked ? '?' + Object.keys(fields).map(k => 'updateMask.fieldPaths=' + k).join('&') : '';
-  const r = await fetch(`${FS(e)}/${path}${q}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields }) });
+  const r = await fetch(`${FS(e)}/${path}${q}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...(await fbHeaders(e, 'cloud-weather')) }, body: JSON.stringify({ fields }) });
   if (!r.ok) throw new Error(`PATCH ${path} -> ${r.status}: ${(await r.text()).slice(0, 200)}`);
 }
 const num = f => f ? (f.doubleValue !== undefined ? Number(f.doubleValue) : f.integerValue !== undefined ? Number(f.integerValue) : null) : null;
