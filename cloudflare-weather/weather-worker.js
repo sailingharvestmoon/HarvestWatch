@@ -58,6 +58,7 @@ export default {
     const e = cfg(env), u = new URL(request.url);
     if (u.pathname === '/wpc') return wpcRelay(request, u);
     try {
+      if (u.searchParams.get('auth') === '1') return json(await fbDiag(e, 'cloud-weather'));
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
       if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
@@ -113,11 +114,18 @@ async function fsGet(e, path, mask) {
 // The token is reused between runs while Cloudflare keeps the worker warm;
 // otherwise it signs in again, well inside Firebase's limits.
 const FB_API_KEY_DEFAULT = 'AIzaSyCC_GubRIr1TV6pGHs0FgV7BoYfzQGuANE';
-const FB = { id: null, exp: 0, refresh: null, uid: null, nextTry: 0, lastCheck: 0, failing: false };
-async function fbHeaders(env, name) {
+const FB = { id: null, exp: 0, refresh: null, uid: null, nextTry: 0, lastCheck: 0, failing: false,
+             lastError: '', lastCheckResult: '', warnedMissing: false };
+async function fbHeaders(env, name, force) {
   const key = env.FB_API_KEY || FB_API_KEY_DEFAULT, email = env.FB_EMAIL, pw = env.FB_PASSWORD;
-  if (!key || key.startsWith('__') || !email || !pw) return {};
   const now = Date.now();
+  if (!key || key.startsWith('__') || !email || !pw) {
+    if (!FB.warnedMissing && new Date(now).getUTCMinutes() % 10 === 0) {
+      FB.warnedMissing = true;
+      console.log(`firebase sign-in: ${!email ? 'FB_EMAIL' : !pw ? 'FB_PASSWORD' : 'API key'} not set - writes go out unsigned`);
+    }
+    return {};
+  }
   if (!(FB.id && now < FB.exp - 300000) && now >= FB.nextTry) {
     try {
       let d = null;
@@ -142,23 +150,44 @@ async function fbHeaders(env, name) {
       FB.failing = false;
     } catch (err) {
       if (!FB.failing) console.log(`firebase sign-in FAILED: ${err.message} - will keep retrying`);
-      FB.failing = true; FB.nextTry = now + 120000;
+      FB.failing = true; FB.nextTry = now + 120000; FB.lastError = err.message;
     }
   }
   if (!(FB.id && now < FB.exp)) return {};
   // Every 10 minutes: authcheck/<name>, which only a signed-in writer can do -
   // a live check that this worker will pass the locked rules.
-  if (now - FB.lastCheck > 9 * 60000 && new Date(now).getUTCMinutes() % 10 === 0) {
+  if (force || (now - FB.lastCheck > 9 * 60000 && new Date(now).getUTCMinutes() % 10 === 0)) {
     FB.lastCheck = now;
     try {
       const r = await fetch(`https://firestore.googleapis.com/v1/projects/${env.PROJECT_ID}/databases/(default)/documents/authcheck/${name}` +
         '?updateMask.fieldPaths=at&updateMask.fieldPaths=uid', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + FB.id },
         body: JSON.stringify({ fields: { at: { integerValue: String(now) }, uid: { stringValue: FB.uid || '' } } }) });
-      if (!r.ok) console.log(`authcheck/${name} write refused: ${r.status}`);
-    } catch (err) {}
+      FB.lastCheckResult = r.ok ? 'written' : `refused (${r.status}) ${(await r.text()).slice(0, 160)}`;
+      if (!r.ok) console.log(`authcheck/${name} write ${FB.lastCheckResult}`);
+    } catch (err) { FB.lastCheckResult = 'no answer: ' + err.message; }
   }
   return { Authorization: 'Bearer ' + FB.id };
+}
+// <worker-url>/?auth=1 - says whether this worker can sign in, and why not.
+// Never shows the email or password; at most one real sign-in per 30 s.
+async function fbDiag(env, name) {
+  const out = { worker: name, FB_EMAIL: env.FB_EMAIL ? 'set' : 'MISSING', FB_PASSWORD: env.FB_PASSWORD ? 'set' : 'MISSING',
+                apiKey: env.FB_API_KEY ? 'from a variable' : 'built in' };
+  if (!env.FB_EMAIL || !env.FB_PASSWORD) {
+    out.result = 'Add FB_EMAIL and FB_PASSWORD under Settings -> Variables and Secrets (type Secret), then Deploy.';
+    return out;
+  }
+  if (Date.now() - (FB.lastDiag || 0) > 30000) {
+    FB.lastDiag = Date.now();
+    Object.assign(FB, { id: null, exp: 0, refresh: null, nextTry: 0, failing: false, lastError: '', lastCheckResult: '' });
+  }
+  const h = await fbHeaders(env, name, true);
+  out.signIn = h.Authorization ? `ok (login uid ends ${(FB.uid || '').slice(-6)})` : `FAILED: ${FB.lastError || 'unknown'}`;
+  out.checkIn = FB.lastCheckResult || 'not attempted';
+  out.result = h.Authorization && FB.lastCheckResult === 'written' ? 'ALL GOOD - this worker signs in and passes the rules.'
+             : 'Not working yet - send this to Claude.';
+  return out;
 }
 
 async function fsWrite(e, path, obj, masked) {
