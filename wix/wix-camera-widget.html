@@ -10,7 +10,10 @@
      live picture stays on screen, and the Pi saves it at full quality as
      the latest photo, which replaces it here a minute or so later.
      The Pi caps live view per day to spare the camera battery; this widget
-     explains any wait or refusal.
+     explains any wait or refusal. If the boat or the camera doesn't answer
+     (usually because the boat's Wi-Fi is off), it says "Wi-Fi is off. Try
+     again later." It checks the Pi's heartbeat first, so when the boat is
+     offline that message appears straight away.
      Self-contained: no libraries, no dependencies. HTTPS only.
      ============================================================ -->
 <div id="hm-camera">
@@ -84,12 +87,18 @@
     var LIVE_POLL  = 2000;             // fetch the live picture this often
     var WATCH_MS   = 30 * 1000;        // tell the Pi we're still watching this often
     var LIVE_GONE  = 20 * 1000;        // no new live picture for this long => it has ended
+    var ACK_MS     = 75 * 1000;        // the Pi looks every 30 s; no answer by then => offline
+    var ONLINE_MS  = 4 * 60 * 1000;    // the Pi's heartbeat (every minute) older than this => offline
+    var WIFI_OFF   = "Wi-Fi is off. Try again later.";
 
     var BASE = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents/camera/";
     var DOC = BASE + VESSEL_ID, LIVE = BASE + VESSEL_ID + "-live";
     function masked(url, keys){ return url + "?" + keys.map(function(k){ return "mask.fieldPaths=" + k; }).join("&"); }
     var SMALL = masked(DOC, ["takenAt","lastTryAt","lastError","liveDoneAt","liveNote"]);
     var LIVE_SMALL = masked(LIVE, ["state","frameAt","startedAt","endsAt","error"]);
+    // The anchor guard on the Pi writes guardLastRun every minute while the Pi is online.
+    var HEALTH = masked("https://firestore.googleapis.com/v1/projects/" + PROJECT_ID +
+                        "/databases/(default)/documents/health/" + VESSEL_ID, ["guardLastRun"]);
 
     var $ = function(id){ return document.getElementById(id); };
     var frame=$("hmc-frame"), img=$("hmc-img"), empty=$("hmc-empty"), pill=$("hmc-pill"), pillText=$("hmc-pill-text"),
@@ -97,7 +106,7 @@
 
     var photo = null;        // latest daily photo document (fields)
     var mode = "photo";      // photo | waking | live
-    var reqAt = 0, wakeStart = 0, lastFrameAt = 0, lastFrameSeen = 0, endsAt = 0;
+    var reqAt = 0, wakeStart = 0, lastFrameAt = 0, lastFrameSeen = 0, endsAt = 0, acked = false;
     var pollTimer = null, watchTimer = null, savedTimer = null;
 
     function num(f){ return f && f.integerValue!==undefined ? parseInt(f.integerValue,10)
@@ -185,6 +194,15 @@
     }
     function startLive(){
       say(""); clearTimeout(savedTimer);
+      // Is the boat online at all? If not, say so now instead of waking nothing for a minute.
+      getJSON(HEALTH, function(h){
+        if (h === null){ say("Couldn't connect. Check your internet and try again."); return; }
+        var beat = num(h.guardLastRun) || 0;
+        if (Date.now() - beat > ONLINE_MS){ say(WIFI_OFF); return; }
+        joinOrRequest();
+      });
+    }
+    function joinOrRequest(){
       // Someone may already be watching: join their session instead of asking for a new one.
       getJSON(LIVE_SMALL, function(lf){
         var now = Date.now();
@@ -196,14 +214,14 @@
         }
         reqAt = now;
         patchDoc({liveRequestAt: now, liveWatchAt: now}, function(ok){
-          if (!ok){ say("Couldn't reach the boat right now. Try again in a minute."); return; }
+          if (!ok){ say("Couldn't connect. Check your internet and try again."); return; }
           beginWatching("waking");
         });
       });
     }
     function beginWatching(m){
       setMode(m);
-      wakeStart = Date.now(); lastFrameAt = 0; lastFrameSeen = 0;
+      wakeStart = Date.now(); lastFrameAt = 0; lastFrameSeen = 0; acked = (m === "live");
       if (m === "waking"){
         pill.className = "hmc-pill waking"; pillText.textContent = "Waking the camera…"; pill.hidden = false;
         say("Live view usually starts in 20–40 seconds. A new picture comes about every 2 seconds.", "info");
@@ -242,18 +260,20 @@
       if (mode === "waking"){
         // Small reads while waiting: did the Pi refuse, has the session started?
         getJSON(SMALL, function(f){
-          if (f && (num(f.liveDoneAt) || 0) >= reqAt && str(f.liveNote)){ stopLive(str(f.liveNote)); return; }
+          if (f && (num(f.liveDoneAt) || 0) >= reqAt){
+            if (str(f.liveNote)){ stopLive(str(f.liveNote)); return; }    // refused (daily limit)
+            acked = true;
+          }
+          // The Pi didn't pick up the request: the boat is offline.
+          if (!acked && Date.now() - wakeStart > ACK_MS){ stopLive(WIFI_OFF); return; }
           getJSON(LIVE_SMALL, function(lf){
             if (mode !== "waking") return;
             var st = lf ? str(lf.state) : "";
             if (lf && (num(lf.startedAt) || 0) >= reqAt - 60000){
-              if (st === "error"){ stopLive("Live view didn't start: " + (str(lf.error) || "the camera didn't answer") + ". Here's the latest photo."); return; }
+              if (st === "error"){ stopLive(WIFI_OFF); return; }               // the camera didn't answer
               if (st === "live"){ setMode("live"); fetchFrame(); return; }
             }
-            if (Date.now() - wakeStart > WAKE_MS){
-              stopLive("The boat didn't answer. Its internet or the camera may be off right now; here's the latest photo.");
-              return;
-            }
+            if (Date.now() - wakeStart > WAKE_MS){ stopLive(WIFI_OFF); return; }
             pollTimer = setTimeout(poll, LIVE_POLL);
           });
         });
@@ -274,15 +294,10 @@
           taken.textContent = "Live view"; ago.textContent = "picture from " + clock(fa);
           if (!note.hidden && note.className.indexOf("info") >= 0) say("");
         }
-        if (st === "ended" || st === "error" || (lastFrameSeen && Date.now() - lastFrameSeen > LIVE_GONE)){
-          var why = st === "error" && str(lf.error) ? " (" + str(lf.error) + ")" : "";
-          stopLive("Live view has ended" + why + ". Tap See live view to watch again.", "info");
-          return;
-        }
-        if (!lastFrameSeen && Date.now() - wakeStart > WAKE_MS){
-          stopLive("The live pictures didn't arrive. Try again in a minute.");
-          return;
-        }
+        if (st === "ended"){ stopLive("Live view has ended. Tap See live view to watch again.", "info"); return; }
+        // The camera or the boat stopped answering partway through.
+        if (st === "error" || (lastFrameSeen && Date.now() - lastFrameSeen > LIVE_GONE)){ stopLive(WIFI_OFF); return; }
+        if (!lastFrameSeen && Date.now() - wakeStart > WAKE_MS){ stopLive(WIFI_OFF); return; }
         pollTimer = setTimeout(poll, LIVE_POLL);
       });
     }
