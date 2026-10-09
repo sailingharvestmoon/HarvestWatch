@@ -1,6 +1,6 @@
 [Unit]
-Description=Harvest Moon deck camera (daily still via Neolink -> Firebase)
-After=network-online.target
+Description=Harvest Moon deck camera (daily stills + live view via Neolink -> Firebase)
+After=network-online.target mosquitto.service
 Wants=network-online.target
 
 [Service]
@@ -16,6 +16,12 @@ Environment=CAM_TZ=America/New_York
 Environment=REQ_POLL_SEC=30
 Environment=REQ_GAP_MIN=10
 Environment=REQ_PER_DAY=12
+# "See live view" on the Wix widget: a new picture every LIVE_EVERY_MS, at most
+# LIVE_MIN minutes a session and LIVE_DAY_MIN minutes a day (camera battery).
+# Needs Mosquitto on the Pi (apt: mosquitto mosquitto-clients).
+Environment=LIVE_MIN=5
+Environment=LIVE_DAY_MIN=30
+Environment=LIVE_EVERY_MS=2000
 # Must match name = "..." in /etc/harvest-moon/neolink.toml
 Environment=CAM_NAME=HarvestMoon
 # PTZ preset to move to before each photo. Blank = leave the camera where it is.
@@ -28,8 +34,12 @@ WorkingDirectory=/home/harvestmoon/camera
 ExecStart=/usr/bin/python3 /home/harvestmoon/camera/camera.py
 Restart=always
 RestartSec=60
-# Lower priority than the anchor watch and sensors.
+# Lower priority than the anchor watch and sensors. If the Pi ever runs short of
+# memory, the kernel stops the camera's programs before anything else, and the
+# camera (with live view running) may never use more than 180 MB.
 Nice=10
+OOMScoreAdjust=600
+MemoryMax=180M
 
 [Install]
 WantedBy=multi-user.target

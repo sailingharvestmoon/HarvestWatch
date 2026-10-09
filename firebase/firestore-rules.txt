@@ -20,5 +20,9 @@ service cloud.firestore {
     // NEW - daily deck camera photo, written by camera.py on the Pi,
     // shown by the Wix camera widget.
     match /camera/harvest-moon    { allow read, write: if true; }
+
+    // NEW - the current live-view picture (Wix widget "See live view"),
+    // written by camera.py on the Pi about every 2 seconds while someone watches.
+    match /camera/harvest-moon-live { allow read, write: if true; }
   }
 }

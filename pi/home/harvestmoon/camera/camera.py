@@ -27,6 +27,16 @@ the camera battery - anyone who can reach Firestore can write requestAt - it
 takes at most one photo every REQ_GAP_MIN minutes and REQ_PER_DAY a day on
 request, and ignores requests older than REQ_MAX_AGE_MIN.
 
+"See live view" (Wix widget): the viewer writes liveRequestAt (and keeps
+writing liveWatchAt every 30 s while watching) into camera/<vessel>. The
+service starts Neolink in its MQTT mode, which asks the camera for a still
+every LIVE_EVERY_MS over one open connection and hands each one to Mosquitto
+on the Pi. This program shrinks each still to LIVE_W px and writes it into
+camera/<vessel>-live, which the widget shows as it changes. A session ends
+after LIVE_MIN minutes, or LIVE_IDLE_SEC after the last viewer stops watching;
+LIVE_DAY_MIN caps the camera's awake time per day. While a live session runs,
+scheduled and requested photos wait for it to finish.
+
 The service never photographs at start-up, so a code update or a reboot does
 not wake the camera. Each photo runs as a separate short-lived process, so the
 picture handling (Pillow) only uses memory for the few seconds it runs.
@@ -49,14 +59,20 @@ Environment variables (set in camera.service; the defaults match):
   REQ_GAP_MIN   at most one photo every this many minutes, on request (default 10)
   REQ_PER_DAY   at most this many photos a day on request (default 12)
   REQ_MAX_AGE_MIN  ignore requests older than this, e.g. made while the Pi was off (default 30)
+  LIVE_MIN      longest live session, minutes (default 5)
+  LIVE_DAY_MIN  most live minutes per day, to spare the camera battery (default 30)
+  LIVE_EVERY_MS a new live picture this often (default 2000)
+  LIVE_W        live pictures are shrunk to this many px wide (default 1280)
+  LIVE_IDLE_SEC end the session this long after the last viewer stopped watching (default 75)
 
 Neolink config with the camera password: /etc/harvest-moon/neolink.toml
 (chmod 600, owned by harvestmoon). Never in this file or the unit file.
 
-Standard library, plus Pillow (python3-pil) for reading and, if needed, re-saving the photo.
+Standard library, plus Pillow (python3-pil) for the photos, and for live view
+Mosquitto (mosquitto + mosquitto-clients, listening on 127.0.0.1 only).
 """
 
-import os, sys, re, io, json, math, time, base64, subprocess
+import os, sys, re, io, json, math, time, base64, subprocess, threading
 import urllib.request, urllib.parse, urllib.error
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -78,6 +94,13 @@ POS_CACHE    = os.path.expanduser("~/.cache/hm-camera-position.json")
 REQ_GAP_MIN  = int(os.environ.get("REQ_GAP_MIN", "10"))
 REQ_PER_DAY  = int(os.environ.get("REQ_PER_DAY", "12"))
 REQ_MAX_AGE_MIN = int(os.environ.get("REQ_MAX_AGE_MIN", "30"))
+LIVE_MIN     = int(os.environ.get("LIVE_MIN", "5"))
+LIVE_DAY_MIN = int(os.environ.get("LIVE_DAY_MIN", "30"))
+LIVE_EVERY_MS = int(os.environ.get("LIVE_EVERY_MS", "2000"))
+LIVE_W       = int(os.environ.get("LIVE_W", "1280"))
+LIVE_IDLE_SEC = int(os.environ.get("LIVE_IDLE_SEC", "75"))
+MOSQ_SUB     = os.environ.get("MOSQ_SUB", "/usr/bin/mosquitto_sub").strip()
+MOSQ_PUB     = os.environ.get("MOSQ_PUB", "/usr/bin/mosquitto_pub").strip()
 
 WORK_DIR     = f"/tmp/hm-camera-{os.getuid()}"   # per user, so a sudo test run can't block the service
 MAX_BYTES    = 1_040_000        # Firestore's limit is 1,048,576 bytes per document; room for the other fields
@@ -86,7 +109,11 @@ ONCE_SEC     = 420              # give up on a whole photo run after this
 
 DOC_URL = (f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}"
            f"/databases/(default)/documents/camera/{VESSEL_ID}")
+LIVE_DOC_URL = DOC_URL + "-live"       # camera/<vessel>-live: the current live picture
 BATTERY_KEYS = ("batteryPct", "chargeStatus", "adapterStatus")
+LIVE_START_SEC = 75     # give up if the camera hasn't sent a live picture by then
+LIVE_STALL_SEC = 25     # ... or if it stops sending for this long
+LIVE_REQ_MAX_AGE = 180  # a live request older than this (s) means the viewer has gone
 
 
 def log(msg):
@@ -107,14 +134,14 @@ def fs_value(v):
     return {"stringValue": str(v)}
 
 
-def fs_patch(values, only_these=False, mask=None):
+def fs_patch(values, only_these=False, mask=None, url=None):
     """
     Write fields to camera/<vessel>. With only_these=True (or a mask) every
     other field is left alone - the last good photo, the app's requestAt. A
     field named in the mask but missing from values is deleted. Without
     either, the whole document is replaced. Returns True on success. Never raises.
     """
-    url = DOC_URL
+    url = url or DOC_URL
     if only_these and mask is None:
         mask = list(values)
     if mask is not None:
@@ -124,7 +151,9 @@ def fs_patch(values, only_these=False, mask=None):
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            log(f"firestore [{r.status}] camera/{VESSEL_ID}: {', '.join(values)}")
+            if "seq" not in values:                         # don't log every live picture
+                where = url.split("/documents/", 1)[1].split("?", 1)[0]
+                log(f"firestore [{r.status}] {where}: {', '.join(values)}")
             return True
     except urllib.error.HTTPError as e:
         detail = e.read()[:300].decode("utf-8", "replace")
@@ -297,6 +326,177 @@ def take_one():
     return ok
 
 
+# ---- live view ---------------------------------------------------------------
+def live_config():
+    """
+    A private copy of neolink.toml with the MQTT preview switched on, written
+    to WORK_DIR (mode 600) for this session and deleted after. Keeps the
+    camera password in one place.
+    """
+    with open(NEOLINK_CONF) as f:
+        text = f.read()
+    headers = re.findall(r"^\s*\[\[?\s*([^\]]+?)\s*\]\]?\s*$", text, re.M)
+    if not headers or headers[-1] != "cameras":
+        raise RuntimeError(f"{NEOLINK_CONF} must end with its [[cameras]] section for live view")
+    if re.search(r"^\s*\[mqtt\]", text, re.M):
+        raise RuntimeError(f"{NEOLINK_CONF} already has an [mqtt] section - remove it for live view")
+    extra = "\n"
+    if not re.search(r"^\s*push_notifications\s*=", text, re.M):
+        extra += "push_notifications = false\n"   # retries every 5 s otherwise; the service is gone
+    extra += ("[cameras.mqtt]\nenable_motion = false\nenable_light = false\n"
+              "enable_battery = false\nenable_floodlight = false\nenable_preview = true\n"
+              f"preview_update = {LIVE_EVERY_MS}\n\n"
+              '[mqtt]\nbroker_addr = "127.0.0.1"\nport = 1883\n')
+    os.makedirs(WORK_DIR, mode=0o700, exist_ok=True)
+    path = os.path.join(WORK_DIR, "live.toml")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text.rstrip("\n") + "\n" + extra)
+    return path
+
+
+def live_shrink(jpeg):
+    """A camera still -> a small JPEG for live view. Decodes at reduced size (fast on the Pi Zero)."""
+    from PIL import Image
+    im = Image.open(io.BytesIO(jpeg))
+    im.draft("RGB", (LIVE_W, LIVE_W))
+    im = im.convert("RGB")
+    im.thumbnail((LIVE_W, LIVE_W), Image.BILINEAR)
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=70)
+    return buf.getvalue(), im.size
+
+
+def clear_retained(topic):
+    """Drop a picture Mosquitto kept from an earlier session, so nobody sees it as live."""
+    try:
+        subprocess.run([MOSQ_PUB, "-h", "127.0.0.1", "-t", topic, "-r", "-n"],
+                       timeout=10, capture_output=True)
+    except Exception:
+        pass
+
+
+def live_session(req, max_sec):
+    """
+    One live session (runs as 'camera.py --live <requestAt> <max seconds>').
+    Returns True if any picture went out.
+    """
+    t0 = time.time()
+    started = now_ms()
+    ends = started + int(max_sec * 1000)
+    topic = f"neolink/{CAM_NAME}/status/preview"
+    latest = {"jpeg": None, "at": 0.0}
+    lock = threading.Lock()
+    procs, conf, error, reason, sent = [], None, "", "ended", 0
+    bad_frames = 0
+
+    def live_doc(fields, mask=None):
+        return fs_patch(fields, mask=mask, url=LIVE_DOC_URL)
+
+    log(f"live view: starting, up to {max_sec / 60:.1f} min")
+    try:
+        conf = live_config()
+        clear_retained(topic)
+        live_doc({"state": "starting", "startedAt": started, "endsAt": ends, "error": ""},
+                 mask=["state", "startedAt", "endsAt", "error"])
+        os.makedirs(WORK_DIR, mode=0o700, exist_ok=True)
+        neo_log = open(os.path.join(WORK_DIR, "live-neolink.log"), "w")
+        neo = subprocess.Popen([NEOLINK, "mqtt", f"--config={conf}"],
+                               stdout=subprocess.DEVNULL, stderr=neo_log)
+        procs.append(neo)
+        # -R: ignore anything Mosquitto kept from before; only pictures sent from now on
+        sub = subprocess.Popen([MOSQ_SUB, "-h", "127.0.0.1", "-t", topic, "-R"],
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        procs.append(sub)
+
+        def reader():
+            for line in sub.stdout:
+                line = line.strip()
+                if line:
+                    with lock:
+                        latest["jpeg"], latest["at"] = line, time.time()
+        threading.Thread(target=reader, daemon=True).start()
+
+        last_sent = 0.0
+        next_watch = time.time() + 20
+        while True:
+            now = time.time()
+            if now_ms() >= ends:
+                reason = "time limit"
+                break
+            if neo.poll() is not None:
+                raise RuntimeError("Neolink stopped unexpectedly")
+            if not sent and now - t0 > LIVE_START_SEC:
+                raise RuntimeError("the camera didn't send a picture")
+            if sent and now - last_sent > LIVE_STALL_SEC:
+                raise RuntimeError("the camera stopped sending pictures")
+            if now >= next_watch:                      # is anyone still watching?
+                next_watch = now + 10
+                st = fs_get(["liveWatchAt"])
+                if st is not None and now_ms() - max(st.get("liveWatchAt", 0), req) > LIVE_IDLE_SEC * 1000:
+                    reason = "nobody watching"
+                    break
+            with lock:
+                b64, at = latest["jpeg"], latest["at"]
+            if b64 and at > last_sent:
+                last_sent = at
+                try:
+                    jpeg, size = live_shrink(base64.b64decode(b64))
+                except Exception as e:
+                    bad_frames += 1
+                    if bad_frames == 1:
+                        log(f"live: skipped a picture that wouldn't decode ({e})")
+                    continue
+                if live_doc({"frame": jpeg, "frameAt": int(at * 1000), "seq": sent + 1,
+                             "state": "live", "startedAt": started, "endsAt": ends,
+                             "width": size[0], "height": size[1], "error": ""}):
+                    sent += 1
+                    if sent == 1:
+                        log(f"live: first picture after {at - t0:.0f} s, "
+                            f"{size[0]}x{size[1]} {len(jpeg) // 1024} KB")
+                continue
+            time.sleep(0.2)
+    except Exception as e:
+        reason, error = "error", (str(e) or e.__class__.__name__)
+        log(f"live view FAILED: {error}")
+    finally:
+        for proc in reversed(procs):
+            try:
+                proc.terminate()
+                proc.wait(timeout=8)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        if conf:
+            try:
+                os.remove(conf)
+            except OSError:
+                pass
+        clear_retained(topic)
+        live_doc({"state": "error" if error else "ended", "endedAt": now_ms(), "error": error[:300]},
+                 mask=["state", "endedAt", "error"])
+        log(f"live view {reason}: {sent} pictures in {time.time() - t0:.0f} s")
+    return sent > 0
+
+
+def run_live_subprocess(req, max_sec):
+    """Run 'camera.py --live' as its own process, like the photos."""
+    try:
+        p = subprocess.run([sys.executable, os.path.abspath(__file__), "--live", str(req), str(int(max_sec))],
+                           timeout=max_sec + 150)
+        return p.returncode == 0
+    except subprocess.TimeoutExpired:
+        log("live session ran too long - stopped")
+        fs_patch({"state": "ended", "endedAt": now_ms(), "error": "stopped"},
+                 mask=["state", "endedAt", "error"], url=LIVE_DOC_URL)
+        return False
+    except Exception as e:
+        log(f"could not start live session: {e}")
+        return False
+
+
 # ---- when to shoot ------------------------------------------------------------
 def sun_times(day, lat, lon):
     """
@@ -444,9 +644,11 @@ class Requests:
         self.waiting_note = None     # request we already told "waiting until ..."
         self.day, self.count = None, 0
         self.failing = False
+        self.live_pending = None     # liveRequestAt (ms) not yet answered
+        self.live_day, self.live_used = None, 0.0   # seconds of live view today
 
     def poll(self):
-        st = fs_get(["requestAt", "requestDoneAt", "lastTryAt"])
+        st = fs_get(["requestAt", "requestDoneAt", "lastTryAt", "liveRequestAt", "liveDoneAt"])
         if st is None:
             if not self.failing:
                 log("request check: can't reach Firestore - will keep trying")
@@ -457,6 +659,13 @@ class Requests:
         self.failing = False
         # min(): a lastTryAt in the future (a clock that was wrong) mustn't block requests
         self.last_try = min(max(self.last_try, st.get("lastTryAt", 0)), now_ms())
+        lreq, ldone = st.get("liveRequestAt", 0), st.get("liveDoneAt", 0)
+        if lreq and lreq > ldone and lreq != self.live_pending:
+            if now_ms() - lreq > LIVE_REQ_MAX_AGE * 1000:
+                self.live_done(lreq, "")             # the viewer has long gone; nothing to say
+            else:
+                log("live view requested")
+                self.live_pending = lreq
         req, done = st.get("requestAt", 0), st.get("requestDoneAt", 0)
         if not req or req <= done or req == self.pending:
             return
@@ -490,6 +699,18 @@ class Requests:
                                      f"most one photo every {REQ_GAP_MIN} minutes."},
                      only_these=True)
         return at
+
+    def live_left(self):
+        """Seconds of live view still allowed today."""
+        today = datetime.now(self.tz).date()
+        if self.live_day != today:
+            self.live_day, self.live_used = today, 0.0
+        return max(0.0, LIVE_DAY_MIN * 60 - self.live_used)
+
+    def live_done(self, req, note):
+        fs_patch({"liveDoneAt": req, "liveNote": note}, only_these=True)
+        if self.live_pending == req:
+            self.live_pending = None
 
     def done(self, req, note=""):
         fs_patch({"requestDoneAt": req, "requestNote": note}, only_these=True)
@@ -544,6 +765,23 @@ def service():
             log(f"next photo {target:%a %b %d %H:%M %Z} ({what}, {pos[2]} position {pos[0]:.3f}, {pos[1]:.3f})")
             continue
 
+        # ---- "see live view" from the Wix widget
+        if reqs.live_pending:
+            req = reqs.live_pending
+            left = reqs.live_left()
+            if left < 30:
+                log("live view refused: today's live minutes are used up")
+                reqs.live_done(req, f"Live view is limited to {LIVE_DAY_MIN} minutes a day to "
+                                    "save the camera's battery. Here's the latest photo.")
+                continue
+            reqs.live_done(req, "")                   # accepted - the widget watches the live doc
+            t = time.time()
+            run_live_subprocess(req, min(LIVE_MIN * 60, left))
+            reqs.live_used += time.time() - t
+            log(f"live view used {reqs.live_used / 60:.1f} of {LIVE_DAY_MIN} min today")
+            next_poll = 0.0                           # look for new requests straight away
+            continue
+
         # ---- "take a photo now" from the app
         ready = reqs.ready_at()
         if ready is not None and time.time() >= ready:
@@ -567,4 +805,9 @@ def service():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] in ("--once", "--now"):
         sys.exit(0 if take_one() else 1)
+    if len(sys.argv) > 1 and sys.argv[1] == "--live":
+        # --live [requestAt] [seconds]: both optional, for testing by hand
+        req = int(sys.argv[2]) if len(sys.argv) > 2 else now_ms()
+        secs = int(sys.argv[3]) if len(sys.argv) > 3 else LIVE_MIN * 60
+        sys.exit(0 if live_session(req, secs) else 1)
     service()

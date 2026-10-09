@@ -4,22 +4,24 @@
      (Add -> Embed Code -> Embed HTML -> Enter Code).
      Size the element about 760 x 620.
      Shows the latest photo the Pi saved to camera/harvest-moon, and a
-     "See live view" button that asks the Pi for a fresh photo right now.
-     The Pi limits those to one every 10 minutes and 12 a day (camera
-     battery); this widget explains the wait instead of failing silently.
+     "See live view" button: the Pi wakes the camera and sends a fresh
+     picture about every 2 seconds to camera/harvest-moon-live for up to
+     5 minutes, or until nobody is watching. The Pi caps live view per day
+     to spare the camera battery; this widget explains any wait or refusal.
      Self-contained: no libraries, no dependencies. HTTPS only.
      ============================================================ -->
 <div id="hm-camera">
   <style>
     #hm-camera{
       --ink:#1e293b; --muted:#64748b; --line:#e2e8f0; --accent:#0e7490; --bg:#ffffff;
-      --warn:#b45309; --warnbg:#fffbeb; --info:#0e7490; --infobg:#ecfeff;
+      --warn:#b45309; --warnbg:#fffbeb; --info:#0e7490; --infobg:#ecfeff; --live:#dc2626;
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
       max-width:760px; margin:0 auto; color:var(--ink);
       background:var(--bg); border:1px solid var(--line); border-radius:14px;
       padding:18px 20px; box-shadow:0 1px 3px rgba(0,0,0,.05); box-sizing:border-box;
     }
     #hm-camera *{box-sizing:border-box;}
+    #hm-camera [hidden]{display:none !important;}
     #hm-camera .hmc-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px;}
     #hm-camera .hmc-title{font-size:15px; font-weight:700; letter-spacing:.01em;}
     #hm-camera .hmc-batt{font-size:12px; color:var(--muted); white-space:nowrap;}
@@ -28,20 +30,25 @@
     #hm-camera .hmc-frame img{display:block; width:100%; height:100%; object-fit:cover;}
     #hm-camera .hmc-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
       padding:20px; text-align:center; color:var(--muted); font-size:15px; line-height:1.5;}
-    #hm-camera .hmc-busy{position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:20px;
-      background:rgba(15,23,42,.72); color:#fff; font-size:12.5px; font-weight:600;}
-    #hm-camera .hmc-busy[hidden]{display:none;}
+    #hm-camera .hmc-pill{position:absolute; left:12px; top:12px; display:flex; align-items:center; gap:7px;
+      padding:6px 12px; border-radius:20px; background:rgba(15,23,42,.72); color:#fff; font-size:12.5px; font-weight:600;}
+    #hm-camera .hmc-pill[hidden]{display:none;}
+    #hm-camera .hmc-dot{width:9px; height:9px; border-radius:50%; background:var(--live);}
+    #hm-camera .hmc-pill.waking .hmc-dot{background:#fbbf24; animation:hmc-pulse 1.2s ease-in-out infinite;}
+    #hm-camera .hmc-pill.live .hmc-dot{animation:hmc-pulse 2s ease-in-out infinite;}
+    @keyframes hmc-pulse{0%,100%{opacity:1} 50%{opacity:.35}}
     #hm-camera .hmc-foot{display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;
       margin-top:10px; font-size:12px; color:var(--muted);}
     #hm-camera .hmc-taken{color:var(--ink); font-weight:600;}
     #hm-camera .hmc-btn{display:block; width:100%; margin-top:12px; padding:12px 16px; border-radius:10px;
       border:1px solid var(--accent); background:var(--accent); color:#fff; font:inherit; font-size:14.5px;
       font-weight:600; cursor:pointer;}
-    #hm-camera .hmc-btn:disabled{opacity:.6; cursor:default;}
+    #hm-camera .hmc-btn.stop{background:#fff; color:var(--accent);}
     #hm-camera .hmc-note{margin-top:10px; padding:8px 12px; border-radius:8px; font-size:12.5px; line-height:1.45;
       color:var(--warn); background:var(--warnbg); border:1px solid #fde68a;}
     #hm-camera .hmc-note.info{color:var(--info); background:var(--infobg); border-color:#a5f3fc;}
     #hm-camera .hmc-note[hidden]{display:none;}
+    @media (prefers-reduced-motion: reduce){ #hm-camera .hmc-dot{animation:none !important;} }
   </style>
 
   <div class="hmc-head">
@@ -50,8 +57,9 @@
   </div>
 
   <div class="hmc-frame" id="hmc-frame">
+    <img id="hmc-img" alt="" hidden>
     <div class="hmc-empty" id="hmc-empty">Loading the latest photo…</div>
-    <div class="hmc-busy" id="hmc-busy" hidden>Taking a fresh photo…</div>
+    <div class="hmc-pill" id="hmc-pill" hidden><span class="hmc-dot"></span><span id="hmc-pill-text"></span></div>
   </div>
 
   <div class="hmc-foot">
@@ -59,7 +67,7 @@
     <span id="hmc-ago"></span>
   </div>
 
-  <button class="hmc-btn" id="hmc-btn" type="button">📷 See live view</button>
+  <button class="hmc-btn" id="hmc-btn" type="button">▶ See live view</button>
   <div class="hmc-note" id="hmc-note" hidden></div>
 
   <script>
@@ -67,33 +75,33 @@
     // ---- config (already set for your boat) -------------------------------
     var PROJECT_ID = "harvest-moon-watch";
     var VESSEL_ID  = "harvest-moon";
-    var CHECK_MS   = 10 * 60 * 1000;   // look for a newer photo every 10 min
+    var CHECK_MS   = 10 * 60 * 1000;   // look for a newer daily photo every 10 min
     var STALE_H    = 20;               // older than this => say a scheduled photo was missed
-    var GAP_MIN    = 10;               // must match REQ_GAP_MIN in camera.service
-    var WAIT_MS    = 4 * 60 * 1000;    // give up waiting for a requested photo after this
-    var POLL_MS    = 6000;             // while waiting, look this often
+    var WAKE_MS    = 100 * 1000;       // give up if live view hasn't started by then
+    var LIVE_POLL  = 2000;             // fetch the live picture this often
+    var WATCH_MS   = 30 * 1000;        // tell the Pi we're still watching this often
+    var LIVE_GONE  = 20 * 1000;        // no new live picture for this long => it has ended
 
-    var DOC = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID +
-              "/databases/(default)/documents/camera/" + VESSEL_ID;
-    // Small reads (no picture) so checking costs almost nothing.
-    var SMALL = DOC + "?" + ["takenAt","lastTryAt","lastError","requestAt","requestDoneAt","requestNote"]
-                  .map(function(k){ return "mask.fieldPaths=" + k; }).join("&");
+    var BASE = "https://firestore.googleapis.com/v1/projects/" + PROJECT_ID + "/databases/(default)/documents/camera/";
+    var DOC = BASE + VESSEL_ID, LIVE = BASE + VESSEL_ID + "-live";
+    function masked(url, keys){ return url + "?" + keys.map(function(k){ return "mask.fieldPaths=" + k; }).join("&"); }
+    var SMALL = masked(DOC, ["takenAt","lastTryAt","lastError","liveDoneAt","liveNote"]);
+    var LIVE_SMALL = masked(LIVE, ["state","frameAt","startedAt","endsAt","error"]);
 
-    var frame=document.getElementById("hmc-frame"), empty=document.getElementById("hmc-empty"),
-        busy=document.getElementById("hmc-busy"), batt=document.getElementById("hmc-batt"),
-        taken=document.getElementById("hmc-taken"), ago=document.getElementById("hmc-ago"),
-        note=document.getElementById("hmc-note"), btn=document.getElementById("hmc-btn");
-    var shownAt = null;     // takenAt of the photo on screen
-    var last = {};          // latest small fields
-    var waitFor = null;     // requestAt we're waiting on
-    var waitStart = 0, pollTimer = null, extended = false;
+    var $ = function(id){ return document.getElementById(id); };
+    var frame=$("hmc-frame"), img=$("hmc-img"), empty=$("hmc-empty"), pill=$("hmc-pill"), pillText=$("hmc-pill-text"),
+        batt=$("hmc-batt"), taken=$("hmc-taken"), ago=$("hmc-ago"), note=$("hmc-note"), btn=$("hmc-btn");
+
+    var photo = null;        // latest daily photo document (fields)
+    var mode = "photo";      // photo | waking | live
+    var reqAt = 0, wakeStart = 0, lastFrameAt = 0, lastFrameSeen = 0, endsAt = 0;
+    var pollTimer = null, watchTimer = null;
 
     function num(f){ return f && f.integerValue!==undefined ? parseInt(f.integerValue,10)
                    : f && f.doubleValue!==undefined ? f.doubleValue : null; }
     function str(f){ return f && f.stringValue!==undefined ? f.stringValue : ""; }
     function when(ms){
-      return new Date(ms).toLocaleString([], {weekday:"short", month:"short", day:"numeric",
-                                               hour:"numeric", minute:"2-digit"});
+      return new Date(ms).toLocaleString([], {weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit"});
     }
     function clock(ms){ return new Date(ms).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"}); }
     function agoText(ms){
@@ -108,52 +116,6 @@
       note.className = "hmc-note" + (kind === "info" ? " info" : "");
       note.hidden = !msg;
     }
-    function showEmpty(msg){
-      if (shownAt !== null) return;          // keep the photo we have
-      empty.textContent = msg;
-      if (!empty.parentNode) frame.insertBefore(empty, busy);
-    }
-    function setWaiting(on){
-      busy.hidden = !on;
-      btn.disabled = on;
-      btn.textContent = on ? "Taking a fresh photo…" : "📷 See live view";
-    }
-
-    // Notes when nobody is waiting on a request.
-    function idleNotes(f){
-      var t = num(f.takenAt), tried = num(f.lastTryAt), err = str(f.lastError);
-      if (t) ago.textContent = agoText(t);
-      if (err && tried && (!t || tried > t))
-        say("The camera didn't send a photo at " + clock(tried) + ". Showing the last one that worked.");
-      else if (t && Date.now()-t > STALE_H*3600*1000)
-        say("No new photo since " + when(t) + ". The boat's internet or the camera may be off.");
-      else say("");
-    }
-
-    function render(f){
-      var t = num(f.takenAt), b64 = f.image && f.image.bytesValue;
-      if (!t || !b64){ showEmpty("No photo yet. The camera takes one after sunrise and before sunset."); return; }
-      var img = new Image();
-      img.alt = "Photo from aboard Harvest Moon, " + when(t);
-      img.src = "data:" + (str(f.mime) || "image/jpeg") + ";base64," + b64;
-      var w = num(f.width), h = num(f.height);
-      if (w && h) frame.style.aspectRatio = w + "/" + h;   // no cropping whatever the camera sends
-      var old = frame.querySelector("img");
-      if (old) frame.removeChild(old);
-      if (empty.parentNode) frame.removeChild(empty);
-      frame.insertBefore(img, busy);
-      shownAt = t;
-      taken.textContent = "Taken " + when(t);
-      ago.textContent = agoText(t);
-
-      var pct = num(f.batteryPct), charge = str(f.chargeStatus).toLowerCase(), src = str(f.adapterStatus);
-      var bits = [];
-      if (pct !== null) bits.push("Camera battery " + pct + "%");
-      if (/charg/.test(charge) && !/complete|full/.test(charge)) bits.push("charging");
-      else if (/solar/i.test(src)) bits.push("on solar");
-      batt.textContent = bits.join(" · ");
-    }
-
     function getJSON(url, cb){
       fetch(url, {cache:"no-store"}).then(function(r){
         if (r.status === 404) return {fields:{}};
@@ -161,91 +123,165 @@
       }).then(function(d){ cb(d && d.fields ? d.fields : null); })
         .catch(function(){ cb(null); });
     }
-    function loadFull(after){
-      getJSON(DOC, function(f){
-        if (f){ render(f); last = f; }
-        else showEmpty("Couldn't reach the photo right now. Try again in a minute.");
-        if (after) after(f);
-      });
+    function patchDoc(fields, cb){
+      var keys = Object.keys(fields);
+      fetch(DOC + "?" + keys.map(function(k){ return "updateMask.fieldPaths=" + k; }).join("&"), {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({fields: keys.reduce(function(o,k){ o[k] = {integerValue:String(fields[k])}; return o; }, {})})
+      }).then(function(r){ cb && cb(r.ok); }).catch(function(){ cb && cb(false); });
+    }
+    function showImage(mime, b64, w, h){
+      if (w && h) frame.style.aspectRatio = w + "/" + h;     // no cropping, whatever the camera sends
+      img.src = "data:" + (mime || "image/jpeg") + ";base64," + b64;
+      img.hidden = false; empty.hidden = true;
     }
 
-    // ---- "See live view": ask the Pi for a fresh photo --------------------
-    function request(){
-      var lastTry = Math.max(num(last.lastTryAt) || 0, num(last.takenAt) || 0);
-      var readyAt = lastTry + GAP_MIN*60000;
-      if (lastTry && Date.now() < readyAt){
-        say("This is the live view from " + agoText(num(last.takenAt) || lastTry) +
-            ". To save the camera's battery it takes at most one photo every " + GAP_MIN +
-            " minutes. Try again after " + clock(readyAt) + ".", "info");
+    // ---- the daily photo ----------------------------------------------------
+    function showPhoto(){
+      var f = photo;
+      pill.hidden = true;
+      if (!f || !num(f.takenAt) || !(f.image && f.image.bytesValue)){
+        img.hidden = true; empty.hidden = false;
+        empty.textContent = f ? "No photo yet. The camera takes one after sunrise and before sunset."
+                              : "Couldn't reach the photo right now. Try again in a minute.";
+        taken.textContent = ""; ago.textContent = "";
         return;
       }
-      var now = Date.now();
-      fetch(DOC + "?updateMask.fieldPaths=requestAt", {
-        method:"PATCH", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({fields:{requestAt:{integerValue:String(now)}}})
-      }).then(function(r){
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        waitFor = now; waitStart = now; extended = false;
-        setWaiting(true);
-        say("Asking the boat for a fresh photo. This usually takes under a minute.", "info");
-        clearTimeout(pollTimer); pollTimer = setTimeout(poll, POLL_MS);
-      }).catch(function(){
-        say("Couldn't reach the boat's camera service right now. Try again in a minute.");
+      var t = num(f.takenAt);
+      img.alt = "Photo from aboard Harvest Moon, " + when(t);
+      showImage(str(f.mime), f.image.bytesValue, num(f.width), num(f.height));
+      taken.textContent = "Photo taken " + when(t);
+      ago.textContent = agoText(t);
+      var pct = num(f.batteryPct), charge = str(f.chargeStatus).toLowerCase(), src = str(f.adapterStatus), bits = [];
+      if (pct !== null) bits.push("Camera battery " + pct + "%");
+      if (/charg/.test(charge) && !/complete|full/.test(charge)) bits.push("charging");
+      else if (/solar/i.test(src)) bits.push("on solar");
+      batt.textContent = bits.join(" · ");
+    }
+    function photoNotes(){
+      var f = photo || {}, t = num(f.takenAt), tried = num(f.lastTryAt), err = str(f.lastError);
+      if (err && tried && (!t || tried > t))
+        say("The camera didn't send a photo at " + clock(tried) + ". Showing the last one that worked.");
+      else if (t && Date.now()-t > STALE_H*3600*1000)
+        say("No new photo since " + when(t) + ". The boat's internet or the camera may be off.");
+      else say("");
+    }
+    function loadPhoto(cb){
+      getJSON(DOC, function(f){
+        if (f) photo = f;
+        if (mode === "photo"){ showPhoto(); }
+        cb && cb(f);
       });
     }
 
+    // ---- live view ----------------------------------------------------------
+    function setMode(m){
+      mode = m;
+      btn.textContent = m === "photo" ? "▶ See live view" : "■ Stop live view";
+      btn.className = "hmc-btn" + (m === "photo" ? "" : " stop");
+    }
+    function startLive(){
+      say("");
+      // Someone may already be watching: join their session instead of asking for a new one.
+      getJSON(LIVE_SMALL, function(lf){
+        var now = Date.now();
+        if (lf && str(lf.state) === "live" && now - (num(lf.frameAt) || 0) < 10000){
+          reqAt = num(lf.startedAt) || now;
+          patchDoc({liveWatchAt: now});
+          beginWatching("live");
+          return;
+        }
+        reqAt = now;
+        patchDoc({liveRequestAt: now, liveWatchAt: now}, function(ok){
+          if (!ok){ say("Couldn't reach the boat right now. Try again in a minute."); return; }
+          beginWatching("waking");
+        });
+      });
+    }
+    function beginWatching(m){
+      setMode(m);
+      wakeStart = Date.now(); lastFrameAt = 0; lastFrameSeen = 0;
+      if (m === "waking"){
+        pill.className = "hmc-pill waking"; pillText.textContent = "Waking the camera…"; pill.hidden = false;
+        say("Live view usually starts in 20–40 seconds. A new picture comes about every 2 seconds.", "info");
+      }
+      clearInterval(watchTimer);
+      watchTimer = setInterval(function(){ patchDoc({liveWatchAt: Date.now()}); }, WATCH_MS);
+      clearTimeout(pollTimer); poll();
+    }
+    function stopLive(msg, kind){
+      clearTimeout(pollTimer); clearInterval(watchTimer);
+      setMode("photo");
+      showPhoto();
+      if (msg) say(msg, kind); else photoNotes();
+    }
     function poll(){
-      getJSON(SMALL, function(f){
-        if (f) last = mergeSmall(f);
-        var t = f ? num(f.takenAt) : null;
-        var done = f ? num(f.requestDoneAt) : null;
-        if (t && t >= waitFor){                           // the new photo is in
-          loadFull(function(){ finish(""); });
+      if (mode === "photo") return;
+      if (mode === "waking"){
+        // Small reads while waiting: did the Pi refuse, has the session started?
+        getJSON(SMALL, function(f){
+          if (f && (num(f.liveDoneAt) || 0) >= reqAt && str(f.liveNote)){ stopLive(str(f.liveNote)); return; }
+          getJSON(LIVE_SMALL, function(lf){
+            if (mode !== "waking") return;
+            var st = lf ? str(lf.state) : "";
+            if (lf && (num(lf.startedAt) || 0) >= reqAt - 60000){
+              if (st === "error"){ stopLive("Live view didn't start: " + (str(lf.error) || "the camera didn't answer") + ". Here's the latest photo."); return; }
+              if (st === "live"){ setMode("live"); fetchFrame(); return; }
+            }
+            if (Date.now() - wakeStart > WAKE_MS){
+              stopLive("The boat didn't answer. Its internet or the camera may be off right now; here's the latest photo.");
+              return;
+            }
+            pollTimer = setTimeout(poll, LIVE_POLL);
+          });
+        });
+        return;
+      }
+      fetchFrame();
+    }
+    function fetchFrame(){
+      getJSON(LIVE, function(lf){
+        if (mode !== "live") return;
+        var st = lf ? str(lf.state) : "", fa = lf ? (num(lf.frameAt) || 0) : 0;
+        if (lf && fa > lastFrameAt && lf.frame && lf.frame.bytesValue){
+          lastFrameAt = fa; lastFrameSeen = Date.now(); endsAt = num(lf.endsAt) || 0;
+          img.alt = "Live view from aboard Harvest Moon";
+          showImage("image/jpeg", lf.frame.bytesValue, num(lf.width), num(lf.height));
+          pill.className = "hmc-pill live"; pill.hidden = false;
+          pillText.textContent = "LIVE" + (endsAt ? " · until " + clock(endsAt) : "");
+          taken.textContent = "Live view"; ago.textContent = "picture from " + clock(fa);
+          if (!note.hidden && note.className.indexOf("info") >= 0) say("");
+        }
+        if (st === "ended" || st === "error" || (lastFrameSeen && Date.now() - lastFrameSeen > LIVE_GONE)){
+          var why = st === "error" && str(lf.error) ? " (" + str(lf.error) + ")" : "";
+          stopLive("Live view has ended" + why + ". Tap See live view to watch again.", "info");
           return;
         }
-        if (done && done >= waitFor){                     // the Pi answered without a new photo
-          var why = str(f.requestNote) || (str(f.lastError) ? "The camera didn't send a photo." : "");
-          finish(why || "The camera didn't send a new photo this time.");
+        if (!lastFrameSeen && Date.now() - wakeStart > WAKE_MS){
+          stopLive("The live pictures didn't arrive. Try again in a minute.");
           return;
         }
-        if (f && /^Waiting/.test(str(f.requestNote))){   // someone else just took one; the Pi will do ours shortly
-          say(str(f.requestNote), "info");
-          if (!extended){ extended = true; waitStart = Date.now() + GAP_MIN*60000; }
-        }
-        if (Date.now() - waitStart > WAIT_MS){
-          finish("The boat didn't answer. Its internet or the camera may be off right now; the photo above is the latest.");
-          return;
-        }
-        pollTimer = setTimeout(poll, POLL_MS);
+        pollTimer = setTimeout(poll, LIVE_POLL);
       });
     }
-    function mergeSmall(f){
-      var m = {}; for (var k in last) m[k] = last[k];
-      for (var j in f) m[j] = f[j];
-      return m;
-    }
-    function finish(msg){
-      clearTimeout(pollTimer);
-      waitFor = null;
-      setWaiting(false);
-      if (msg) say(msg); else idleNotes(last);
-    }
 
-    // ---- background check for scheduled photos ----------------------------
-    function check(){
-      if (waitFor) return;
+    btn.addEventListener("click", function(){
+      if (mode === "photo") startLive();
+      else stopLive("You stopped live view.", "info");
+    });
+    // Leaving the page (or switching tabs) stops watching, so the camera can go back to sleep.
+    document.addEventListener("visibilitychange", function(){
+      if (document.hidden && mode !== "photo") stopLive("Live view stopped while this page was in the background.", "info");
+    });
+
+    loadPhoto(function(){ photoNotes(); });
+    setInterval(function(){
+      if (mode !== "photo") return;
       getJSON(SMALL, function(f){
-        if (!f) return;
-        last = mergeSmall(f);
-        if (num(f.takenAt) !== shownAt) loadFull(function(full){ if (full) idleNotes(full); });
-        else idleNotes(last);
+        if (f && photo && num(f.takenAt) !== num(photo.takenAt)) loadPhoto(function(){ photoNotes(); });
+        else if (photo) ago.textContent = num(photo.takenAt) ? agoText(num(photo.takenAt)) : "";
       });
-    }
-
-    btn.addEventListener("click", request);
-    loadFull(function(f){ if (f) idleNotes(f); });
-    setInterval(check, CHECK_MS);
-    setInterval(function(){ if (shownAt) ago.textContent = agoText(shownAt); }, 60000);
+    }, CHECK_MS);
   })();
   </script>
 </div>
