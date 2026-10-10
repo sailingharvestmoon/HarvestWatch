@@ -28,6 +28,8 @@
 // Secrets (Cloudflare dashboard, type "Secret"): FB_EMAIL, FB_PASSWORD - the boat
 //   systems Firebase login, so writes pass the locked database rules (FIREBASE SIGN-IN)
 // Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
+// Data:    https://<worker-url>/data  - everything the app knows, as plain JSON
+//          (?only=position,instruments,... to pick sections, ?pretty=1 to indent)
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
 const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60;
@@ -59,6 +61,7 @@ export default {
     if (u.pathname === '/wpc') return wpcRelay(request, u);
     try {
       if (u.searchParams.get('auth') === '1') return json(await fbDiag(e, 'cloud-weather'));
+      if (u.pathname === '/data') return dataFeed(e, u);
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
       if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
@@ -704,4 +707,145 @@ async function jobNow(e, st) {
   await fsWrite(e, `weather/${e.VESSEL_ID}`, d, false);
   await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastNow: at, station: station ? JSON.stringify(station) : '', pressLog: JSON.stringify(log) }, true);
   return { ok: true, wrote: Object.keys(d) };
+}
+
+// ═══ /data: everything the app knows, as one plain JSON document ══
+// Read-only. Reads the same Firestore documents the app does, turns
+// Firestore's typed values into plain numbers and strings, and gives
+// them clear names with units. Every section has `at` (ISO time) and
+// `ageMin` so a reader can tell stale data from live. A field this code
+// doesn't know about yet is not dropped - it shows up in that section's
+// `extra`. ?only=position,instruments picks sections; ?pretty=1 indents.
+const DATA_SECTIONS = ['position', 'instruments', 'weather', 'forecast', 'anchorWatch', 'ais', 'track', 'health', 'settings'];
+const FC_NAMES = { weather_code: 'weatherCode', is_day: 'isDay', wind_speed_10m: 'windKn', wind_gusts_10m: 'gustKn',
+  wind_direction_10m: 'windDirDeg', precipitation: 'precipMm', cape: 'capeJkg', cloud_cover: 'cloudPct',
+  temperature_2m: 'tempF', pressure_msl: 'pressureMb', wave_height: 'waveHeightFt', wave_direction: 'waveDirDeg', wave_period: 'wavePeriodS' };
+
+const plain = f => {
+  const o = {};
+  for (const [k, v] of Object.entries(f || {}))
+    o[k] = v.doubleValue !== undefined ? Number(v.doubleValue) : v.integerValue !== undefined ? Number(v.integerValue)
+         : v.booleanValue !== undefined ? v.booleanValue : v.stringValue !== undefined ? v.stringValue : null;
+  return o;
+};
+const iso = ms => ms > 0 ? new Date(ms).toISOString() : null;
+const stamp = ms => ({ at: iso(ms), ageMin: ms > 0 ? Math.round((Date.now() - ms) / 60000) : null });
+// Moves the named fields out of o under new names (null when missing, so the
+// shape is always the same); whatever is left in o afterwards is `extra`.
+const pick = (o, names) => {
+  const r = {};
+  for (const [k, n] of Object.entries(names)) { r[n] = o[k] ?? null; delete o[k]; }
+  return r;
+};
+const extra = (o, ...drop) => { drop.forEach(k => delete o[k]); return Object.keys(o).length ? { extra: o } : {}; };
+const renameKeys = (o, names) => o && Object.fromEntries(Object.entries(o).map(([k, v]) => [names[k] || k, v]));
+
+async function dataFeed(e, u) {
+  const v = e.VESSEL_ID, errors = [];
+  const paths = { vessel: `vessels/${v}`, telemetry: `telemetry/${v}`, alarms: `alarms/${v}`, state: `state/${v}`,
+    health: `health/${v}`, ais: `ais/${v}`, tracks: `tracks/${v}`, modes: `modes/${v}`, weather: `weather/${v}`,
+    forecast: `weather/${v}-forecast`, places: `weather/${v}-places`, wxstate: `weather/${v}-wxstate` };
+  const D = {};
+  // One missing or failing document must not blank the whole feed.
+  await Promise.all(Object.entries(paths).map(async ([k, p]) => {
+    try { D[k] = plain(await fsGet(e, p)); } catch (err) { D[k] = {}; errors.push(`${p}: ${String(err.message || err)}`); }
+  }));
+
+  // position - the Pi's GPS (or the phone's backup GPS)
+  const P = D.vessel;
+  const position = { ...stamp(P.timestamp),
+    ...pick(P, { lat: 'lat', lon: 'lon', accuracy: 'accuracyM', bowLat: 'bowLat', bowLon: 'bowLon' }), ...extra(P, 'timestamp') };
+
+  // instruments - the Vesper, via sensors.py
+  const I = D.telemetry;
+  const instruments = { ...stamp(I.updatedAt),
+    wind: {
+      apparent: pick(I, { windSpeedApparentKn: 'speedKn', windAngleApparentDeg: 'angleDeg' }),
+      true: pick(I, { windSpeedTrueKn: 'speedKn', windDirTrueDeg: 'dirDeg' }),
+      gust: { ...pick(I, { gustKn: 'speedKn', gustDirDeg: 'dirDeg' }), at: iso(I.gustAt) },
+    },
+    ...pick(I, { depthFt: 'depthFt', waterTempF: 'waterTempF', boatSpeedKn: 'boatSpeedKn', sogKn: 'sogKn', cogDeg: 'cogDeg' }),
+    heading: pick(I, { headingMagDeg: 'magneticDeg', headingTrueDeg: 'trueDeg', variationDeg: 'variationDeg', variationFromGps: 'variationFromGps' }),
+    ...extra(I, 'updatedAt', 'gustAt', 'lat', 'lon') };
+
+  // weather - the "Now" summary this worker writes every 30 min
+  const W = D.weather;
+  const weather = { ...stamp(W.updatedAt), source: W.source ?? null,
+    place: pick(W, { city: 'city', state: 'state' }),
+    now: pick(W, { nowTemp: 'airTempF', nowSky: 'sky', nowWind: 'wind', pressureMb: 'pressureMb', pressureTrend: 'pressureTrend' }),
+    pressureHistory: parse(D.wxstate.pressLog || '[]', []).map(([t, mb]) => ({ at: iso(t), mb })),
+    outlook: { ...pick(W, { forecast: 'text', forecastFrom: 'from' }), at: iso(W.forecastAt) },
+    sun: pick(W, { sunrise: 'rise', sunset: 'set' }),
+    moon: pick(W, { moon: 'phase' }).phase,
+    tide: {
+      station: pick(W, { tideStation: 'name', tideStationId: 'id', tideStationNm: 'distanceNm' }),
+      ...pick(W, { tideNowFt: 'nowFt', tideMaxNext12Ft: 'highNext12hFt', tideMaxAt: 'highAt', tideRiseToMaxFt: 'riseToHighFt',
+                   tideMinNext12Ft: 'lowNext12hFt', tideMinAt: 'lowAt', tideFallToMinFt: 'fallToLowFt' }),
+      // "low 5:40pm 0.1ft / HIGH 11:21pm 7.9ft" -> [{ type, time, ft }]
+      next: String(pick(W, { tides: 't' }).t || '').split(' / ').map(s => s.trim().split(' ')).filter(a => a.length === 3)
+        .map(([k, t, ft]) => ({ type: k.toLowerCase() === 'high' ? 'high' : 'low', time: t, ft: parseFloat(ft) })),
+    },
+    ...extra(W, 'updatedAt', 'source', 'forecastAt') };
+
+  // forecast - the 7-model hourly table (times are local to tzName)
+  const F = parse(D.forecast.data || '', null);
+  const forecast = F ? { ...stamp(F.at), lat: F.lat, lon: F.lon, place: F.place || null, tzName: F.tzName, utcOffsetSec: F.off,
+    units: { windKn: 'kn', gustKn: 'kn', windDirDeg: 'deg from, true', precipMm: 'mm/h', capeJkg: 'J/kg', cloudPct: '%',
+             tempF: 'F', pressureMb: 'hPa', waveHeightFt: 'ft', waveDirDeg: 'deg from, true', wavePeriodS: 's' },
+    time: F.time, daily: F.daily,
+    models: Object.fromEntries(Object.entries(F.models || {}).map(([id, m]) =>
+      [id, { source: m.api, ok: m.ok, error: m.err || null, hourly: renameKeys(m.h, FC_NAMES) }])),
+    marine: renameKeys(F.marine, FC_NAMES) } : { ...stamp(0) };
+
+  // anchor watch - where the anchor is, how far off we are, what's alerted
+  const A = D.alarms, S = D.state;
+  const anchor = { lat: A.anchorLat ?? null, lon: A.anchorLon ?? null };
+  delete A.anchorLat; delete A.anchorLon;
+  const from = position.bowLat !== null ? [position.bowLat, position.bowLon] : [position.lat, position.lon];
+  const anchorWatch = { ...stamp(A.updatedAt), armed: pick(A, { armed: 'a' }).a ?? false, anchor,
+    distanceFt: anchor.lat !== null && from[0] !== null ? Math.round(havKm(anchor.lat, anchor.lon, from[0], from[1]) * 3280.84) : null,
+    ...pick(A, { radius: 'radiusFt', rodeOutFt: 'rodeOutFt' }),
+    snoozedUntil: iso(pick(A, { snoozeUntil: 's' }).s),
+    alerted: pick(S, { dragAlerted: 'drag', depthAlerted: 'depth', scopeAlerted: 'scope', staleAlerted: 'stale' }),
+    lastDragAt: iso(pick(S, { lastDragTs: 't' }).t),
+    ...extra(S) };
+
+  // AIS targets near the boat (guard.py): "mmsi|name|range_m|brg|sog|cpa_m;..."
+  const X = D.ais;
+  const ais = { ...stamp(X.updatedAt), count: X.count ?? 0,
+    targets: String(X.targets || '').split(';').filter(Boolean).map(r => {
+      const [mmsi, name, rng, brg, sog, cpa] = r.split('|');
+      const n = s => s === '' || s === undefined ? null : Number(s);
+      return { mmsi, name: name || null, rangeM: n(rng), bearingDeg: n(brg), sogKn: n(sog), cpaM: n(cpa) };
+    }) };
+
+  // track - the swing track for the current anchor session: "lat,lon,sec;..."
+  const T = D.tracks;
+  const track = { ...stamp(T.updatedAt), session: T.session || null, count: T.count ?? 0,
+    points: String(T.pts || '').split(';').filter(Boolean).map(c => c.split(','))
+      .map(([la, lo, s]) => ({ lat: +la, lon: +lo, at: iso((parseInt(s) || 0) * 1000) })).filter(p => isFinite(p.lat) && isFinite(p.lon)) };
+
+  // health - watcher heartbeats and push results; epoch-ms fields as ISO
+  const health = Object.fromEntries(Object.entries(D.health).map(([k, x]) =>
+    [k.replace(/Ts$/, 'At'), typeof x === 'number' && x > 1e12 ? iso(x) : x]));
+  health.weatherLastNow = iso(D.wxstate.lastNow); health.weatherLastForecast = iso(D.wxstate.lastFc);
+
+  // settings - alert thresholds and app/boat setup, as the app stores them
+  delete A.updatedAt;
+  const places = D.places;
+  const settings = { alerts: A, cabinDisplay: { mode: D.modes.mode ?? null, at: iso(D.modes.updatedAt) },
+    forecastPlace: parse(places.active || '', null), savedPlaces: parse(places.places || '[]', []) };
+
+  const all = { position, instruments, weather, forecast, anchorWatch, ais, track, health, settings };
+  const only = (u.searchParams.get('only') || '').split(',').map(s => s.trim()).filter(s => DATA_SECTIONS.includes(s));
+  const body = { vessel: v, generatedAt: new Date().toISOString(),
+    lastUpdate: Object.fromEntries(['position', 'instruments', 'weather', 'forecast', 'ais', 'track']
+      .map(k => [k, { at: all[k].at, ageMin: all[k].ageMin }])),
+    ...(only.length ? Object.fromEntries(only.map(k => [k, all[k]])) : all),
+    ...(errors.length ? { errors } : {}) };
+  // Compact by default (~60 KB, the forecast is most of it); ?pretty=1 to indent.
+  return new Response(JSON.stringify(body, null, u.searchParams.get('pretty') ? 2 : 0), { headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'cache-control': 'public, max-age=30' } });
 }

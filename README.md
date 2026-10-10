@@ -124,6 +124,11 @@ Kept separate from the anchor watcher so weather can never slow an alarm.
 Secrets (Cloudflare dashboard → the worker → Settings → Variables and Secrets, type **Secret**): `FB_EMAIL`, `FB_PASSWORD`
 — the boat systems Firebase login, so its writes pass the locked database rules.
 
+**Data feed:** `https://harvest-weather.<your-subdomain>.workers.dev/data` returns everything the app knows as one
+plain JSON document — position, instruments, weather/tides/sun/moon, the 7-model forecast, anchor watch, AIS, swing
+track, watcher health and settings — each section with `at` / `ageMin`. Public, read-only, CORS-open.
+`?only=position,instruments,weather` picks sections (also `forecast`, `anchorWatch`, `ais`, `track`, `health`, `settings`); `?pretty=1` indents it.
+
 ## Cloudflare worker
 
 `cloudflare-worker/anchor-watcher-worker.js` → Cloudflare dashboard → the worker → Edit code → paste → Deploy.
