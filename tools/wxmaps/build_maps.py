@@ -398,8 +398,10 @@ def build_model(name, out_dir):
                 hrs = 0 if prev_f is None else f - prev_f
                 acc = (np.zeros_like(o["pr"]) if acc is None else acc + np.nan_to_num(o["pr"]) * hrs)
                 o["pa"] = acc
-            if "tp" in S:                                     # ECMWF: metres, accumulated from t0
-                tp = S["tp"] * 1000.0
+            if "tp" in S:                                     # ECMWF: accumulated from t0
+                # IFS gives it in metres; AIFS in kg m-2, which is already mm.
+                # Read the file's own units (both used to be x1000, so AIFS rain was 1000x).
+                tp = S["tp"] * (1000.0 if str(ec.codes_get(H["tp"], "units")).strip() == "m" else 1.0)
                 if prev_tp is not None and f > prev_f:
                     o["pr"] = np.maximum(0, tp - prev_tp) / (f - prev_f)
                 if first_tp is None: first_tp = tp
