@@ -103,16 +103,29 @@ def exists(url):
 
 # ---------------------------------------------------------------- indexes
 def noaa_ranges(idx_text, wanted):
-    """wanted: key -> (var, level). Returns key -> (start, end or None)."""
+    """wanted: key -> (var, level). Returns key -> (start, end or None, sub).
+
+    NCEP can pack several fields into one GRIB message - NAM and RAP put the
+    two wind components together. The index then lists them as "17.1" and
+    "17.2" at the SAME byte offset. Such a field is fetched as the whole
+    message, and sub says which field inside it to read (0 = the first).
+    (Taking the next line's offset as the end, as this used to, gave an
+    impossible range for the first one; the server then sent the whole file
+    and the wrong field was read as wind - NAM showed 127 kn everywhere.)"""
     lines = [l.split(":") for l in idx_text.strip().splitlines() if l.strip()]
+    starts = [int(p[1]) if len(p) >= 5 else None for p in lines]
     out = {}
     for n, p in enumerate(lines):
         if len(p) < 5: continue
-        start = int(p[1]); var, lev = p[3], p[4]
-        end = int(lines[n + 1][1]) - 1 if n + 1 < len(lines) else None
+        start = starts[n]; var, lev = p[3], p[4]
+        end = None
+        for m in range(n + 1, len(lines)):         # the next message, past our own submessages
+            if starts[m] is not None and starts[m] > start:
+                end = starts[m] - 1; break
+        sub = int(p[0].split(".")[1]) - 1 if "." in p[0] else 0
         for key, (wv, wl) in wanted.items():
             if key not in out and var == wv and (lev == wl or lev.startswith(wl)):
-                out[key] = (start, end)
+                out[key] = (start, end, sub)
     return out
 
 def ecmwf_ranges(index_text, params):
@@ -202,8 +215,33 @@ def uv_relative_to_grid(h):
     except Exception: return False
 
 # ---------------------------------------------------------------- one step
+class GribPart(bytes):
+    """A whole GRIB message holding several fields, and which one is wanted."""
+    sub = 0
+
+def grib_handle(b):
+    """eccodes handle for the wanted field: plain message bytes, or a GribPart."""
+    import eccodes as ec
+    sub = getattr(b, "sub", 0)
+    if not sub: return ec.codes_new_from_message(bytes(b))
+    import tempfile
+    with tempfile.TemporaryFile() as fh:
+        fh.write(b); fh.seek(0)
+        ec.codes_grib_multi_support_on()
+        try:
+            h = None
+            for _ in range(sub + 1):
+                if h is not None: ec.codes_release(h)
+                h = ec.codes_grib_new_from_file(fh)
+                if h is None: return None
+            return h
+        finally:
+            ec.codes_grib_multi_support_off()
+
 def fetch_step(cfg, d, hh, f):
-    """Returns key -> GRIB message bytes for one forecast step."""
+    """Returns key -> GRIB message bytes for one forecast step. A field that
+    shares its message with others comes back as a GribPart (see noaa_ranges);
+    read any of them with grib_handle()."""
     url = cfg["url"](d, hh, f)
     if cfg["src"] == "noaa":
         idx = http(url + ".idx")
@@ -213,7 +251,16 @@ def fetch_step(cfg, d, hh, f):
         idx = http(url[:-len(".grib2")] + ".index")
         if not idx: return {}
         ranges = ecmwf_ranges(idx.decode("ascii", "ignore"), cfg["params"])
-    return {k: http(url, r) for k, r in ranges.items()}
+    got, out = {}, {}
+    for k, r in ranges.items():
+        rng = (r[0], r[1])
+        if rng[1] is not None and rng[1] < rng[0]: continue      # never ask for an impossible range
+        if rng not in got: got[rng] = http(url, rng)             # U and V share one message: fetch it once
+        b = got[rng]
+        if b and len(r) > 2 and r[2]:
+            b = GribPart(b); b.sub = r[2]
+        out[k] = b
+    return out
 
 def pick_run(cfg):
     """Newest cycle whose LAST needed step is already published."""
@@ -230,8 +277,25 @@ def pick_run(cfg):
     return None
 
 # ---------------------------------------------------------------- build
-def quantize(a, key):
+# Plausible range of each stored value. Anything outside is a decoding fault
+# (a missing-data marker or the wrong field read as numbers) and is stored as
+# "no data", so a broken model shows blank instead of pinned to the top of
+# the scale. Wind in knots, waves in feet, temperatures in deg F.
+PLAUS = {"ws": (0, 200), "wg": (0, 250), "wd": (0, 360), "pr": (0, 500), "pa": (0, 3000),
+         "cc": (0, 100), "ps": (850, 1090), "ta": (-80, 140), "ce": (0, 12000),
+         "wh": (0, 100), "wvd": (0, 360), "wp": (0, 40), "st": (20, 110)}
+_warned = set()
+
+def quantize(a, key, model=""):
     off, step = PACK[key]
+    a = np.asarray(a, dtype=np.float64)
+    lo, hi = PLAUS.get(key, (-np.inf, np.inf))
+    bad = np.isfinite(a) & ((a < lo - 1e-6) | (a > hi + 1e-6))
+    if bad.any():
+        if bad.mean() > 0.001 and (model, key) not in _warned:
+            _warned.add((model, key))
+            print(f"{model}: WARNING {key}: {bad.mean():.1%} of points outside {lo}..{hi}, stored as no data", flush=True)
+        a = np.where(bad, np.nan, a)
     q = np.round((a - off) / step)
     q = np.clip(q, 0, 254)
     q[~np.isfinite(a)] = 255
@@ -276,7 +340,9 @@ def build_model(name, out_dir):
         if not msgs: continue
         H = {}
         for k, b in msgs.items():
-            if b: H[k] = ec.codes_new_from_message(b)
+            if b:
+                h = grib_handle(b)
+                if h is not None: H[k] = h
         if not H: continue
         if sampler is None:
             sampler = Sampler(next(iter(H.values())), lats, lons)
@@ -322,7 +388,7 @@ def build_model(name, out_dir):
             if "cape" in S: o["ce"] = S["cape"]
         prev_f = f
         for k, a in o.items():
-            write_png(os.path.join(mdir, f"{k}_{ti}.png"), quantize(a, k))
+            write_png(os.path.join(mdir, f"{k}_{ti}.png"), quantize(a, k, name))
             written.add(k)
         for h in H.values(): ec.codes_release(h)
 
