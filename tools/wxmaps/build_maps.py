@@ -30,7 +30,7 @@ open data); the app falls back to the Pi's on-demand grids for those.
   python build_maps.py site gfs hrrr     build only these models
   (isobars/highs/lows for the Fronts view are added every run - see isobars.py)
 """
-import sys, os, json, math, time, datetime as dt, urllib.request, urllib.error
+import sys, os, json, math, time, random, datetime as dt, urllib.request, urllib.error
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
@@ -82,7 +82,11 @@ MODELS = {
 }
 
 # ---------------------------------------------------------------- HTTP
-def http(url, rng=None, tries=4):
+def http(url, rng=None, tries=6):
+    """GET, optionally a byte range. None if not published (403/404). A busy
+    server (429 or 5xx - ECMWF's says "503 Slow Down") gets longer and longer
+    waits, about a minute in all, before this gives up."""
+    last = None
     for k in range(tries):
         try:
             hdr = dict(UA)
@@ -94,7 +98,8 @@ def http(url, rng=None, tries=4):
             last = e
         except Exception as e:
             last = e
-        time.sleep(2 * (k + 1))
+        if k + 1 < tries:
+            time.sleep(min(30, 2 ** (k + 1)) * (0.75 + 0.5 * random.random()))
     raise RuntimeError(f"{url}: {last}")
 
 def exists(url):
@@ -267,6 +272,19 @@ def fetch_step(cfg, d, hh, f):
         out[k] = b
     return out
 
+def fetch_steps(cfg, d, hh, steps, name):
+    """fetch_step for every step, in parallel. A step that still fails after
+    the retries is reported and comes back as None, rather than sinking the
+    whole model (as one throttled AIFS file once did)."""
+    def one(f):
+        try:
+            return f, fetch_step(cfg, d, hh, f)
+        except Exception as e:
+            print(f"{name}: {f} h step failed: {e}", flush=True)
+            return f, None
+    with ThreadPoolExecutor(4 if cfg["src"] == "ecmwf" else 8) as pool:   # ECMWF's server throttles sooner
+        return list(pool.map(one, steps))
+
 def pick_run(cfg):
     """Newest cycle whose first 5 days are already published. Steps past that
     are taken as far as they're out (see build_model); a run's last days are
@@ -324,8 +342,7 @@ def build_model(name, out_dir):
     lats, lons = target_grid(cfg["res"], domain)
     mdir = os.path.join(out_dir, name); os.makedirs(mdir, exist_ok=True)
 
-    with ThreadPoolExecutor(8) as pool:
-        raw = list(pool.map(lambda f: (f, fetch_step(cfg, d, hh, f)), cfg["steps"]))
+    raw = fetch_steps(cfg, d, hh, cfg["steps"], name)
 
     sampler, times, written = None, [], set()
     acc, prev_tp, first_tp, prev_f = None, None, None, None
@@ -336,10 +353,9 @@ def build_model(name, out_dir):
         grun = pick_run(gcfg) or run
         gd, gh = grun.strftime("%Y%m%d"), grun.hour
         sub = dict(gcfg, fields={"sst": ("TMP", "surface"), "land": ("LAND", "surface")})
-        with ThreadPoolExecutor(8) as pool:
-            for f, msgs in pool.map(lambda f: (f, fetch_step(sub, gd, gh, f)), cfg["steps"]):
-                vt = grun + dt.timedelta(hours=f)
-                gfs_sst[vt] = msgs
+        for f, msgs in fetch_steps(sub, gd, gh, cfg["steps"], "marine (sea temperature)"):
+            vt = grun + dt.timedelta(hours=f)
+            gfs_sst[vt] = msgs
 
     for ti_out, (f, msgs) in enumerate(raw):
         vt = run + dt.timedelta(hours=f)
@@ -414,7 +430,8 @@ def build_model(name, out_dir):
 
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "site"
-    only = sys.argv[2:] or list(MODELS)
+    # ECMWF and AIFS come from the same server: build others in between.
+    only = sys.argv[2:] or ["gfs", "ecmwf", "hrrr", "nam", "aifs", "marine"]
     os.makedirs(out, exist_ok=True)
     index = {"generated": int(time.time() * 1000), "region": REGION, "models": {}}
     for name in only:
