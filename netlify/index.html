@@ -307,7 +307,7 @@ table.fc tr.cat th .mchip.sm { pointer-events:none; position:absolute; right:22p
 tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
 /* weather maps */
-.seg.wxmode { width:250px; margin:0 auto 6px; }
+.seg.wxmode { width:310px; margin:0 auto 6px; }
 #view-maps { overflow:hidden; display:none; flex-direction:column; }
 #view-maps.active { display:flex; }
 .wm-stage { position:relative; flex:1; overflow:hidden; background:var(--bg); }
@@ -370,9 +370,9 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 /* forecast location */
 .loc-chip { background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:6px 12px; font-size:13px; font-weight:600; color:var(--ink); max-width:220px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .wm-toprow { display:flex; justify-content:center; gap:8px; align-items:center; padding:0 10px; }
-.wm-toprow .seg.wxmode { width:196px; margin:0; flex:none; }
-.wm-toprow .seg.wxmode button { font-size:12.5px; padding:8px 2px; }
-.wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:150px; }
+.wm-toprow .seg.wxmode { width:232px; margin:0; flex:none; }
+.wm-toprow .seg.wxmode button { font-size:12px; padding:8px 1px; }
+.wm-toprow .loc-chip { pointer-events:auto; box-shadow:var(--shadow); max-width:115px; }
 .loc-sheet { position:fixed; z-index:950; max-height:88%; }
 .sign-sheet { position:fixed; z-index:960; max-height:88%; }
 .signin-pill { color:var(--accent); border-color:color-mix(in srgb, var(--accent) 45%, var(--line)); font-weight:600; }
@@ -398,6 +398,68 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .anchor-ico { font-size:18px; line-height:18px; transform:translate(-50%,-50%); filter:drop-shadow(0 0 3px rgba(0,0,0,.5)); }
 .ais-ico { transform:translate(-50%,-50%); }
 .leaflet-tooltip { font:inherit; font-size:12px; }
+
+/* passage: route forecast + departure window */
+#view-passage { overflow:hidden; display:none; flex-direction:column; }
+#view-passage.active { display:flex; }
+.px-mapbox { position:relative; flex:0 0 36%; min-height:180px; border-bottom:1px solid var(--line); }
+#view-passage.editing .px-mapbox { flex:1; }
+#view-passage.editing .px-panel { display:none; }
+.px-panel { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:12px 16px 28px; }
+.px-zoom { position:absolute; right:10px; top:58px; z-index:800; display:flex; flex-direction:column; gap:8px; }
+.px-editbar { position:absolute; left:10px; right:10px; bottom:10px; z-index:800; background:var(--surface); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow); padding:10px 12px 12px; }
+.px-editbar .note { margin:0 2px 8px; color:var(--ink); font-size:13.5px; }
+.px-editbar .btn { padding:10px 6px; font-size:14px; }
+.px-pt span { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--surface); color:var(--accent); border:2px solid var(--accent); font-size:11px; font-weight:800; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+.px-pt.s span { background:var(--ok); border-color:var(--ok); color:#fff; }
+.px-pt.f span { background:var(--ink); border-color:var(--ink); color:var(--bg); }
+.px-route { display:flex; gap:8px; align-items:center; }
+.px-route .btn { padding:12px 14px; flex:none; }
+.px-sel { flex:1; min-width:0; appearance:none; -webkit-appearance:none; background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6f80' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center; border:1px solid var(--line); border-radius:12px; padding:11px 34px 11px 12px; font-weight:600; font-size:16px; color:var(--ink); }
+.px-win { display:block; width:100%; text-align:left; padding:10px 12px 10px 13px; border-radius:10px; background:var(--surface2); border-left:4px solid var(--ok); margin-top:8px; }
+.px-win:first-child { margin-top:0; }
+.px-win.close { border-left-color:var(--warn); }
+.px-win b { display:block; font-size:15px; }
+.px-win small { display:block; color:var(--muted); font-size:12.5px; margin-top:2px; }
+#pxBest > p { font-size:14px; line-height:1.45; }
+#pxBest > p + .px-win { margin-top:10px; }
+.px-within { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.px-within .note { flex:none; }
+.px-within .seg { flex:1; max-width:220px; }
+.px-within .seg button { padding:7px 4px; font-size:13px; }
+.px-prog { font-size:12px; letter-spacing:0; text-transform:none; }
+#pxGridWrap > .section-title:first-child { margin-top:22px; }
+.px-mrow .mchip { min-width:60px; text-align:center; flex:none; }
+table.px-grid td.px-c { cursor:pointer; font-size:13px; border:1px solid var(--surface); }
+table.px-grid tr.px-agree td { height:36px; font-size:12.5px; }
+table.px-grid th.fc-lab b { display:block; font-size:13px; line-height:1.1; }
+table.px-grid th.fc-lab small { display:block; font-size:10px; color:var(--muted); font-weight:500; }
+table.px-grid td.px-na { text-align:left; color:var(--muted); font-weight:500; font-size:12.5px; padding-left:10px; }
+table.px-grid td.px-part { color:var(--muted); }
+.px-ok { background:color-mix(in srgb, var(--ok) 40%, var(--surface)); }
+.px-close { background:color-mix(in srgb, var(--warn) 36%, var(--surface)); }
+.px-bad { background:color-mix(in srgb, var(--bad) 34%, var(--surface)); }
+.px-mixed { background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 36%, var(--surface)) 0 5px, color-mix(in srgb, var(--bad) 34%, var(--surface)) 5px 10px); }
+.px-part { background:var(--surface2); }
+.px-key { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin:0 4px 0 6px; border:1px solid var(--line); }
+.px-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:1px; }
+.px-dot.px-ok { background:var(--ok); } .px-dot.px-close { background:var(--warn); } .px-dot.px-bad { background:var(--bad); } .px-dot.px-part { background:var(--faint); }
+.px-sheet { max-height:62%; z-index:900; }
+.px-tl-wrap { margin:12px -16px 0; overflow-x:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+table.px-tl { border-collapse:collapse; width:100%; font-size:13px; font-variant-numeric:tabular-nums; }
+table.px-tl th { font-size:11px; color:var(--muted); font-weight:600; text-align:right; padding:6px 8px; background:var(--surface2); white-space:nowrap; }
+table.px-tl td { text-align:right; padding:6px 8px; border-top:1px solid var(--line); white-space:nowrap; }
+table.px-tl th:first-child, table.px-tl td:first-child { text-align:left; padding-left:16px; }
+table.px-tl td small { color:var(--muted); font-size:11px; font-weight:500; }
+table.px-tl tr.px-l2 td:first-child { box-shadow:inset 3px 0 0 var(--bad); }
+table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
+.px-t-bad { color:var(--bad); font-weight:700; }
+.px-t-close { color:var(--warn); font-weight:700; }
+.px-t-up { color:var(--accent); }
+.px-dark { font-size:11px; font-weight:700; color:var(--accent); background:color-mix(in srgb, var(--accent) 12%, transparent); padding:1px 6px; border-radius:5px; margin-left:4px; white-space:nowrap; }
+.px-tools { display:flex; gap:22px; justify-content:center; margin-top:18px; }
+.px-tools[hidden] { display:none; }
+.link.danger-link { color:var(--bad); }
 
 /* deck camera (Boat tab) */
 .cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
@@ -507,7 +569,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
     <!-- WEATHER -->
     <section class="view scroll" id="view-weather">
-      <div class="seg wxmode"><button class="on">Table</button><button onclick="showView('maps')">Maps</button><button onclick="showView('fronts')">Fronts</button></div>
+      <div class="seg wxmode"><button class="on">Table</button><button onclick="showView('maps')">Maps</button><button onclick="showView('fronts')">Fronts</button><button onclick="showView('passage')">Passage</button></div>
       <div style="text-align:center;margin-bottom:4px;"><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div>
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
@@ -533,7 +595,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
         <div class="wm-wrap" id="wmWrapB"><div class="wm-map" id="wmMapB"></div></div>
         <div class="wm-divider" id="wmDivider" style="display:none"><span>‹ ›</span></div>
         <div class="wm-status" id="wmStatus"></div>
-        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button class="on">Maps</button><button onclick="showView('fronts')">Fronts</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button class="on">Maps</button><button onclick="showView('fronts')">Fronts</button><button onclick="showView('passage')">Passage</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
         <button class="wm-side" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
         <button class="wm-side r" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
         <div class="wm-zoom"><button class="fab" onclick="WM.sides[0].map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="WM.sides[0].map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
@@ -556,7 +618,7 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
     <section class="view" id="view-fronts">
       <div class="wm-stage" id="frStage">
         <div class="wm-map fr-map" id="frMap"></div>
-        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button onclick="showView('maps')">Maps</button><button class="on">Fronts</button></div></div></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button onclick="showView('maps')">Maps</button><button class="on">Fronts</button><button onclick="showView('passage')">Passage</button></div></div></div>
         <div class="wm-zoom" style="bottom:10px"><button class="fab" onclick="FR.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="FR.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
       </div>
       <div class="fr-bar">
@@ -570,6 +632,46 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
           <div class="seg" id="frSpeed" style="width:140px;"><button data-s=".5">½×</button><button data-s="1">1×</button><button data-s="2">2×</button></div>
         </div>
         <div class="fr-strip" id="frStrip"></div>
+      </div>
+    </section>
+
+    <!-- PASSAGE (route forecast + departure window) -->
+    <section class="view" id="view-passage">
+      <div class="px-mapbox">
+        <div class="wm-map" id="pxMap"></div>
+        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button onclick="showView('maps')">Maps</button><button onclick="showView('fronts')">Fronts</button><button class="on">Passage</button></div></div></div>
+        <div class="px-zoom">
+          <button class="fab" onclick="PX.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="fab" onclick="PX.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="fab" onclick="pxDraw(true)" title="Fit the route" aria-label="Fit the route"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+        <div class="px-editbar" id="pxEditBar" hidden>
+          <p class="note" id="pxEditTip"></p>
+          <div class="btn-row"><button class="btn" id="pxUndoBtn" onclick="pxUndo()">Undo</button><button class="btn" onclick="pxStartAtBoat()">Start at boat</button><button class="btn primary" onclick="pxEditDone()">Done</button></div>
+        </div>
+      </div>
+      <div class="px-panel" id="pxPanel">
+        <div class="px-route"><select class="px-sel" id="pxSel" onchange="pxPick(this.value)" aria-label="Route"></select><button class="btn" onclick="pxEdit()">Edit route</button></div>
+        <p class="note" id="pxSum" style="margin:6px 2px 0;"></p>
+        <div class="section-title">When to leave</div>
+        <div class="card pad" id="pxBest"></div>
+        <div id="pxGridWrap" hidden>
+          <div class="section-title" style="display:flex;align-items:center;gap:8px;">Departure window<span style="flex:1"></span><span class="note px-prog" id="pxProg"></span></div>
+          <div class="fc-models" id="pxModels" style="margin-bottom:8px;"></div>
+          <div class="px-within"><span class="note">Leaving in the next</span><div class="seg" id="pxWithin"><button data-d="1" onclick="pxSetWithin(1)">1 d</button><button data-d="2" onclick="pxSetWithin(2)">2 d</button><button data-d="3" onclick="pxSetWithin(3)">3 d</button><button data-d="4" onclick="pxSetWithin(4)">4 d</button></div></div>
+          <div class="fc-wrap" id="pxGrid"></div>
+          <p class="note" style="margin:8px 4px 0;">Each square is one departure time; the number is the strongest wind on the way, in knots.<span class="px-key px-ok"></span>inside your limits<span class="px-key px-close"></span>close to one<span class="px-key px-bad"></span>over one<span class="px-key px-part"></span>forecast ends before arrival (+ means so far). The top row counts the models inside your limits out of those that reach the finish. Shaded hours leave in the dark. Tap a square for the details.</p>
+          <p class="note" id="pxRuns" style="margin:4px 4px 0;"></p>
+        </div>
+        <div class="section-title">Your limits</div>
+        <div class="list" id="pxLimits"></div>
+        <p class="note" style="margin:8px 4px 0;">The boat follows your line at the average speed; it doesn't route around weather yet. Wind and gusts come from each model, waves from GFS-Wave for all of them. Use it as a cross-check on the official forecast and the rally's weather briefing.</p>
+        <div class="px-tools" id="pxTools" hidden><button class="link" onclick="pxRename()">Rename</button><button class="link" onclick="pxReverse()">Reverse</button><button class="link danger-link" onclick="pxDelete()">Delete route</button></div>
+      </div>
+      <div class="sheet px-sheet" id="pxSheet">
+        <div class="grab"></div>
+        <div class="sheet-head"><b id="pxShTitle"></b><button class="x-btn" onclick="pxCloseSheet()" aria-label="Close">✕</button></div>
+        <div class="sheet-body" id="pxShBody"></div>
       </div>
     </section>
 
@@ -3040,12 +3142,617 @@ function camFullZoom(e) {
 }
 function closeCamFull(e) { e.stopPropagation(); $('camFull').hidden = true; $('camFull').classList.remove('zoom'); }
 
+// ─── passage core: pure calculation, no page access ─── PX-CORE-START
+const PX_STEP_S = 900;                 // the route is checked every 15 minutes of sailing
+const PX_UP = 60, PX_DOWN = 120;       // true wind angle: under 60° upwind, over 120° downwind
+const PX_CLOSE = 0.85;                 // amber from 85% of a limit
+
+// Course over a leg as a rhumb line (matches the straight line drawn on the chart).
+function pxCourse(a, b) {
+  const r = Math.PI / 180, dy = b[0] - a[0], dx = (b[1] - a[1]) * Math.cos((a[0] + b[0]) / 2 * r);
+  return (Math.atan2(dx, dy) / r + 360) % 360;
+}
+// Positions along the route at a steady speed: one every PX_STEP_S seconds, plus the arrival.
+function pxSamples(pts, kn) {
+  const legs = []; let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) / 1852;
+    if (d < 0.01) continue;
+    legs.push({ a: pts[i - 1], b: pts[i], d, at: total, crs: pxCourse(pts[i - 1], pts[i]) });
+    total += d;
+  }
+  if (!legs.length || !(kn > 0)) return null;
+  const durS = total / kn * 3600, out = [];
+  let li = 0;
+  for (let s = 0; ; s += PX_STEP_S) {
+    const end = s >= durS, ss = end ? durS : s, nm = ss / 3600 * kn;
+    while (li < legs.length - 1 && nm > legs[li].at + legs[li].d) li++;
+    const L = legs[li], f = Math.min(1, Math.max(0, (nm - L.at) / L.d));
+    out.push({ s: ss, lat: L.a[0] + (L.b[0] - L.a[0]) * f, lon: L.a[1] + (L.b[1] - L.a[1]) * f, crs: L.crs, nm });
+    if (end) break;
+  }
+  return { pts: out, nm: total, durS, legs: legs.length };
+}
+// The part of a model's grid that covers box [south, west, north, east], one cell spare each side.
+function pxGeom(meta, box) {
+  const [la0, lo0, la1, lo1] = meta.bbox, nx = meta.nx, ny = meta.ny;
+  const dlo = (lo1 - lo0) / (nx - 1), dla = (la1 - la0) / (ny - 1);
+  const x0 = Math.max(0, Math.floor((box[1] - lo0) / dlo) - 1), x1 = Math.min(nx - 1, Math.ceil((box[3] - lo0) / dlo) + 1);
+  const y0 = Math.max(0, Math.floor((box[0] - la0) / dla) - 1), y1 = Math.min(ny - 1, Math.ceil((box[2] - la0) / dla) + 1);
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;            // the route is outside this model's area
+  return { la0, lo0, dla, dlo, x0, y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
+}
+// Bilinear weights for one position: [4 cell indexes, 4 weights], or null outside the grid.
+function pxWt(G, lat, lon) {
+  const fx = (lon - G.lo0) / G.dlo - G.x0, fy = (lat - G.la0) / G.dla - G.y0;
+  if (fx < 0 || fy < 0 || fx > G.w - 1 || fy > G.h - 1) return null;
+  const x = Math.min(G.w - 2, Math.floor(fx)), y = Math.min(G.h - 2, Math.floor(fy)), tx = fx - x, ty = fy - y, i = y * G.w + x;
+  return [i, i + 1, i + G.w, i + G.w + 1, (1 - tx) * (1 - ty), tx * (1 - ty), (1 - tx) * ty, tx * ty];
+}
+// One value from one packed step (byte 255 = no data). A missing corner: nearest good one instead.
+function pxVal(bytes, pk, W) {
+  let sum = 0, wsum = 0, best = NaN, bw = -1;
+  for (let k = 0; k < 4; k++) {
+    const b = bytes[W[k]]; if (b === 255) continue;
+    const v = pk[0] + b * pk[1], w = W[k + 4];
+    sum += v * w; wsum += w; if (w > bw) { bw = w; best = v; }
+  }
+  if (bw < 0) return NaN;
+  return wsum > 0.999 ? sum : best;
+}
+// Direction as a speed-weighted vector, so 350° and 010° average to 000°, not 180°.
+function pxVec(dB, pkd, sB, pks, W) {
+  let x = 0, y = 0, n = 0;
+  for (let k = 0; k < 4; k++) {
+    const d = dB[W[k]]; if (d === 255) continue;
+    const sb = sB ? sB[W[k]] : 255, mag = sb === 255 ? 1 : pks[0] + sb * pks[1];
+    const r = (pkd[0] + d * pkd[1]) * Math.PI / 180, w = (W[k + 4] + 1e-6) * (mag + 0.01);
+    x += Math.sin(r) * w; y += Math.cos(r) * w; n++;
+  }
+  return n ? [x, y] : null;
+}
+// Where time t falls in a model's steps: [index, fraction], or null once the forecast has ended.
+function pxTi(times, t) {
+  const n = times.length;
+  if (!n || t > times[n - 1] + 60) return null;
+  if (t <= times[0]) return t >= times[0] - 3 * 3600 ? [0, 0] : null;
+  if (n === 1) return [0, 0];
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (times[m] <= t) lo = m; else hi = m; }
+  return [lo, Math.min(1, (t - times[lo]) / (times[hi] - times[lo]))];
+}
+function pxS(F, key, T, W) {                 // a scalar, in space and time
+  const A = F.d[key]; if (!A) return NaN;
+  const a = A[T[0]], b = A[Math.min(T[0] + 1, A.length - 1)];
+  if (!a) return NaN;
+  const va = pxVal(a, F.pk[key], W);
+  if (T[1] === 0 || !b) return va;
+  const vb = pxVal(b, F.pk[key], W);
+  return va !== va ? vb : vb !== vb ? va : va + (vb - va) * T[1];
+}
+function pxD(F, dkey, skey, T, W) {          // a direction (degrees FROM), in space and time
+  const A = F.d[dkey], S = F.d[skey]; if (!A) return NaN;
+  const i = T[0], j = Math.min(i + 1, A.length - 1);
+  const va = A[i] ? pxVec(A[i], F.pk[dkey], S && S[i], F.pk[skey], W) : null;
+  const vb = T[1] > 0 && A[j] ? pxVec(A[j], F.pk[dkey], S && S[j], F.pk[skey], W) : null;
+  let x, y;
+  if (va && vb) { x = va[0] * (1 - T[1]) + vb[0] * T[1]; y = va[1] * (1 - T[1]) + vb[1] * T[1]; }
+  else if (va || vb) [x, y] = va || vb; else return NaN;
+  return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+}
+// One departure on one model. F = wind grids, M = wave grids (may be null), R = route samples,
+// WF / WM = each sample's weights in F / M, t0 = departure (unix s), lim = the limits.
+function pxRun(F, M, R, WF, WM, t0, lim, keepRows) {
+  const r = { t0, maxWs: 0, maxWg: NaN, maxWh: NaN, maxUp: 0, overS: 0, over: {}, lvl: 0,
+              up: 0, reach: 0, down: 0, n: 0, past: false, out: false, wavesPast: false, rows: keepRows ? [] : null };
+  const hasG = !!F.d.wg;
+  for (let k = 0; k < R.pts.length; k++) {
+    const p = R.pts[k], t = t0 + p.s, W = WF[k];
+    if (!W) { r.out = true; continue; }
+    const T = pxTi(F.times, t);
+    if (!T) { r.past = true; r.pastAt = p.nm; break; }
+    const ws = pxS(F, 'ws', T, W);
+    if (ws !== ws) { r.out = true; continue; }
+    const wd = pxD(F, 'wd', 'ws', T, W), wg = hasG ? pxS(F, 'wg', T, W) : NaN;
+    let wh = NaN, wp = NaN;
+    if (M && WM && WM[k]) {
+      const Tm = pxTi(M.times, t);
+      if (Tm) { wh = pxS(M, 'wh', Tm, WM[k]); wp = pxS(M, 'wp', Tm, WM[k]); } else r.wavesPast = true;
+    }
+    const rel = wd === wd ? ((wd - p.crs) % 360 + 360) % 360 : NaN, twa = rel > 180 ? 360 - rel : rel;
+    const over = [];
+    if (ws > lim.wind) over.push('wind');
+    if (wg > lim.gust) over.push('gust');
+    if (wh > lim.wave) over.push('wave');
+    if (twa < PX_UP && ws > lim.up) over.push('up');
+    const lvl = over.length ? 2 : (ws > lim.wind * PX_CLOSE || wg > lim.gust * PX_CLOSE || wh > lim.wave * PX_CLOSE
+                                   || (twa < PX_UP && ws > lim.up * PX_CLOSE)) ? 1 : 0;
+    const dt = k + 1 < R.pts.length ? R.pts[k + 1].s - p.s : 0;
+    if (lvl === 2) { r.overS += dt; over.forEach(x => r.over[x] = true); }
+    if (lvl > r.lvl) r.lvl = lvl;
+    if (ws > r.maxWs) r.maxWs = ws;
+    if (wg === wg && !(wg <= r.maxWg)) r.maxWg = wg;
+    if (wh === wh && !(wh <= r.maxWh)) r.maxWh = wh;
+    if (twa < PX_UP && ws > r.maxUp) r.maxUp = ws;
+    if (twa === twa) { if (twa < PX_UP) r.up++; else if (twa > PX_DOWN) r.down++; else r.reach++; }
+    r.n++;
+    if (r.rows) r.rows.push({ t, nm: p.nm, lat: p.lat, lon: p.lon, ws, wd, wg, wh, wp, twa, side: rel > 180 ? 'port' : 'stbd', lvl, over });
+  }
+  r.status = r.lvl === 2 ? 'bad' : (r.past || r.out || !r.n) ? 'part' : r.lvl === 1 ? 'close' : 'ok';
+  return r;
+}
+// Sun height above the horizon in degrees (NOAA's short method; a few tenths of a degree out at worst).
+function pxSun(lat, lon, ms) {
+  const r = Math.PI / 180, d = ms / 86400000 - 10957.5;
+  const g = (357.529 + 0.98560028 * d) * r, q = 280.459 + 0.98564736 * d;
+  const L = (q + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g)) * r, e = (23.439 - 0.00000036 * d) * r;
+  const ra = Math.atan2(Math.cos(e) * Math.sin(L), Math.cos(L)), dec = Math.asin(Math.sin(e) * Math.sin(L));
+  const gmst = ((18.697374558 + 24.06570982441908 * d) % 24 + 24) % 24;
+  const H = (gmst * 15 + lon) * r - ra;
+  return Math.asin(Math.sin(lat * r) * Math.sin(dec) + Math.cos(lat * r) * Math.cos(dec) * Math.cos(H)) / r;
+}
+// PX-CORE-END
+
+// ═══ PASSAGE: route forecast and departure window ══════════════════
+// Draw a route, set a steady speed and your limits. Every departure over
+// the next few days is checked against each model, the way SeaPeople's
+// departure window works: green inside your limits, amber close to one,
+// red over one. Wind and gusts come from the pre-built maps (GitHub Pages,
+// the same files the Maps view uses); waves from GFS-Wave for every model.
+// The boat is assumed to follow the line as drawn at the set speed - no
+// routing around weather yet. Routes and limits are kept in Firestore
+// (weather/<vessel>-passage), nothing on the phone.
+const PX_URL = `${FSB}/weather/${VESSEL}-passage`;
+const PX_MODELS = ['ecmwf', 'gfs', 'aifs', 'nam', 'hrrr'];
+const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3 };
+const PX_LIMS = [
+  { k: 'speed', label: 'Average speed', sub: 'Over the ground, start to finish', unit: 'kn', step: .5, min: 2, max: 10, dp: 1 },
+  { k: 'wind', label: 'Wind', sub: 'Sustained, from any direction', unit: 'kn', step: 1, min: 8, max: 50 },
+  { k: 'gust', label: 'Gusts', sub: 'AIFS has no gust forecast', unit: 'kn', step: 1, min: 10, max: 60 },
+  { k: 'wave', label: 'Waves', sub: 'Significant height', unit: 'ft', step: 1, min: 2, max: 25 },
+  { k: 'up', label: 'Wind ahead of 60°', sub: 'Upwind: motoring or beating into it', unit: 'kn', step: 1, min: 4, max: 40 }
+];
+const PX = { d: JSON.parse(JSON.stringify(PX_DEF)), loaded: false, map: null, line: null, marks: [], runLayer: null,
+             editing: false, undo: [], grids: {}, pend: {}, res: {}, R: null, deps: [], prog: [0, 0], gen: 0, saveT: null, evalT: null };
+
+// ─── saved routes and limits ───────────────────────────────────────
+async function pxLoadSaved() {
+  try {
+    const r = await fetch(PX_URL, { cache: 'no-store' });
+    if (r.ok) {
+      const j = JSON.parse(str(((await r.json()).fields || {}).px) || '{}');
+      PX.d = Object.assign(JSON.parse(JSON.stringify(PX_DEF)), j);
+      PX.d.lim = Object.assign({}, PX_DEF.lim, j.lim || {});
+      PX.d.models = (PX.d.models || []).filter(m => PX_MODELS.includes(m));
+      if (!PX.d.models.length) PX.d.models = PX_DEF.models.slice();
+    }
+  } catch (e) {}
+  PX.loaded = true;
+}
+function pxSave() {
+  clearTimeout(PX.saveT);
+  PX.saveT = setTimeout(async () => {
+    const ok = await fsSend(PX_URL + '?updateMask.fieldPaths=px&updateMask.fieldPaths=updatedAt',
+      { px: fS(JSON.stringify(PX.d)), updatedAt: fI(Date.now()) });
+    if (!ok && !authJustDenied()) toast('Could not reach the cloud — the route is not saved yet');
+  }, 1200);
+}
+const pxCur = () => PX.d.routes.find(r => r.id === PX.d.cur) || null;
+
+// ─── opening the view ──────────────────────────────────────────────
+async function openPassage() {
+  if (!PX.map) pxInitMap();
+  setTimeout(() => PX.map.invalidateSize(), 60);
+  if (!PX.loaded) { pxPaint(); await pxLoadSaved(); pxDraw(true); }
+  pxCompute();
+}
+function pxInitMap() {
+  PX.map = L.map('pxMap', { zoomControl: false, attributionControl: false, zoomSnap: .5 });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(PX.map);
+  L.tileLayer('https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png', { maxZoom: 18, opacity: .9 }).addTo(PX.map);
+  const p = forecastTarget(); PX.map.setView([p.lat, p.lon], 7, { animate: false });
+  PX.map.on('click', pxMapClick);
+}
+
+// ─── drawing and editing the route ─────────────────────────────────
+function pxDraw(fit) {
+  if (!PX.map) return;
+  if (PX.line) PX.line.remove();
+  PX.marks.forEach(m => m.remove()); PX.marks = [];
+  const r = pxCur(), pts = r ? r.pts : [];
+  PX.line = L.polyline(pts, { color: '#1f6f9a', weight: 3, opacity: .9, dashArray: PX.editing ? '6 6' : null, interactive: false }).addTo(PX.map);
+  pts.forEach((p, i) => {
+    const end = i === 0 ? ' s' : i === pts.length - 1 && pts.length > 1 ? ' f' : '';
+    const m = L.marker(p, { draggable: PX.editing, keyboard: false,
+      icon: L.divIcon({ className: 'px-pt' + end, html: `<span>${i + 1}</span>`, iconSize: [24, 24], iconAnchor: [12, 12] }) }).addTo(PX.map);
+    m.on('dragstart', () => pxPushUndo());
+    m.on('drag', e => { const ll = e.target.getLatLng(); pts[i] = [ll.lat, ll.lng]; PX.line.setLatLngs(pts); });
+    m.on('dragend', () => { pxPaintRoute(); });
+    m.on('click', () => { if (!PX.editing) return; pxPushUndo(); pts.splice(i, 1); pxDraw(); pxPaintRoute(); });
+    PX.marks.push(m);
+  });
+  // Keep the route clear of the switch at the top, the buttons on the right and, while editing, the bar at the bottom.
+  if (fit && pts.length > 1) PX.map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [30, 70], paddingBottomRight: [70, PX.editing ? 160 : 24], maxZoom: 10 });
+  else if (fit && pts.length === 1) PX.map.setView(pts[0], 9);
+}
+function pxMapClick(e) {
+  if (!PX.editing) return;
+  const r = pxCur(); if (!r) return;
+  pxPushUndo(); r.pts.push([+e.latlng.lat.toFixed(5), +e.latlng.lng.toFixed(5)]);
+  pxDraw(); pxPaintRoute();
+}
+function pxPushUndo() { const r = pxCur(); if (r) { PX.undo.push(JSON.stringify(r.pts)); if (PX.undo.length > 50) PX.undo.shift(); } }
+function pxUndo() {
+  const r = pxCur(); if (!r || !PX.undo.length) return;
+  r.pts = JSON.parse(PX.undo.pop()); pxDraw(); pxPaintRoute();
+}
+function pxEdit() {
+  if (!pxCur()) { pxNew(); return; }
+  PX.editing = true; PX.undo = []; pxClearRun();
+  $('view-passage').classList.add('editing'); $('pxEditBar').hidden = false;
+  setTimeout(() => { PX.map.invalidateSize(); pxDraw(true); }, 60);
+  pxPaintRoute();
+}
+function pxEditDone() {
+  PX.editing = false;
+  $('view-passage').classList.remove('editing'); $('pxEditBar').hidden = true;
+  setTimeout(() => { PX.map.invalidateSize(); pxDraw(true); }, 60);
+  pxSave(); pxCompute();
+}
+function pxStartAtBoat() {
+  const r = pxCur(); if (!r) return;
+  if (!S.pos) { toast('No boat position yet'); return; }
+  pxPushUndo(); r.pts.unshift([+S.pos.lat.toFixed(5), +S.pos.lon.toFixed(5)]);
+  pxDraw(); pxPaintRoute();
+}
+function pxNew() {
+  const name = prompt('Name the new route', `Route ${PX.d.routes.length + 1}`);
+  if (name === null) { pxPaintRoute(); return; }
+  const r = { id: 'r' + Date.now().toString(36), name: name.trim() || `Route ${PX.d.routes.length + 1}`, pts: [] };
+  PX.d.routes.push(r); PX.d.cur = r.id; pxSave();
+  pxEdit();
+}
+function pxPick(id) {
+  if (id === '__new') { pxNew(); return; }
+  PX.d.cur = id; pxSave(); pxClearRun(); pxDraw(true); pxCompute();
+}
+function pxRename() {
+  const r = pxCur(); if (!r) return;
+  const name = prompt('Rename the route', r.name);
+  if (name === null || !name.trim()) return;
+  r.name = name.trim(); pxSave(); pxPaint();
+}
+function pxReverse() {
+  const r = pxCur(); if (!r || r.pts.length < 2) return;
+  r.pts.reverse(); pxSave(); pxDraw(); pxCompute();
+}
+function pxDelete() {
+  const r = pxCur(); if (!r) return;
+  if (!confirm(`Delete the route “${r.name}”?`)) return;
+  PX.d.routes = PX.d.routes.filter(x => x !== r);
+  PX.d.cur = PX.d.routes.length ? PX.d.routes[PX.d.routes.length - 1].id : '';
+  pxSave(); pxClearRun(); pxDraw(true); pxCompute();
+}
+
+// ─── settings ──────────────────────────────────────────────────────
+function pxGet(k) { return k === 'speed' ? PX.d.speed : PX.d.lim[k]; }
+function pxBump(k, dir) {
+  const L_ = PX_LIMS.find(x => x.k === k);
+  const v = Math.min(L_.max, Math.max(L_.min, +(pxGet(k) + dir * L_.step).toFixed(2)));
+  if (k === 'speed') PX.d.speed = v; else PX.d.lim[k] = v;
+  pxPaintLimits(); pxSave();
+  clearTimeout(PX.evalT);
+  PX.evalT = setTimeout(() => k === 'speed' ? pxCompute() : (pxEvalAll(), pxPaint()), 250);
+}
+function pxToggleModel(id) {
+  const on = PX.d.models.includes(id);
+  if (on && PX.d.models.length === 1) { toast('Keep at least one model'); return; }
+  PX.d.models = on ? PX.d.models.filter(m => m !== id) : PX_MODELS.filter(m => m === id || PX.d.models.includes(m));
+  pxSave(); pxCompute();
+}
+function pxSetWithin(d) { PX.d.within = d; pxSave(); pxCompute(); }
+
+// ─── forecast data ─────────────────────────────────────────────────
+const PXQ = { active: 0, q: [] };
+function pxQueue(fn) { PX.prog[1]++; return new Promise(res => { PXQ.q.push([fn, res]); pxPump(); }); }
+function pxPump() {
+  while (PXQ.active < 6 && PXQ.q.length) {
+    const [fn, res] = PXQ.q.shift(); PXQ.active++;
+    fn().then(v => v, () => null).then(v => {
+      PXQ.active--; PX.prog[0]++;
+      if (PX.prog[0] >= PX.prog[1]) PX.prog = [0, 0];
+      pxPaintProg(); res(v); pxPump();
+    });
+  }
+}
+// One packed PNG, cut down to the route's area.
+function pxImg(url, G) {
+  return new Promise(res => {
+    const img = new Image(); img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas'); c.width = G.w; c.height = G.h;
+        const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, -G.x0, -G.y0);
+        const d = x.getImageData(0, 0, G.w, G.h).data, u = new Uint8Array(G.w * G.h);
+        for (let i = 0; i < u.length; i++) u[i] = d[i * 4];
+        res(u);
+      } catch (e) { res(null); }
+    };
+    img.onerror = () => res(null);
+    img.src = url;
+  });
+}
+const pxInside = (a, b) => a[0] >= b[0] && a[1] >= b[1] && a[2] <= b[2] && a[3] <= b[3];
+// The grids for one model, covering the route's area up to tEnd (unix s). Kept for this visit only.
+async function pxEnsure(name, box, tEnd, keys) {
+  const idx = await loadPreIndex(), info = idx && idx.models && idx.models[name];
+  if (!info) return (PX.grids[name] = { none: 'Not in the forecast maps right now' });
+  const c = PX.grids[name];
+  if (c && c.run === info.run && c.box && pxInside(box, c.box) && (c.none || c.all || c.tLast >= tEnd)) return c;
+  const pd = PX.pend[name];
+  if (pd && pd.run === info.run && pxInside(box, pd.box) && pd.tEnd >= tEnd) return pd.p;
+  const p = pxFetchModel(name, box, tEnd, keys, idx);
+  PX.pend[name] = { run: info.run, box, tEnd, p };
+  const out = await p;
+  if (PX.pend[name] && PX.pend[name].p === p) delete PX.pend[name];
+  return out;
+}
+async function pxFetchModel(name, box, tEnd, keys, idx) {
+  let meta;
+  try {
+    const r = await fetch(`${MAPS_BASE}${name}/meta.json?t=${idx.generated}`);
+    if (!r.ok) throw new Error(r.status); meta = await r.json();
+  } catch (e) { return (PX.grids[name] = { none: 'Could not load this model', retry: true }); }
+  const G = pxGeom(meta, box);
+  if (!G) return (PX.grids[name] = { run: meta.run, box, none: 'Does not cover this route' });
+  let last = meta.times.findIndex(t => t >= tEnd); if (last < 0) last = meta.times.length - 1;
+  const F = { name, run: meta.run, box, G, times: meta.times.slice(0, last + 1), tLast: meta.times[last],
+              all: last === meta.times.length - 1, end: meta.times[meta.times.length - 1], pk: {}, d: {}, gaps: 0 };
+  const ks = keys.filter(k => meta.vars[k]);
+  ks.forEach(k => { F.pk[k] = meta.vars[k]; F.d[k] = new Array(last + 1).fill(null); });
+  const jobs = [];
+  for (const k of ks) for (let ti = 0; ti <= last; ti++)
+    jobs.push(pxQueue(() => pxImg(`${MAPS_BASE}${name}/${k}_${ti}.png?r=${meta.run}`, G)).then(u => { F.d[k][ti] = u; if (!u) F.gaps++; }));
+  await Promise.all(jobs);
+  return (PX.grids[name] = F);
+}
+function pxDepartures(days) {
+  const t = new Date(); t.setMinutes(0, 0, 0);
+  if (t.getTime() < Date.now()) t.setHours(t.getHours() + 1);
+  while (t.getHours() % 3) t.setHours(t.getHours() + 1);
+  const out = [];
+  for (let k = 0; k < days * 8; k++) { out.push(t.getTime()); t.setHours(t.getHours() + 3); }
+  return out;
+}
+// Work out everything for the current route: load what's needed, then check every departure.
+async function pxCompute() {
+  const gen = ++PX.gen, r = pxCur();
+  PX.res = {};
+  PX.R = r && r.pts.length > 1 ? pxSamples(r.pts, PX.d.speed) : null;
+  PX.deps = PX.R ? pxDepartures(PX.d.within) : [];
+  pxPaint();
+  if (!PX.R || PX.editing) return;
+  const lats = r.pts.map(p => p[0]), lons = r.pts.map(p => p[1]);
+  const box = [Math.min(...lats) - 1, Math.min(...lons) - 1, Math.max(...lats) + 1, Math.max(...lons) + 1];
+  const tEnd = PX.deps[PX.deps.length - 1] / 1000 + PX.R.durS + 3 * 3600;
+  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
+  await Promise.all(PX.d.models.map(async id => {
+    await pxEnsure(id, box, tEnd, ['ws', 'wd', 'wg']);
+    await marine;
+    if (gen !== PX.gen) return;
+    pxEvalModel(id); pxPaint();
+  }));
+  if (gen === PX.gen) pxPaint();
+}
+function pxEvalModel(id) {
+  const F = PX.grids[id], M = PX.grids.marine, R = PX.R;
+  if (!F || F.none || !R) { delete PX.res[id]; return; }
+  const WF = R.pts.map(p => pxWt(F.G, p.lat, p.lon));
+  const Mok = M && !M.none, WM = Mok ? R.pts.map(p => pxWt(M.G, p.lat, p.lon)) : null;
+  PX.res[id] = PX.deps.map(ms => pxRun(F, Mok ? M : null, R, WF, WM, ms / 1000, PX.d.lim));
+}
+function pxEvalAll() { PX.d.models.forEach(id => pxEvalModel(id)); }
+// Across the models for one departure: how many reach the finish, and how many of those stay inside.
+function pxAgreeAt(k) {
+  const a = { n: 0, ok: 0, close: 0, bad: 0, part: 0, models: 0 };
+  for (const id of PX.d.models) {
+    const r = PX.res[id] && PX.res[id][k]; if (!r) continue;
+    a.models++; a[r.status]++;
+    if (r.status !== 'part') a.n++;
+  }
+  a.status = !a.n ? 'part' : a.bad === a.n ? 'bad' : a.bad ? 'mixed' : a.close ? 'close' : 'ok';
+  return a;
+}
+
+// ─── painting ──────────────────────────────────────────────────────
+const pxDT = ms => { const d = new Date(ms); return `${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const pxDur = s => { const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60); return h >= 48 ? `${Math.floor(h / 24)} d ${h % 24} h` : `${h} h ${m} m`; };
+const pxRunName = run => { const s = String(run || ''); if (s.length < 10) return s; const d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(4, 6) - 1, +s.slice(6, 8))); return `${d.getUTCDate()} ${d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} ${s.slice(8, 10)}z`; };
+const pxLabel = id => (MODELS.find(m => m.id === id) || { label: id.toUpperCase() }).label;
+const pxChip = (id, extra) => { const m = MODELS.find(x => x.id === id) || { bg: '#888', fg: '#fff', label: id }; return `<span class="mchip sm" style="--mbg:${m.bg};--mfg:${m.fg}"${extra || ''}>${m.label}</span>`; };
+function pxPaint() {
+  if (!$('pxPanel')) return;
+  pxPaintRoute(); pxPaintBest(); pxPaintGrid(); pxPaintLimits(); pxPaintProg();
+}
+function pxPaintRoute() {
+  const r = pxCur();
+  $('pxSel').innerHTML = PX.d.routes.map(x => `<option value="${esc(x.id)}"${x.id === PX.d.cur ? ' selected' : ''}>${esc(x.name)}</option>`).join('')
+    + `<option value="__new">＋ New route…</option>` + (r ? '' : '<option value="" selected disabled>No route yet</option>');
+  const R = r && r.pts.length > 1 ? pxSamples(r.pts, PX.d.speed) : null;
+  $('pxSum').innerHTML = !PX.loaded ? 'Loading your routes…'
+    : !r ? 'Tap <b>Edit route</b>, then tap the chart where you start, at each turn, and where you finish.'
+    : !R ? 'Add at least two points: tap <b>Edit route</b>, then tap the chart.'
+    : `${Math.round(R.nm)} nm · ${R.legs} leg${R.legs > 1 ? 's' : ''} · ${pxDur(R.durS)} at ${PX.d.speed.toFixed(1)} kn`;
+  $('pxTools').hidden = !r;
+  if (PX.editing) $('pxEditTip').textContent = !r || !r.pts.length ? 'Tap the chart where you start.'
+    : r.pts.length === 1 ? 'Now tap each turn, then the finish.'
+    : `${R ? Math.round(R.nm) + ' nm. ' : ''}Tap to add a point. Drag a point to move it; tap it to remove it.`;
+  $('pxUndoBtn').disabled = !PX.undo.length;
+}
+function pxPaintProg() {
+  const [a, b] = PX.prog;
+  $('pxProg').textContent = b && a < b ? `Loading forecasts ${a} of ${b}` : '';
+}
+function pxPaintBest() {
+  const box = $('pxBest');
+  if (!PX.R) { box.innerHTML = '<p class="note">Draw a route to see when to leave.</p>'; return; }
+  if (!Object.keys(PX.res).length) { box.innerHTML = `<p class="note">Loading the forecasts for this route…</p>`; return; }
+  const n = PX.deps.length, wins = []; let cur = null;
+  for (let k = 0; k < n; k++) {
+    const a = pxAgreeAt(k), good = a.n > 0 && !a.bad;
+    if (good) {
+      if (!cur) cur = { i0: k, i1: k, close: false, minN: a.n, maxN: a.n, models: a.models };
+      cur.i1 = k; cur.close = cur.close || a.close > 0; cur.minN = Math.min(cur.minN, a.n); cur.maxN = Math.max(cur.maxN, a.n);
+    }
+    else if (cur) { wins.push(cur); cur = null; }
+  }
+  if (cur) wins.push(cur);
+  const dur = PX.R.durS * 1000;
+  if (!wins.length) {
+    let best = -1, bs = 1e9;
+    for (let k = 0; k < n; k++) { const a = pxAgreeAt(k); if (a.n && a.bad / a.n < bs) { bs = a.bad / a.n; best = k; } }
+    box.innerHTML = `<p><b>No departure in the next ${PX.d.within} day${PX.d.within > 1 ? 's' : ''} stays inside your limits</b> in every model that reaches the finish.</p>`
+      + (best >= 0 ? `<button class="px-win" onclick="pxOpenAgree(${best})"><b>Closest: leave ${pxDT(PX.deps[best])}</b><small>${pxAgreeAt(best).bad} of ${pxAgreeAt(best).n} models go over a limit · tap for details</small></button>` : '');
+    return;
+  }
+  box.innerHTML = wins.slice(0, 4).map(w => {
+    const one = w.i0 === w.i1, nd = w.i1 - w.i0 + 1;
+    const when = one ? `Leave ${pxDT(PX.deps[w.i0])}` : `Leave ${pxDT(PX.deps[w.i0])} to ${pxDT(PX.deps[w.i1])}`;
+    const agree = w.minN === w.models ? `Inside your limits in ${w.models > 1 ? `all ${w.models} models` : 'the one model'}`
+      : `Inside your limits in every model that reaches the finish (${w.minN === w.maxN ? w.minN : `${w.minN}–${w.maxN}`} of ${w.models})`;
+    return `<button class="px-win ${w.close ? 'close' : 'ok'}" onclick="pxOpenAgree(${w.i0})"><b>${when}</b>`
+      + `<small>${agree}${w.close ? ', close to one in places' : ''}${one ? '' : ` · ${nd} departures`}</small>`
+      + `<small>Arrive ${pxDT(PX.deps[w.i0] + dur)}${one ? '' : ` to ${pxDT(PX.deps[w.i1] + dur)}`}</small></button>`;
+  }).join('') + (wins.length > 4 ? `<p class="note" style="margin-top:6px;">${wins.length - 4} more in the grid below.</p>` : '');
+}
+function pxPaintGrid() {
+  const box = $('pxGrid'), deps = PX.deps, r = pxCur();
+  document.querySelectorAll('#pxWithin button').forEach(b => b.classList.toggle('on', +b.dataset.d === PX.d.within));
+  $('pxModels').innerHTML = PX_MODELS.map(id => { const m = MODELS.find(x => x.id === id);
+    return `<span class="mchip ${PX.d.models.includes(id) ? 'on' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pxToggleModel('${id}')">${m.label}</span>`; }).join('');
+  $('pxGridWrap').hidden = !PX.R;
+  if (!PX.R) { box.innerHTML = ''; $('pxRuns').textContent = ''; return; }
+  const start = r.pts[0], night = deps.map(ms => pxSun(start[0], start[1], ms) < -6 ? ' n' : '');
+  let h1 = '<tr class="fc-day"><th class="fc-lab"></th>', h2 = '<tr class="fc-hr"><th class="fc-lab"><span class="note">Leave at</span></th>';
+  let last = ''; const ds = [];
+  deps.forEach((ms, k) => {
+    const d = new Date(ms), day = d.toDateString(), nd = day !== last; last = day; ds.push(nd ? ' dstart' : '');
+    h1 += `<th class="${ds[k]}${night[k]}">${nd ? `<span>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.getDate()}</span>` : ''}</th>`;
+    h2 += `<th class="${ds[k]}${night[k]}">${String(d.getHours()).padStart(2, '0')}</th>`;
+  });
+  let body = '<tr class="px-agree"><th class="fc-lab"><b>All models</b><small>inside limits</small></th>';
+  deps.forEach((ms, k) => {
+    const a = pxAgreeAt(k);
+    body += a.models ? `<td class="px-c px-${a.status}${ds[k]}" onclick="pxOpenAgree(${k})">${a.n ? `${a.n - a.bad}/${a.n}` : '·'}</td>` : `<td class="e${ds[k]}${night[k]}"></td>`;
+  });
+  body += '</tr>';
+  for (const id of PX.d.models) {
+    const g = PX.grids[id], rs = PX.res[id];
+    body += `<tr><th class="fc-lab">${pxChip(id)}</th>`;
+    if (g && g.none) body += `<td class="px-na" colspan="${deps.length}"><span>${esc(g.none)}</span></td>`;
+    else if (!rs) body += deps.map((_, k) => `<td class="e${ds[k]}${night[k]}">…</td>`).join('');
+    else rs.forEach((x, k) => {
+      const t = !x.n ? '·' : Math.round(x.maxWs) + (x.status === 'part' ? '+' : '');
+      body += `<td class="px-c px-${x.status}${ds[k]}" onclick="pxOpenRun('${id}',${k})">${t}</td>`;
+    });
+    body += '</tr>';
+  }
+  box.innerHTML = `<table class="fc px-grid">${h1}</tr>${h2}</tr>${body}</table>`;
+  const runs = PX.d.models.filter(id => PX.grids[id] && PX.grids[id].run).map(id => `${pxLabel(id)} ${pxRunName(PX.grids[id].run)}`);
+  const M = PX.grids.marine;
+  if (M && M.run) runs.push(`waves GFS-Wave ${pxRunName(M.run)}`);
+  else if (M && M.none) runs.push('no wave data: ' + M.none.toLowerCase());
+  $('pxRuns').textContent = runs.length ? 'Forecast runs: ' + runs.join(' · ') : '';
+}
+function pxPaintLimits() {
+  $('pxLimits').innerHTML = PX_LIMS.map(L_ => {
+    const v = pxGet(L_.k);
+    return `<div class="row"><div class="txt"><b>${L_.label}</b><small>${L_.sub}</small></div>`
+      + `<div class="px-step"><button onclick="pxBump('${L_.k}',-1)" aria-label="Less">−</button>`
+      + `<b class="num">${v.toFixed(L_.dp || 0)}<i>${L_.unit}</i></b><button onclick="pxBump('${L_.k}',1)" aria-label="More">+</button></div></div>`;
+  }).join('');
+}
+
+// ─── details for one departure ─────────────────────────────────────
+function pxOpenSheet(title, html) { $('pxShTitle').textContent = title; $('pxShBody').innerHTML = html; $('pxSheet').classList.add('open'); }
+function pxCloseSheet() { $('pxSheet').classList.remove('open'); pxClearRun(); }
+function pxClearRun() { if (PX.runLayer) { PX.runLayer.remove(); PX.runLayer = null; } }
+function pxArrive(ms) {
+  const r = pxCur(), f = r.pts[r.pts.length - 1], dark = pxSun(f[0], f[1], ms) < -6;
+  return pxDT(ms) + (dark ? ' <span class="px-dark">after dark</span>' : '');
+}
+const pxOverTxt = o => Object.keys(o).map(k => ({ wind: 'wind', gust: 'gusts', wave: 'waves', up: 'wind ahead of 60°' })[k]).join(', ');
+function pxOpenAgree(k) {
+  const ms = PX.deps[k], dur = PX.R.durS * 1000;
+  let html = `<div class="kv" style="margin-bottom:12px;"><span>Leave</span><b>${pxDT(ms)}</b><span>Arrive</span><b>${pxArrive(ms + dur)}</b>`
+    + `<span>Distance</span><b>${Math.round(PX.R.nm)} nm · ${pxDur(PX.R.durS)} at ${PX.d.speed.toFixed(1)} kn</b></div><div class="list">`;
+  for (const id of PX.d.models) {
+    const x = PX.res[id] && PX.res[id][k], g = PX.grids[id];
+    if (!x) { html += `<div class="row px-mrow">${pxChip(id)}<div class="txt"><small>${esc(g && g.none ? g.none : 'Still loading')}</small></div></div>`; continue; }
+    const what = x.status === 'bad' ? `Over: ${pxOverTxt(x.over)} for ${pxDur(x.overS)}`
+      : x.status === 'part' ? (x.past ? `Forecast ends ${Math.round(x.pastAt)} nm along` : 'Route leaves this model’s area')
+      : x.status === 'close' ? 'Inside your limits, close to one' : 'Inside your limits';
+    html += `<button class="row px-mrow" onclick="pxOpenRun('${id}',${k})">${pxChip(id)}<div class="txt"><b><span class="px-dot px-${x.status}"></span>${what}</b>`
+      + `<small>Wind to ${Math.round(x.maxWs)} kn${x.maxWg === x.maxWg ? ` · gusts ${Math.round(x.maxWg)}` : ''}${x.maxWh === x.maxWh ? ` · waves ${x.maxWh.toFixed(1)} ft` : ''}</small></div><span class="chev">›</span></button>`;
+  }
+  html += '</div><p class="note" style="margin-top:8px;">Tap a model for the conditions along the way.</p>';
+  pxClearRun(); pxOpenSheet(`Leaving ${pxDT(ms)}`, html);
+}
+function pxOpenRun(id, k) {
+  const F = PX.grids[id], M = PX.grids.marine, R = PX.R; if (!F || F.none) return;
+  const Mok = M && !M.none;
+  const x = pxRun(F, Mok ? M : null, R, R.pts.map(p => pxWt(F.G, p.lat, p.lon)), Mok ? R.pts.map(p => pxWt(M.G, p.lat, p.lon)) : null, PX.deps[k] / 1000, PX.d.lim, true);
+  const ms = PX.deps[k], n = x.up + x.reach + x.down || 1, pct = v => Math.round(100 * v / n) + '%';
+  let html = `<div class="kv"><span>Leave</span><b>${pxDT(ms)}</b>`
+    + `<span>Arrive</span><b>${x.past ? `Forecast ends ${Math.round(x.pastAt)} nm along` : pxArrive(ms + R.durS * 1000)}</b>`
+    + `<span>Over your limits</span><b class="${x.status === 'bad' ? 'px-t-bad' : ''}">${x.status === 'bad' ? `${pxDur(x.overS)} · ${pxOverTxt(x.over)}` : x.past ? 'Not before the forecast ends' : 'No'}</b>`
+    + `<span>Strongest wind</span><b>${Math.round(x.maxWs)} kn${x.maxUp ? ` · ${Math.round(x.maxUp)} kn ahead of 60°` : ''}</b>`
+    + `<span>Strongest gust</span><b>${x.maxWg === x.maxWg ? Math.round(x.maxWg) + ' kn' : 'Not in this model'}</b>`
+    + `<span>Highest waves</span><b>${x.maxWh === x.maxWh ? x.maxWh.toFixed(1) + ' ft' : 'No wave data'}</b>`
+    + `<span>Wind angle</span><b>${pct(x.up)} upwind · ${pct(x.reach)} reach · ${pct(x.down)} downwind</b></div>`;
+  // One line per hour (per 3 h on long passages), each showing the worst of that stretch.
+  const every = R.durS > 36 * 3600 ? 3 : 1, rows = x.rows, groups = [];
+  rows.forEach(rw => {
+    const key = Math.floor((rw.t - ms / 1000) / (every * 3600));
+    const g = groups[key] || (groups[key] = { t: rw.t, nm: rw.nm, ws: -1, wg: NaN, wh: NaN, wp: NaN, lvl: 0, rep: rw, over: {} });
+    if (rw.ws > g.ws) { g.ws = rw.ws; g.rep = rw; }
+    if (rw.wg === rw.wg && !(rw.wg <= g.wg)) g.wg = rw.wg;
+    if (rw.wh === rw.wh && !(rw.wh <= g.wh)) { g.wh = rw.wh; g.wp = rw.wp; }
+    if (rw.lvl > g.lvl) g.lvl = rw.lvl; rw.over.forEach(o => g.over[o] = true);
+  });
+  const last = rows[rows.length - 1];
+  const cls = (cond, close) => cond ? ' class="px-t-bad"' : close ? ' class="px-t-close"' : '';
+  const C = PX_CLOSE, Lm = PX.d.lim;
+  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : '3 h from'}</th><th>nm</th><th>Wind kn</th><th>Gust</th><th>Angle</th><th>Waves ft</th></tr>`;
+  groups.filter(Boolean).forEach(g => {
+    const d = new Date(g.t * 1000), rp = g.rep, upw = rp.twa < PX_UP;
+    html += `<tr class="px-l${g.lvl}"><td>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${String(d.getHours()).padStart(2, '0')}</td><td>${Math.round(g.nm)}</td>`
+      + `<td${cls(g.ws > Lm.wind || (upw && g.ws > Lm.up), g.ws > Lm.wind * C || (upw && g.ws > Lm.up * C))}>${Math.round(g.ws)} <small>${rp.wd === rp.wd ? compass(rp.wd) : ''}</small></td>`
+      + `<td${cls(g.wg > Lm.gust, g.wg > Lm.gust * C)}>${g.wg === g.wg ? Math.round(g.wg) : '–'}</td>`
+      + `<td${upw ? ' class="px-t-up"' : ''}>${rp.twa === rp.twa ? Math.round(rp.twa) + '° <small>' + rp.side + '</small>' : '–'}</td>`
+      + `<td${cls(g.wh > Lm.wave, g.wh > Lm.wave * C)}>${g.wh === g.wh ? g.wh.toFixed(1) + (g.wp === g.wp ? ` <small>${Math.round(g.wp)} s</small>` : '') : '–'}</td></tr>`;
+  });
+  html += '</table></div>';
+  html += `<p class="note" style="margin-top:8px;">Each line shows the strongest values in the ${every === 1 ? 'hour' : '3 hours'} that follow${last && !x.past ? `; arrival ${pxDT(last.t * 1000)}` : ''}. Angle is the true wind angle off the bow; under 60° counts as upwind. `
+    + `${pxLabel(id)} run ${pxRunName(F.run)}${Mok ? `; waves from GFS-Wave ${pxRunName(M.run)}` : ''}. The boat follows the line as drawn at ${PX.d.speed.toFixed(1)} kn.</p>`
+    + (F.gaps ? `<p class="note warn">${F.gaps} forecast step(s) didn’t load; parts of the route may show as out of the model’s area.</p>` : '')
+    + (x.wavesPast ? '<p class="note warn">The wave forecast ends before arrival.</p>' : '');
+  // On the chart: the route coloured by how close each stretch comes to your limits.
+  pxClearRun(); PX.runLayer = L.layerGroup().addTo(PX.map);
+  const col = ['#2c8a5c', '#c2841b', '#c6372c'];
+  for (let i = 1; i < rows.length; i++)
+    L.polyline([[rows[i - 1].lat, rows[i - 1].lon], [rows[i].lat, rows[i].lon]], { color: col[Math.max(rows[i - 1].lvl, rows[i].lvl)], weight: 6, opacity: .85, interactive: false }).addTo(PX.runLayer);
+  const firstOver = rows.find(rw => rw.lvl === 2);       // a dot where it first goes over
+  if (firstOver && firstOver !== rows[0]) L.circleMarker([firstOver.lat, firstOver.lon], { radius: 7, color: '#fff', weight: 2, fillColor: col[2], fillOpacity: 1, interactive: false }).addTo(PX.runLayer);
+  pxOpenSheet(`${pxLabel(id)} · leaving ${pxDT(ms)}`, html);
+}
+
 // ═══ NAV ═══════════════════════════════════════════════════════════
-const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', fronts: 'Fronts · day 0–7', boat: 'Boat' };
-let lastWx = 'weather';   // the Weather tab reopens whichever of forecast / maps you left it on
+const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
+let lastWx = 'weather';   // the Weather tab reopens whichever of table / maps / fronts / passage you left it on
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
-  const tab = (v === 'maps' || v === 'fronts') ? 'weather' : v;
+  const tab = (v === 'maps' || v === 'fronts' || v === 'passage') ? 'weather' : v;
   if (tab === 'weather') lastWx = v;
   document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
   document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === tab));
@@ -3059,6 +3766,7 @@ function showView(v) {
   else if (WM.playing) wmTogglePlay();
   if (v === 'fronts') openFronts();
   else if (FR.playing) frTogglePlay();
+  if (v === 'passage') openPassage();
 }
 document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => showView(t.dataset.v === 'weather' ? lastWx : t.dataset.v)));
 window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
