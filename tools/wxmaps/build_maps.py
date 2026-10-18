@@ -35,7 +35,10 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 REGION = (5.0, -100.0, 52.0, -40.0)          # south, west, north, east
-HOURS = 120                                   # forecast length kept
+HOURS = 120                                   # a run is used only once its first 5 days are out
+EXT = 240                                     # and kept to 10 days where the model goes that far
+# 3-hourly to 6 days, then 6-hourly to 10 days (the steps ECMWF publishes; GFS has at least these)
+LONG = list(range(0, 145, 3)) + list(range(150, EXT + 1, 6))
 UA = {"User-Agent": "harvest-watch-maps (github actions)"}
 
 # value = off + byte * step (byte 255 = missing) - same packing as wxgrid.py
@@ -57,7 +60,7 @@ S3_GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 S3_ECMWF = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
 
 MODELS = {
-    "gfs": dict(src="noaa", cycle=6, lag=3.5, res=0.25, steps=list(range(0, HOURS + 1, 3)),
+    "gfs": dict(src="noaa", cycle=6, lag=3.5, res=0.25, steps=LONG,
                 url=lambda d, h, f: f"{S3_GFS}/gfs.{d}/{h:02d}/atmos/gfs.t{h:02d}z.pgrb2.0p25.f{f:03d}",
                 fields=dict(NOAA_FIELDS, sst=("TMP", "surface"), land=("LAND", "surface"))),
     "hrrr": dict(src="noaa", cycle=6, lag=1.5, res=0.1, steps=list(range(0, 49, 3)),
@@ -66,14 +69,14 @@ MODELS = {
     "nam": dict(src="noaa", cycle=6, lag=2.0, res=0.1, steps=list(range(0, 85, 3)),
                 url=lambda d, h, f: f"https://noaa-nam-pds.s3.amazonaws.com/nam.{d}/nam.t{h:02d}z.awphys{f:02d}.tm00.grib2",
                 fields=NOAA_FIELDS),
-    "ecmwf": dict(src="ecmwf", cycle=12, lag=7.0, res=0.25, steps=list(range(0, HOURS + 1, 3)),
+    "ecmwf": dict(src="ecmwf", cycle=12, lag=7.0, res=0.25, steps=LONG,
                   url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/ifs/0p25/oper/{d}{h:02d}0000-{f}h-oper-fc.grib2",
-                  params={"u": "10u", "v": "10v", "gust": "10fg", "tp": "tp", "tcc": "tcc",
+                  params={"u": "10u", "v": "10v", "gust": "10fg|10fg3|10fg6", "tp": "tp", "tcc": "tcc",
                           "msl": "msl", "t2": "2t", "cape": "mucape"}),
-    "aifs": dict(src="ecmwf", cycle=6, lag=5.0, res=0.25, steps=list(range(0, HOURS + 1, 6)),
+    "aifs": dict(src="ecmwf", cycle=6, lag=5.0, res=0.25, steps=list(range(0, EXT + 1, 6)),
                  url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/aifs-single/0p25/oper/{d}{h:02d}0000-{f}h-oper-fc.grib2",
                  params={"u": "10u", "v": "10v", "tp": "tp", "tcc": "tcc", "msl": "msl", "t2": "2t"}),
-    "marine": dict(src="noaa", cycle=6, lag=4.0, res=0.25, steps=list(range(0, HOURS + 1, 3)),
+    "marine": dict(src="noaa", cycle=6, lag=4.0, res=0.25, steps=LONG,
                    url=lambda d, h, f: f"{S3_GFS}/gfs.{d}/{h:02d}/wave/gridded/gfswave.t{h:02d}z.global.0p25.f{f:03d}.grib2",
                    fields={"hs": ("HTSGW", "surface"), "dir": ("DIRPW", "surface"), "per": ("PERPW", "surface")}),
 }
@@ -129,7 +132,9 @@ def noaa_ranges(idx_text, wanted):
     return out
 
 def ecmwf_ranges(index_text, params):
-    want = {p: k for k, p in params.items()}
+    # A param may list other names it goes by, separated by "|" (ECMWF calls
+    # the gust 10fg3 for steps to 144 h and 10fg6 after).
+    want = {alt: k for k, p in params.items() for alt in p.split("|")}
     out = {}
     for line in index_text.strip().splitlines():
         try: j = json.loads(line)
@@ -263,11 +268,13 @@ def fetch_step(cfg, d, hh, f):
     return out
 
 def pick_run(cfg):
-    """Newest cycle whose LAST needed step is already published."""
-    now = dt.datetime.utcnow() - dt.timedelta(hours=cfg["lag"])
+    """Newest cycle whose first 5 days are already published. Steps past that
+    are taken as far as they're out (see build_model); a run's last days are
+    published last, and waiting for them would mean an older run."""
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None) - dt.timedelta(hours=cfg["lag"])
     h = (now.hour // cfg["cycle"]) * cfg["cycle"]
     t = now.replace(hour=h, minute=0, second=0, microsecond=0)
-    last = cfg["steps"][-1]
+    last = max(f for f in cfg["steps"] if f <= HOURS)
     for _ in range(6):
         d, hh = t.strftime("%Y%m%d"), t.hour
         u = cfg["url"](d, hh, last)
@@ -336,7 +343,8 @@ def build_model(name, out_dir):
 
     for ti_out, (f, msgs) in enumerate(raw):
         vt = run + dt.timedelta(hours=f)
-        if vt.timestamp() < time.time() - 3 * 3600: continue      # already in the past
+        if f > HOURS and not msgs: break                           # not out yet: stop, so there are no gaps
+        if vt.replace(tzinfo=dt.timezone.utc).timestamp() < time.time() - 3 * 3600: continue   # already in the past
         if not msgs: continue
         H = {}
         for k, b in msgs.items():
