@@ -498,6 +498,18 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
   .px-big { display:none; }
 }
 
+/* chart only (any screen size) */
+#view-passage.full .px-panel { display:none; }
+#view-passage.full .px-mapbox, #view-passage.full.bigmap .px-mapbox { flex:1 1 auto; border:0; }
+#view-passage.full .px-big { display:none; }
+#view-passage.full .px-full-arrow { transform:rotate(180deg); transform-origin:12.5px 12px; }
+/* departure planning */
+table.px-grid th.px-cur, table.px-grid td.px-cur { box-shadow:inset 0 0 0 2px var(--accent); }
+.px-within + .px-within { margin-top:6px; }
+#pxEvery { flex:1; max-width:220px; }
+#pxEvery button { padding:7px 4px; font-size:13px; }
+table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px; }
+
 /* deck camera (Boat tab) */
 .cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
 .cam-frame img { display:block; width:100%; height:100%; object-fit:cover; cursor:zoom-in; }
@@ -681,6 +693,7 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
           <button class="fab" onclick="PX.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
           <button class="fab" onclick="PX.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
           <button class="fab" onclick="pxDraw(true)" title="Fit the route" aria-label="Fit the route"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+          <button class="fab" id="pxFullBtn" onclick="pxFull()" title="Chart only" aria-label="Chart only"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9 4.5v15" stroke="currentColor" stroke-width="2"/><path class="px-full-arrow" d="M14.5 9.5l-2.5 2.5 2.5 2.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <button class="fab px-big" onclick="pxBigMap()" title="Bigger chart" aria-label="Bigger chart"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
         <div class="px-editbar" id="pxEditBar" hidden>
@@ -699,6 +712,12 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
           <p class="note" id="pxRSpread" style="margin:8px 4px 0;"></p>
           <p class="note" style="margin:4px 4px 0;">Solid line sailing, dotted motoring. Tap a model for its route hour by hour.</p>
           <p class="note" id="pxRRuns" style="margin:4px 4px 0;"></p>
+          <div class="section-title" style="display:flex;align-items:center;gap:8px;">Departure planning<span style="flex:1"></span><span class="note px-prog" id="pxPProg"></span></div>
+          <div class="card pad" id="pxPlanBest"></div>
+          <div class="px-within" style="margin-top:12px;"><span class="note">Leaving in the next</span><div class="seg px-within-seg"><button data-d="1" onclick="pxSetWithin(1)">1 d</button><button data-d="2" onclick="pxSetWithin(2)">2 d</button><button data-d="3" onclick="pxSetWithin(3)">3 d</button><button data-d="4" onclick="pxSetWithin(4)">4 d</button></div></div>
+          <div class="px-within"><span class="note">One departure every</span><div class="seg" id="pxEvery"><button data-h="6" onclick="pxSetEvery(6)">6 h</button><button data-h="12" onclick="pxSetEvery(12)">12 h</button><button data-h="24" onclick="pxSetEvery(24)">24 h</button></div></div>
+          <div class="fc-wrap" id="pxPlan"></div>
+          <p class="note" style="margin:8px 4px 0;">Each square is the routed passage for one departure, in hours under way.<span class="px-key px-ok"></span>inside your limits<span class="px-key px-close"></span>close to one<span class="px-key px-bad"></span>over one (✕ no route)<span class="px-key px-part"></span>forecast ends first. The top row counts the models inside your limits out of those that reach the finish. Tap a square to see those routes.</p>
         </div>
         <div id="pxLineBox">
         <div class="section-title">When to leave</div>
@@ -3507,6 +3526,7 @@ function pxRouteResult(end, o, info) {
     if (e.ws > o.lim.wind) ov.push('wind'); if (e.wg > o.lim.gust) ov.push('gust'); if (e.wh > o.lim.wave) ov.push('wave');
     if (twa < PX_UP && e.ws > o.lim.up) ov.push('up');
     if (ov.length) { r.overS += s; ov.forEach(x => r.over[x] = true); }
+    else if (e.ws > o.lim.wind * PX_CLOSE || e.wg > o.lim.gust * PX_CLOSE || e.wh > o.lim.wave * PX_CLOSE || (twa < PX_UP && e.ws > o.lim.up * PX_CLOSE)) r.close = true;
     b.over = ov;
   }
   r.durS = (r.arrive || end.t) - r.t0;
@@ -3531,7 +3551,7 @@ function pxRouteRun(F, M, Lm, pts, t0, o) {     // run to the end (tests, and sh
 const PX_URL = `${FSB}/weather/${VESSEL}-passage`;
 const PX_MODELS = ['ecmwf', 'gfs', 'aifs', 'nam', 'hrrr'];
 const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3,
-                 mode: 'line', r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true } };
+                 mode: 'line', every: 12, r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true } };
 const PX_LIMS = [
   { k: 'speed', label: 'Average speed', sub: 'Over the ground, start to finish', unit: 'kn', step: .5, min: 2, max: 10, dp: 1, mode: 'line' },
   { k: 'pct', label: 'Boat speed', sub: 'Percent of the IP380 design polar', unit: '%', step: 5, min: 50, max: 120, mode: 'route' },
@@ -3544,7 +3564,7 @@ const PX_LIMS = [
   { k: 'up', label: 'Wind ahead of 60°', sub: 'Upwind: motoring or beating into it', unit: 'kn', step: 1, min: 4, max: 40 }
 ];
 const PX = { d: JSON.parse(JSON.stringify(PX_DEF)), loaded: false, map: null, line: null, marks: [], runLayer: null,
-             rgen: 0, routes: {}, rsel: null, rdep: 0, rLayer: null, rland: null, rpct: 0,
+             rgen: 0, routes: {}, rsel: null, rdep: 0, rLayer: null, rland: null, rpct: 0, rc: {}, rcKey: '',
              editing: false, undo: [], grids: {}, pend: {}, res: {}, R: null, deps: [], prog: [0, 0], gen: 0, saveT: null, evalT: null };
 
 // ─── saved routes and limits ───────────────────────────────────────
@@ -3557,6 +3577,7 @@ async function pxLoadSaved() {
       PX.d.lim = Object.assign({}, PX_DEF.lim, j.lim || {});
       PX.d.r = Object.assign({}, PX_DEF.r, j.r || {});
       if (PX.d.mode !== 'route') PX.d.mode = 'line';
+      if (![6, 12, 24].includes(PX.d.every)) PX.d.every = 12;
       PX.d.models = (PX.d.models || []).filter(m => PX_MODELS.includes(m));
       if (!PX.d.models.length) PX.d.models = PX_DEF.models.slice();
     }
@@ -3598,6 +3619,11 @@ function pxInitMap() {
   PX.map.on('click', pxMapClick);
 }
 
+function pxFull() {                             // chart only: hide the panel, or bring it back
+  const v = $('view-passage'); v.classList.toggle('full');
+  $('pxFullBtn').title = $('pxFullBtn').ariaLabel = v.classList.contains('full') ? 'Show the panel' : 'Chart only';
+  setTimeout(() => PX.map.invalidateSize(), 80);
+}
 function pxBigMap() {                            // phones: chart takes 70% of the screen, or back to 36%
   $('view-passage').classList.toggle('bigmap');
   setTimeout(() => PX.map.invalidateSize(), 80);
@@ -3831,7 +3857,7 @@ function pxPaint() {
   document.querySelectorAll('#pxMode button').forEach(b => b.classList.toggle('on', b.dataset.m === PX.d.mode));
   $('pxLineBox').hidden = route; $('pxRouteBox').hidden = !route || !PX.R;
   pxPaintRoute(); pxPaintLimits(); pxPaintProg();
-  if (route) pxPaintRoutes(); else { pxPaintBest(); pxPaintGrid(); }
+  if (route) { pxPaintRoutes(); pxPaintPlan(); } else { pxPaintBest(); pxPaintGrid(); }
 }
 function pxPaintRoute() {
   const r = pxCur();
@@ -4040,50 +4066,153 @@ const pxR = k => (PX.d.r || PX_RDEF)[k] ?? PX_RDEF[k];
 function pxSetMode(m) { PX.d.mode = m; pxSave(); pxRefresh(); }
 function pxSetDep(ms) { PX.rdep = +ms; pxRouteAll(); }
 function pxToggleKeep() { PX.d.r = Object.assign({}, PX_RDEF, PX.d.r, { keep: !pxR('keep') }); pxSave(); pxPaintLimits(); pxRouteAll(); }
-function pxDrive(g, gen, label) {                 // run a router generator in ~40 ms slices
+function pxDrive(g, gen, label, out) {            // run a router generator in ~40 ms slices
   return new Promise(res => {
     const tick = () => {
       if (gen !== PX.rgen) return res(null);
       const t = performance.now(); let s;
       do { s = g.next(); if (s.done) return res(s.value); PX.rpct = s.value; } while (performance.now() - t < 40);
-      $('pxRProg').textContent = `Routing ${label} ${Math.round((PX.rpct || 0) * 100)}%`;
+      $(out || 'pxRProg').textContent = `${out === 'pxPProg' ? PX.planTxt + ' · ' : 'Routing '}${label} ${Math.round((PX.rpct || 0) * 100)}%`;
       setTimeout(tick, 0);
     };
     tick();
   });
 }
+// Routed passages are kept for this visit, keyed by model and departure, while
+// the route, settings and limits stay the same - so picking a departure that
+// departure planning has already done is instant.
+function pxRouteOne(F, M, Lm, pts, t0, o, gen, label, out) {
+  return pxDrive(pxRouteGen(F, M, Lm, pts, t0, o), gen, label, out).then(res => {
+    if (res && o.keep && res.stuck)                      // can't stay inside the limits: the fastest, and say so
+      return pxDrive(pxRouteGen(F, M, Lm, pts, t0, Object.assign({}, o, { keep: false })), gen, label, out).then(r2 => { if (r2) r2.broke = true; return r2; });
+    return res;
+  });
+}
+const pxPlanDeps = () => PX.deps.filter((ms, i) => i % Math.round((PX.d.every || 12) / 3) === 0);
 async function pxRouteAll() {
   const gen = ++PX.rgen, r = pxCur();
-  PX.routes = {}; PX.rsel = null; pxClearRoutes(); pxPaintRoutes();
+  PX.routes = {}; pxClearRoutes(); pxPaintRoutes();
   if (!r || r.pts.length < 2 || PX.editing || PX.d.mode !== 'route') return;
   if (!PX.deps.length) PX.deps = pxDepartures(PX.d.within);
   if (!PX.deps.includes(PX.rdep)) PX.rdep = PX.deps[0];
+  const ctx = JSON.stringify([r.pts, PX.d.r, PX.d.lim]);
+  if (ctx !== PX.rcKey) { PX.rc = {}; PX.rcKey = ctx; }
   const pts = r.pts, lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
   const box = [Math.min(...lats) - 3, Math.min(...lons) - 3, Math.max(...lats) + 3, Math.max(...lons) + 3];
   let nm = 0; for (let i = 1; i < pts.length; i++) nm += haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) / 1852;
-  const t0 = PX.rdep / 1000, tEnd = t0 + nm / 2.5 * 3600 + 12 * 3600;      // even at 2.5 kn it's done by then
+  const plan = pxPlanDeps(), lastDep = Math.max(PX.rdep, plan[plan.length - 1] || 0);
+  const tEnd = lastDep / 1000 + nm / 2.5 * 3600 + 12 * 3600;      // even at 2.5 kn it's done by then
   $('pxRProg').textContent = 'Loading forecasts…';
-  const [Lm] = await Promise.all([pxLandFor(box, pts)]);
+  const Lm = await pxLandFor(box, pts);
   if (gen !== PX.rgen) return;
   PX.rland = !!Lm;
   const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
   const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep') };
+  const Fs = {};
+  // Every model's route for the departure you picked...
   for (const id of PX.d.models) {
     const F = await pxEnsure(id, box, tEnd, ['ws', 'wd', 'wg']), Mg = await marine;
     if (gen !== PX.rgen) return;
-    if (!F || F.none) { PX.routes[id] = { none: F ? F.none : 'Could not load this model' }; pxPaintRoutes(); continue; }
-    const M = Mg && !Mg.none ? Mg : null;
-    if (pxEnv(F, M, pts[0][0], pts[0][1], t0) === null) { PX.routes[id] = { none: 'Its forecast doesn’t cover this departure' }; pxPaintRoutes(); continue; }
-    let res = await pxDrive(pxRouteGen(F, M, Lm, pts, t0, o), gen, pxLabel(id));
-    if (res && o.keep && res.stuck) {                     // can't stay inside the limits: show the fastest, and say so
-      res = await pxDrive(pxRouteGen(F, M, Lm, pts, t0, Object.assign({}, o, { keep: false })), gen, pxLabel(id));
-      if (res) res.broke = true;
-    }
-    if (gen !== PX.rgen || !res) return;
-    res.run = F.run; PX.routes[id] = res;
-    pxPaintRoutes(); pxDrawRoutes();
+    if (!F || F.none) { Fs[id] = { none: F ? F.none : 'Could not load this model' }; PX.routes[id] = Fs[id]; pxPaintRoutes(); continue; }
+    Fs[id] = { F, M: Mg && !Mg.none ? Mg : null };
+    const res = await pxRouteCached(id, Fs[id], Lm, pts, PX.rdep, o, gen);
+    if (gen !== PX.rgen) return;
+    PX.routes[id] = res; pxPaintRoutes(); pxDrawRoutes();
   }
-  if (gen === PX.rgen) { $('pxRProg').textContent = ''; pxPaintRoutes(); pxFitRoutes(); }
+  $('pxRProg').textContent = ''; pxPaintRoutes(); pxFitRoutes();
+  // ...then departure planning: every planned departure on every model.
+  let n = 0; const total = plan.length * PX.d.models.length;
+  for (const ms of plan) for (const id of PX.d.models) {
+    n++;
+    if (!Fs[id] || Fs[id].none) continue;
+    PX.planTxt = `${n} of ${total}`;
+    await pxRouteCached(id, Fs[id], Lm, pts, ms, o, gen, 'pxPProg');
+    if (gen !== PX.rgen) return;
+    pxPaintPlan();
+  }
+  if (gen === PX.rgen) { $('pxRProg').textContent = ''; $('pxPProg').textContent = ''; pxPaintRoutes(); pxPaintPlan(); }
+}
+async function pxRouteCached(id, FM, Lm, pts, ms, o, gen, out) {
+  const key = `${id}|${ms}`, c = PX.rc[key];
+  if (c && c.run === FM.F.run) return c;
+  if (pxEnv(FM.F, FM.M, pts[0][0], pts[0][1], ms / 1000) === null) return (PX.rc[key] = { none: 'Its forecast doesn’t cover this departure', run: FM.F.run });
+  const res = await pxRouteOne(FM.F, FM.M, Lm, pts, ms / 1000, o, gen, pxLabel(id), out);
+  if (!res) return null;                                   // interrupted
+  res.run = FM.F.run; PX.rc[key] = res;
+  return res;
+}
+// How a routed passage did against your limits, for the planning grid.
+function pxRStatus(x) {
+  if (!x) return 'wait';
+  if (x.none) return 'na';
+  if (x.past) return 'part';
+  if (x.stuck || x.broke || x.overS > 0) return 'bad';
+  return x.close ? 'close' : 'ok';
+}
+function pxPlanAgree(ms) {
+  const a = { n: 0, ok: 0, close: 0, bad: 0, part: 0, models: 0 };
+  for (const id of PX.d.models) {
+    const st = pxRStatus(PX.rc[`${id}|${ms}`]); if (st === 'wait' || st === 'na') continue;
+    a.models++; a[st]++; if (st !== 'part') a.n++;
+  }
+  a.status = !a.n ? 'part' : a.bad === a.n ? 'bad' : a.bad ? 'mixed' : a.close ? 'close' : 'ok';
+  return a;
+}
+function pxPlanPick(ms, id) {
+  PX.rdep = ms; PX.rsel = id || null;
+  $('pxPanel').scrollTo({ top: 0, behavior: 'smooth' });
+  pxRouteAll();
+}
+function pxSetEvery(h) { PX.d.every = h; pxSave(); pxRouteAll(); }
+function pxPaintPlan() {
+  if (!$('pxPlan')) return;
+  document.querySelectorAll('#pxEvery button').forEach(b => b.classList.toggle('on', +b.dataset.h === (PX.d.every || 12)));
+  document.querySelectorAll('.px-within-seg button').forEach(b => b.classList.toggle('on', +b.dataset.d === PX.d.within));
+  const deps = pxPlanDeps(), r = pxCur();
+  if (!r || !deps.length) { $('pxPlan').innerHTML = ''; $('pxPlanBest').innerHTML = ''; return; }
+  const start = r.pts[0], night = deps.map(ms => pxSun(start[0], start[1], ms) < -6 ? ' n' : '');
+  let h1 = '<tr class="fc-day"><th class="fc-lab"></th>', h2 = '<tr class="fc-hr"><th class="fc-lab"><span class="note">Leave at</span></th>', last = ''; const ds = [];
+  deps.forEach((ms, k) => {
+    const d = new Date(ms), day = d.toDateString(), nd = day !== last; last = day; ds.push((nd ? ' dstart' : '') + (ms === PX.rdep ? ' px-cur' : ''));
+    h1 += `<th class="${ds[k]}${night[k]}">${nd ? `<span>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${d.getDate()}</span>` : ''}</th>`;
+    h2 += `<th class="${ds[k]}${night[k]}">${String(d.getHours()).padStart(2, '0')}</th>`;
+  });
+  let body = '<tr class="px-agree"><th class="fc-lab"><b>All models</b><small>inside limits</small></th>';
+  deps.forEach((ms, k) => { const a = pxPlanAgree(ms);
+    body += a.models ? `<td class="px-c px-${a.status}${ds[k]}" onclick="pxPlanPick(${ms})">${a.n ? `${a.n - a.bad}/${a.n}` : '·'}</td>` : `<td class="e${ds[k]}${night[k]}">…</td>`; });
+  body += '</tr>';
+  for (const id of PX.d.models) {
+    body += `<tr><th class="fc-lab">${pxChip(id)}</th>`;
+    deps.forEach((ms, k) => {
+      const x = PX.rc[`${id}|${ms}`], st = pxRStatus(x);
+      if (st === 'wait') body += `<td class="e${ds[k]}${night[k]}">…</td>`;
+      else if (st === 'na') body += `<td class="e${ds[k]}${night[k]}"></td>`;
+      else body += `<td class="px-c px-${st}${ds[k]}" onclick="pxPlanPick(${ms},'${id}')">${x.stuck ? '✕' : Math.round(x.durS / 3600) + (x.past ? '+' : '')}</td>`;
+    });
+    body += '</tr>';
+  }
+  $('pxPlan').innerHTML = `<table class="fc px-grid${(PX.d.every || 12) >= 12 ? ' px-wide' : ''}">${h1}</tr>${h2}</tr>${body}</table>`;
+  // When to leave: runs of planned departures where every model that reaches the finish stays inside your limits.
+  const wins = []; let cur = null;
+  deps.forEach((ms, k) => {
+    const a = pxPlanAgree(ms), good = a.n > 0 && !a.bad;
+    if (good) { if (!cur) cur = { i0: k, i1: k, close: false, minN: a.n, maxN: a.n, models: a.models }; cur.i1 = k; cur.close = cur.close || a.close > 0; cur.minN = Math.min(cur.minN, a.n); cur.maxN = Math.max(cur.maxN, a.n); }
+    else if (cur) { wins.push(cur); cur = null; }
+  });
+  if (cur) wins.push(cur);
+  const done = deps.every(ms => PX.d.models.every(id => pxRStatus(PX.rc[`${id}|${ms}`]) !== 'wait'));
+  const hrs = (i0, i1) => { const v = []; for (let k = i0; k <= i1; k++) PX.d.models.forEach(id => { const x = PX.rc[`${id}|${deps[k]}`]; if (x && x.arrive) v.push(x.durS / 3600); });
+    return v.length ? `${Math.round(Math.min(...v))}–${Math.round(Math.max(...v))} h under way` : ''; };
+  let html = '';
+  if (wins.length) html = wins.slice(0, 4).map(w => {
+    const one = w.i0 === w.i1;
+    const when = one ? `Leave ${pxDT(deps[w.i0])}` : `Leave ${pxDT(deps[w.i0])} to ${pxDT(deps[w.i1])}`;
+    const agree = w.minN === w.models ? `Inside your limits in ${w.models > 1 ? `all ${w.models} models` : 'the one model'}`
+      : `Inside your limits in every model that reaches the finish (${w.minN === w.maxN ? w.minN : `${w.minN}–${w.maxN}`} of ${w.models})`;
+    return `<button class="px-win ${w.close ? 'close' : 'ok'}" onclick="pxPlanPick(${deps[w.i0]})"><b>${when}</b><small>${agree}${w.close ? ', close to one in places' : ''}</small><small>${hrs(w.i0, w.i1)}</small></button>`;
+  }).join('');
+  else html = `<p class="note">${done ? `No planned departure in the next ${PX.d.within} day${PX.d.within > 1 ? 's' : ''} stays inside your limits in every model that reaches the finish.` : 'Working through the departures…'}</p>`;
+  $('pxPlanBest').innerHTML = html;
 }
 // Widen the chart to the routes if any of them runs off it.
 function pxFitRoutes() {
