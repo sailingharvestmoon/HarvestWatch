@@ -3214,6 +3214,9 @@ function closeCamFull(e) { e.stopPropagation(); $('camFull').hidden = true; $('c
 const PX_STEP_S = 900;                 // the route is checked every 15 minutes of sailing
 const PX_UP = 60, PX_DOWN = 120;       // true wind angle: under 60° upwind, over 120° downwind
 const PX_CLOSE = 0.85;                 // amber from 85% of a limit
+const PX_WAC_KN = 1;                   // "wind against the current" counts where the current runs at least 1 kn
+// Wind blowing against a current (wind FROM roughly the way the current flows TO): what stands up the Gulf Stream.
+const pxAgainst = (wd, cs, cd) => cs >= PX_WAC_KN && wd === wd && cd === cd && Math.abs(((wd - cd) % 360 + 540) % 360 - 180) < 60;
 
 // Course over a leg as a rhumb line (matches the straight line drawn on the chart).
 function pxCourse(a, b) {
@@ -3309,9 +3312,10 @@ function pxD(F, dkey, skey, T, W) {          // a direction (degrees FROM), in s
   return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
 }
 // One departure on one model. F = wind grids, M = wave grids (may be null), R = route samples,
-// WF / WM = each sample's weights in F / M, t0 = departure (unix s), lim = the limits.
-function pxRun(F, M, R, WF, WM, t0, lim, keepRows) {
-  const r = { t0, maxWs: 0, maxWg: NaN, maxWh: NaN, maxUp: 0, overS: 0, over: {}, lvl: 0,
+// WF / WM = each sample's weights in F / M, t0 = departure (unix s), lim = the limits,
+// C / WC = current grids and weights (may be null).
+function pxRun(F, M, R, WF, WM, t0, lim, keepRows, C, WC) {
+  const r = { t0, maxWs: 0, maxWg: NaN, maxWh: NaN, maxUp: 0, maxCs: 0, overS: 0, over: {}, lvl: 0,
               up: 0, reach: 0, down: 0, n: 0, past: false, out: false, wavesPast: false, rows: keepRows ? [] : null };
   const hasG = !!F.d.wg;
   for (let k = 0; k < R.pts.length; k++) {
@@ -3327,14 +3331,18 @@ function pxRun(F, M, R, WF, WM, t0, lim, keepRows) {
       const Tm = pxTi(M.times, t);
       if (Tm) { wh = pxS(M, 'wh', Tm, WM[k]); wp = pxS(M, 'wp', Tm, WM[k]); } else r.wavesPast = true;
     }
+    let cs = NaN, cd = NaN;
+    if (C && WC && WC[k]) { const Tc = pxTi(C.times, t); if (Tc) { cs = pxS(C, 'cs', Tc, WC[k]); cd = pxD(C, 'cd', 'cs', Tc, WC[k]); } }
+    const wac = pxAgainst(wd, cs, cd);
     const rel = wd === wd ? ((wd - p.crs) % 360 + 360) % 360 : NaN, twa = rel > 180 ? 360 - rel : rel;
     const over = [];
     if (ws > lim.wind) over.push('wind');
     if (wg > lim.gust) over.push('gust');
     if (wh > lim.wave) over.push('wave');
     if (twa < PX_UP && ws > lim.up) over.push('up');
+    if (wac && ws > lim.wac) over.push('wac');
     const lvl = over.length ? 2 : (ws > lim.wind * PX_CLOSE || wg > lim.gust * PX_CLOSE || wh > lim.wave * PX_CLOSE
-                                   || (twa < PX_UP && ws > lim.up * PX_CLOSE)) ? 1 : 0;
+                                   || (twa < PX_UP && ws > lim.up * PX_CLOSE) || (wac && ws > lim.wac * PX_CLOSE)) ? 1 : 0;
     const dt = k + 1 < R.pts.length ? R.pts[k + 1].s - p.s : 0;
     if (lvl === 2) { r.overS += dt; over.forEach(x => r.over[x] = true); }
     if (lvl > r.lvl) r.lvl = lvl;
@@ -3342,9 +3350,10 @@ function pxRun(F, M, R, WF, WM, t0, lim, keepRows) {
     if (wg === wg && !(wg <= r.maxWg)) r.maxWg = wg;
     if (wh === wh && !(wh <= r.maxWh)) r.maxWh = wh;
     if (twa < PX_UP && ws > r.maxUp) r.maxUp = ws;
+    if (cs > r.maxCs) r.maxCs = cs;
     if (twa === twa) { if (twa < PX_UP) r.up++; else if (twa > PX_DOWN) r.down++; else r.reach++; }
     r.n++;
-    if (r.rows) r.rows.push({ t, nm: p.nm, lat: p.lat, lon: p.lon, ws, wd, wg, wh, wp, twa, side: rel > 180 ? 'port' : 'stbd', lvl, over });
+    if (r.rows) r.rows.push({ t, nm: p.nm, lat: p.lat, lon: p.lon, ws, wd, wg, wh, wp, cs, cd, wac, twa, side: rel > 180 ? 'port' : 'stbd', lvl, over });
   }
   r.status = r.lvl === 2 ? 'bad' : (r.past || r.out || !r.n) ? 'part' : r.lvl === 1 ? 'close' : 'ok';
   return r;
@@ -3414,13 +3423,18 @@ function pxClear(Lm, la1, lo1, la2, lo2, nm) {  // no land along a straight stre
   for (let k = 1; k <= n; k++) { const f = k / n; if (pxLandAt(Lm, la1 + (la2 - la1) * f, lo1 + (lo2 - lo1) * f)) return false; }
   return true;
 }
-// Wind and waves at one place and time; null once the wind forecast has ended or outside the model.
-function pxEnv(F, M, lat, lon, t) {
+// Wind, waves and current at one place and time; null once the wind forecast has ended or outside the model.
+// The current is optional: none (or no data, e.g. near land) counts as slack water.
+function pxEnv(F, M, lat, lon, t, C) {
   const W = pxWt(F.G, lat, lon); if (!W) return null;
   const T = pxTi(F.times, t); if (!T) return null;
   const ws = pxS(F, 'ws', T, W); if (ws !== ws) return null;
   const e = { ws, wd: pxD(F, 'wd', 'ws', T, W), wg: F.d.wg ? pxS(F, 'wg', T, W) : NaN, wh: NaN, wp: NaN };
   if (M) { const Wm = pxWt(M.G, lat, lon), Tm = Wm && pxTi(M.times, t); if (Tm) { e.wh = pxS(M, 'wh', Tm, Wm); e.wp = pxS(M, 'wp', Tm, Wm); } }
+  e.cs = 0; e.cd = 0;
+  if (C) { const Wc = pxWt(C.G, lat, lon), Tc = Wc && pxTi(C.times, t);
+    if (Tc) { const cs = pxS(C, 'cs', Tc, Wc), cd = pxD(C, 'cd', 'cs', Tc, Wc); if (cs === cs && cd === cd) { e.cs = cs; e.cd = cd; } } }
+  e.wac = pxAgainst(e.wd, e.cs, e.cd);
   return e;
 }
 function pxTwa(wd, hd) { const rel = ((wd - hd) % 360 + 360) % 360; return [rel > 180 ? 360 - rel : rel, rel > 180 ? 'port' : 'stbd']; }
@@ -3432,9 +3446,29 @@ function pxBoat(e, hd, o) {
   if (o.keep && twa < PX_UP && e.ws > o.lim.up) return null;
   return spd > 0.05 ? { spd, mot, twa } : null;
 }
-const pxOver = (e, L) => e.ws > L.wind || e.wg > L.gust || e.wh > L.wave;
+const pxOver = (e, L) => e.ws > L.wind || e.wg > L.gust || e.wh > L.wave || (e.wac && e.ws > L.wac);
+// Heading through the water that makes good bearing bT over the ground against the current, and the
+// speed made good; null if the current is too strong to hold that course or no heading sails.
+function pxSteer(e, bT, o) {
+  const r = Math.PI / 180;
+  let hd = bT, b = pxBoat(e, hd, o);
+  if (!e.cs) return b ? { b, hd, sog: b.spd } : null;
+  const cx = e.cs * Math.sin((e.cd - bT) * r), ca = e.cs * Math.cos((e.cd - bT) * r);   // across (to starboard +) and along
+  for (let k = 0; k < 2; k++) {
+    if (!b || Math.abs(cx) >= b.spd) return null;
+    hd = (bT - Math.asin(cx / b.spd) / r + 360) % 360; b = pxBoat(e, hd, o);
+  }
+  if (!b || Math.abs(cx) >= b.spd) return null;
+  const sog = Math.sqrt(b.spd * b.spd - cx * cx) + ca;
+  return sog > 0.1 ? { b, hd, sog } : null;
+}
+// Where a heading and speed through the water, plus the current, take her in dt seconds.
+function pxMove(n, e, hd, nm, dt) {
+  const p = destPoint(n.lat, n.lon, hd, nm * 1852);
+  return e.cs ? destPoint(p.lat, p.lon, e.cd, e.cs * dt / 3600 * 1852) : p;
+}
 // One route: from pts[0], through each of your points in order, to the last.
-// o: { pct, motorBelow, motorKn, lim, keep (stay inside the limits), dtS, tackS }.
+// o: { pct, motorBelow, motorKn, lim, keep (stay inside the limits), dtS, tackS, C (current grids, optional) }.
 // A generator, so the page can stay responsive: it yields its progress (0..1)
 // now and then and returns the result.
 function* pxRouteGen(F, M, Lm, pts, t0, o) {
@@ -3456,25 +3490,25 @@ function* pxRouteGen(F, M, Lm, pts, t0, o) {
       const sec = new Array(NSEC).fill(null), secT = new Array(NSEC).fill(null);
       let alive = 0;
       for (const n of front) {
-        const e = n.e || (n.e = pxEnv(F, M, n.lat, n.lon, n.t));
+        const e = n.e || (n.e = pxEnv(F, M, n.lat, n.lon, n.t, o.C));
         if (!e) continue;
         if (o.keep && pxOver(e, o.lim)) continue;
         alive++;
         const bT = bearing(n.lat, n.lon, tg[0], tg[1]), dT = haversine(n.lat, n.lon, tg[0], tg[1]) / 1852;
         // Close enough to head straight in? "Close" is a few steps, or more where the fan
         // has spread so wide that its points could pass either side of the mark.
-        const bt = pxBoat(e, bT, o), stepNm = bt ? bt.spd * dt / 3600 : 0;
-        if (bt && dT <= stepNm * Math.max(3, Math.ceil(n.d0 / 1852 * SEC_RAD / stepNm) + 1) && pxClear(Lm, n.lat, n.lon, tg[0], tg[1], dT)) {
-          const tf = n.t + dT / bt.spd * 3600;
-          if (!best || tf < best.t) best = { lat: tg[0], lon: tg[1], t: tf, parent: n, hd: bT, spd: bt.spd, mot: bt.mot, d0: 0 };
+        const st = pxSteer(e, bT, o), stepNm = st ? st.sog * dt / 3600 : 0;
+        if (st && dT <= stepNm * Math.max(3, Math.ceil(n.d0 / 1852 * SEC_RAD / stepNm) + 1) && pxClear(Lm, n.lat, n.lon, tg[0], tg[1], dT)) {
+          const tf = n.t + dT / st.sog * 3600;
+          if (!best || tf < best.t) best = { lat: tg[0], lon: tg[1], t: tf, parent: n, hd: st.hd, spd: st.b.spd, mot: st.b.mot, d0: 0 };
         }
         for (let k = -SPAN; k <= SPAN; k += HS) {
           const hd = (bT + k + 360) % 360, b = pxBoat(e, hd, o); if (!b) continue;
           const side = b.mot ? null : pxTwa(e.wd, hd)[1];
           let nm = b.spd * dt / 3600;
           if (side && n.side && side !== n.side) nm *= Math.max(0, 1 - tackS / dt);   // a tack or gybe costs time
-          const p = destPoint(n.lat, n.lon, hd, nm * 1852);
-          if (!pxClear(Lm, n.lat, n.lon, p.lat, p.lon, nm)) continue;
+          const p = pxMove(n, e, hd, nm, dt);
+          if (!pxClear(Lm, n.lat, n.lon, p.lat, p.lon, haversine(n.lat, n.lon, p.lat, p.lon) / 1852)) continue;
           const rb = ((bearing(A.lat, A.lon, p.lat, p.lon) - brgA + 540) % 360) - 180;
           if (rb < -SPAN || rb >= SPAN) continue;
           const s = Math.floor((rb + SPAN) / (2 * SPAN) * NSEC), d0 = haversine(A.lat, A.lon, p.lat, p.lon);
@@ -3510,7 +3544,7 @@ function* pxRouteGen(F, M, Lm, pts, t0, o) {
 }
 function pxRouteResult(end, o, info) {
   const path = []; for (let n = end; n; n = n.parent) path.push(n); path.reverse();
-  const r = Object.assign({ path, t0: path[0].t, arrive: info.past || info.stuck ? null : end.t, nm: 0, motS: 0, maxWs: 0, maxWg: NaN, maxWh: NaN,
+  const r = Object.assign({ path, t0: path[0].t, arrive: info.past || info.stuck ? null : end.t, nm: 0, motS: 0, maxWs: 0, maxWg: NaN, maxWh: NaN, maxCs: 0, wacS: 0,
                             up: 0, reach: 0, down: 0, overS: 0, over: {}, keep: o.keep }, info);
   for (let i = 1; i < path.length; i++) {
     const a = path[i - 1], b = path[i], s = b.t - a.t, e = a.e;
@@ -3522,11 +3556,15 @@ function pxRouteResult(end, o, info) {
     if (e.ws > r.maxWs) r.maxWs = e.ws;
     if (e.wg === e.wg && !(e.wg <= r.maxWg)) r.maxWg = e.wg;
     if (e.wh === e.wh && !(e.wh <= r.maxWh)) r.maxWh = e.wh;
+    if (e.cs > r.maxCs) r.maxCs = e.cs;
+    if (e.wac) r.wacS += s;
     const ov = [];
     if (e.ws > o.lim.wind) ov.push('wind'); if (e.wg > o.lim.gust) ov.push('gust'); if (e.wh > o.lim.wave) ov.push('wave');
     if (twa < PX_UP && e.ws > o.lim.up) ov.push('up');
+    if (e.wac && e.ws > o.lim.wac) ov.push('wac');
     if (ov.length) { r.overS += s; ov.forEach(x => r.over[x] = true); }
-    else if (e.ws > o.lim.wind * PX_CLOSE || e.wg > o.lim.gust * PX_CLOSE || e.wh > o.lim.wave * PX_CLOSE || (twa < PX_UP && e.ws > o.lim.up * PX_CLOSE)) r.close = true;
+    else if (e.ws > o.lim.wind * PX_CLOSE || e.wg > o.lim.gust * PX_CLOSE || e.wh > o.lim.wave * PX_CLOSE || (twa < PX_UP && e.ws > o.lim.up * PX_CLOSE)
+             || (e.wac && e.ws > o.lim.wac * PX_CLOSE)) r.close = true;
     b.over = ov;
   }
   r.durS = (r.arrive || end.t) - r.t0;
@@ -3550,7 +3588,7 @@ function pxRouteRun(F, M, Lm, pts, t0, o) {     // run to the end (tests, and sh
 // (weather/<vessel>-passage), nothing on the phone.
 const PX_URL = `${FSB}/weather/${VESSEL}-passage`;
 const PX_MODELS = ['ecmwf', 'gfs', 'aifs', 'nam', 'hrrr'];
-const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3,
+const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15, wac: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3,
                  mode: 'line', every: 12, r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true } };
 const PX_LIMS = [
   { k: 'speed', label: 'Average speed', sub: 'Over the ground, start to finish', unit: 'kn', step: .5, min: 2, max: 10, dp: 1, mode: 'line' },
@@ -3561,7 +3599,8 @@ const PX_LIMS = [
   { k: 'wind', label: 'Wind', sub: 'Sustained, from any direction', unit: 'kn', step: 1, min: 8, max: 50 },
   { k: 'gust', label: 'Gusts', sub: 'AIFS has no gust forecast', unit: 'kn', step: 1, min: 10, max: 60 },
   { k: 'wave', label: 'Waves', sub: 'Significant height', unit: 'ft', step: 1, min: 2, max: 25 },
-  { k: 'up', label: 'Wind ahead of 60°', sub: 'Upwind: motoring or beating into it', unit: 'kn', step: 1, min: 4, max: 40 }
+  { k: 'up', label: 'Wind ahead of 60°', sub: 'Upwind: motoring or beating into it', unit: 'kn', step: 1, min: 4, max: 40 },
+  { k: 'wac', label: 'Wind against the current', sub: 'Where it runs over 1 kn, like the Gulf Stream', unit: 'kn', step: 1, min: 5, max: 40 }
 ];
 const PX = { d: JSON.parse(JSON.stringify(PX_DEF)), loaded: false, map: null, line: null, marks: [], runLayer: null,
              rgen: 0, routes: {}, rsel: null, rdep: 0, rLayer: null, rland: null, rpct: 0, rc: {}, rcKey: '',
@@ -3816,10 +3855,10 @@ async function pxCompute() {
   const lats = r.pts.map(p => p[0]), lons = r.pts.map(p => p[1]);
   const box = [Math.min(...lats) - 1, Math.min(...lons) - 1, Math.max(...lats) + 1, Math.max(...lons) + 1];
   const tEnd = PX.deps[PX.deps.length - 1] / 1000 + PX.R.durS + 3 * 3600;
-  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
+  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']), current = pxEnsure('current', box, tEnd, ['cs', 'cd']);
   await Promise.all(PX.d.models.map(async id => {
     await pxEnsure(id, box, tEnd, ['ws', 'wd', 'wg']);
-    await marine;
+    await marine; await current;
     if (gen !== PX.gen) return;
     pxEvalModel(id); pxPaint();
   }));
@@ -3830,9 +3869,11 @@ function pxEvalModel(id) {
   if (!F || F.none || !R) { delete PX.res[id]; return; }
   const WF = R.pts.map(p => pxWt(F.G, p.lat, p.lon));
   const Mok = M && !M.none, WM = Mok ? R.pts.map(p => pxWt(M.G, p.lat, p.lon)) : null;
-  PX.res[id] = PX.deps.map(ms => pxRun(F, Mok ? M : null, R, WF, WM, ms / 1000, PX.d.lim));
+  const C = pxCurGrid(), WC = C ? R.pts.map(p => pxWt(C.G, p.lat, p.lon)) : null;
+  PX.res[id] = PX.deps.map(ms => pxRun(F, Mok ? M : null, R, WF, WM, ms / 1000, PX.d.lim, false, C, WC));
 }
 function pxEvalAll() { PX.d.models.forEach(id => pxEvalModel(id)); }
+const pxCurGrid = () => { const C = PX.grids.current; return C && !C.none ? C : null; };
 // Across the models for one departure: how many reach the finish, and how many of those stay inside.
 function pxAgreeAt(k) {
   const a = { n: 0, ok: 0, close: 0, bad: 0, part: 0, models: 0 };
@@ -3946,6 +3987,7 @@ function pxPaintGrid() {
   const runs = PX.d.models.filter(id => PX.grids[id] && PX.grids[id].run).map(id => `${pxLabel(id)} ${pxRunName(PX.grids[id].run)}`);
   const M = PX.grids.marine;
   if (M && M.run) runs.push(`waves GFS-Wave ${pxRunName(M.run)}`);
+  const Cg = pxCurGrid(); if (Cg) runs.push(`currents RTOFS ${pxRunName(Cg.run)}`);
   else if (M && M.none) runs.push('no wave data: ' + M.none.toLowerCase());
   $('pxRuns').textContent = runs.length ? 'Forecast runs: ' + runs.join(' · ') : '';
 }
@@ -3953,7 +3995,7 @@ function pxPaintLimits() {
   const route = PX.d.mode === 'route';
   $('pxLimitsTitle').textContent = route ? 'Your boat and limits' : 'Your limits';
   $('pxNote').textContent = route
-    ? 'The router sails each model’s wind on the IP380 design polar, through each of your points in order, keeping clear of land. Put a point outside any shoal, cape or reef you want kept clear (Diamond Shoals, say), and finish outside the cut. No currents yet. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.'
+    ? 'The router sails each model’s wind on the IP380 design polar, with RTOFS ocean currents (the Gulf Stream included), through each of your points in order, keeping clear of land. Put a point outside any shoal, cape or reef you want kept clear (Diamond Shoals, say), and finish outside the cut. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.'
     : 'The boat follows your line at the average speed; it doesn’t route around weather. Wind and gusts come from each model, waves from GFS-Wave for all of them. Use it as a cross-check on the official forecast and the rally’s weather briefing.';
   $('pxLimits').innerHTML = PX_LIMS.filter(L_ => !L_.mode || L_.mode === PX.d.mode).map(L_ => {
     const v = pxGet(L_.k);
@@ -3972,7 +4014,8 @@ function pxArrive(ms) {
   const r = pxCur(), f = r.pts[r.pts.length - 1], dark = pxSun(f[0], f[1], ms) < -6;
   return pxDT(ms) + (dark ? ' <span class="px-dark">after dark</span>' : '');
 }
-const pxOverTxt = o => Object.keys(o).map(k => ({ wind: 'wind', gust: 'gusts', wave: 'waves', up: 'wind ahead of 60°' })[k]).join(', ');
+const pxOverTxt = o => Object.keys(o).map(k => ({ wind: 'wind', gust: 'gusts', wave: 'waves', up: 'wind ahead of 60°', wac: 'wind against the current' })[k]).join(', ');
+const pxCurTxt = (cs, cd) => cs === cs && cs >= 0.1 ? `${cs.toFixed(1)} <small>${compass(cd)}</small>` : '–';
 function pxOpenAgree(k) {
   const ms = PX.deps[k], dur = PX.R.durS * 1000;
   let html = `<div class="kv" style="margin-bottom:12px;"><span>Leave</span><b>${pxDT(ms)}</b><span>Arrive</span><b>${pxArrive(ms + dur)}</b>`
@@ -3992,7 +4035,9 @@ function pxOpenAgree(k) {
 function pxOpenRun(id, k) {
   const F = PX.grids[id], M = PX.grids.marine, R = PX.R; if (!F || F.none) return;
   const Mok = M && !M.none;
-  const x = pxRun(F, Mok ? M : null, R, R.pts.map(p => pxWt(F.G, p.lat, p.lon)), Mok ? R.pts.map(p => pxWt(M.G, p.lat, p.lon)) : null, PX.deps[k] / 1000, PX.d.lim, true);
+  const Cg = pxCurGrid();
+  const x = pxRun(F, Mok ? M : null, R, R.pts.map(p => pxWt(F.G, p.lat, p.lon)), Mok ? R.pts.map(p => pxWt(M.G, p.lat, p.lon)) : null, PX.deps[k] / 1000, PX.d.lim, true,
+                  Cg, Cg ? R.pts.map(p => pxWt(Cg.G, p.lat, p.lon)) : null);
   const ms = PX.deps[k], n = x.up + x.reach + x.down || 1, pct = v => Math.round(100 * v / n) + '%';
   let html = `<div class="kv"><span>Leave</span><b>${pxDT(ms)}</b>`
     + `<span>Arrive</span><b>${x.past ? `Forecast ends ${Math.round(x.pastAt)} nm along` : pxArrive(ms + R.durS * 1000)}</b>`
@@ -4000,12 +4045,15 @@ function pxOpenRun(id, k) {
     + `<span>Strongest wind</span><b>${Math.round(x.maxWs)} kn${x.maxUp ? ` · ${Math.round(x.maxUp)} kn ahead of 60°` : ''}</b>`
     + `<span>Strongest gust</span><b>${x.maxWg === x.maxWg ? Math.round(x.maxWg) + ' kn' : 'Not in this model'}</b>`
     + `<span>Highest waves</span><b>${x.maxWh === x.maxWh ? x.maxWh.toFixed(1) + ' ft' : 'No wave data'}</b>`
+    + (Cg ? `<span>Strongest current</span><b>${x.maxCs.toFixed(1)} kn${x.rows.some(rw => rw.wac) ? ` · <span class="px-t-close">wind against it in places</span>` : ''}</b>` : '')
     + `<span>Wind angle</span><b>${pct(x.up)} upwind · ${pct(x.reach)} reach · ${pct(x.down)} downwind</b></div>`;
   // One line per hour (per 3 h on long passages), each showing the worst of that stretch.
   const every = R.durS > 36 * 3600 ? 3 : 1, rows = x.rows, groups = [];
   rows.forEach(rw => {
     const key = Math.floor((rw.t - ms / 1000) / (every * 3600));
-    const g = groups[key] || (groups[key] = { t: rw.t, nm: rw.nm, ws: -1, wg: NaN, wh: NaN, wp: NaN, lvl: 0, rep: rw, over: {} });
+    const g = groups[key] || (groups[key] = { t: rw.t, nm: rw.nm, ws: -1, wg: NaN, wh: NaN, wp: NaN, cs: NaN, cd: NaN, wac: false, lvl: 0, rep: rw, over: {} });
+    if (rw.cs === rw.cs && !(rw.cs <= g.cs)) { g.cs = rw.cs; g.cd = rw.cd; }
+    if (rw.wac) g.wac = true;
     if (rw.ws > g.ws) { g.ws = rw.ws; g.rep = rw; }
     if (rw.wg === rw.wg && !(rw.wg <= g.wg)) g.wg = rw.wg;
     if (rw.wh === rw.wh && !(rw.wh <= g.wh)) { g.wh = rw.wh; g.wp = rw.wp; }
@@ -4014,18 +4062,19 @@ function pxOpenRun(id, k) {
   const last = rows[rows.length - 1];
   const cls = (cond, close) => cond ? ' class="px-t-bad"' : close ? ' class="px-t-close"' : '';
   const C = PX_CLOSE, Lm = PX.d.lim;
-  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : '3 h from'}</th><th>nm</th><th>Wind kn</th><th>Gust</th><th>Angle</th><th>Waves ft</th></tr>`;
+  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : '3 h from'}</th><th>nm</th><th>Wind kn</th><th>Gust</th><th>Angle</th><th>Waves ft</th>${Cg ? '<th>Current</th>' : ''}</tr>`;
   groups.filter(Boolean).forEach(g => {
     const d = new Date(g.t * 1000), rp = g.rep, upw = rp.twa < PX_UP;
     html += `<tr class="px-l${g.lvl}"><td>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${String(d.getHours()).padStart(2, '0')}</td><td>${Math.round(g.nm)}</td>`
       + `<td${cls(g.ws > Lm.wind || (upw && g.ws > Lm.up), g.ws > Lm.wind * C || (upw && g.ws > Lm.up * C))}>${Math.round(g.ws)} <small>${rp.wd === rp.wd ? compass(rp.wd) : ''}</small></td>`
       + `<td${cls(g.wg > Lm.gust, g.wg > Lm.gust * C)}>${g.wg === g.wg ? Math.round(g.wg) : '–'}</td>`
       + `<td${upw ? ' class="px-t-up"' : ''}>${rp.twa === rp.twa ? Math.round(rp.twa) + '° <small>' + rp.side + '</small>' : '–'}</td>`
-      + `<td${cls(g.wh > Lm.wave, g.wh > Lm.wave * C)}>${g.wh === g.wh ? g.wh.toFixed(1) + (g.wp === g.wp ? ` <small>${Math.round(g.wp)} s</small>` : '') : '–'}</td></tr>`;
+      + `<td${cls(g.wh > Lm.wave, g.wh > Lm.wave * C)}>${g.wh === g.wh ? g.wh.toFixed(1) + (g.wp === g.wp ? ` <small>${Math.round(g.wp)} s</small>` : '') : '–'}</td>`
+      + (Cg ? `<td${g.wac ? cls(g.ws > Lm.wac, g.ws > Lm.wac * C) : ''}>${pxCurTxt(g.cs, g.cd)}${g.wac ? ' <small>vs wind</small>' : ''}</td>` : '') + '</tr>';
   });
   html += '</table></div>';
   html += `<p class="note" style="margin-top:8px;">Each line shows the strongest values in the ${every === 1 ? 'hour' : '3 hours'} that follow${last && !x.past ? `; arrival ${pxDT(last.t * 1000)}` : ''}. Angle is the true wind angle off the bow; under 60° counts as upwind. `
-    + `${pxLabel(id)} run ${pxRunName(F.run)}${Mok ? `; waves from GFS-Wave ${pxRunName(M.run)}` : ''}. The boat follows the line as drawn at ${PX.d.speed.toFixed(1)} kn.</p>`
+    + `${pxLabel(id)} run ${pxRunName(F.run)}${Mok ? `; waves from GFS-Wave ${pxRunName(M.run)}` : ''}${Cg ? `; currents from RTOFS ${pxRunName(Cg.run)} (“vs wind” where the wind blows against a current over 1 kn)` : ''}. The boat follows the line as drawn at ${PX.d.speed.toFixed(1)} kn over the ground, so currents don’t change its speed here; Weather routing accounts for them.</p>`
     + (F.gaps ? `<p class="note warn">${F.gaps} forecast step(s) didn’t load; parts of the route may show as out of the model’s area.</p>` : '')
     + (x.wavesPast ? '<p class="note warn">The wave forecast ends before arrival.</p>' : '');
   // On the chart: the route coloured by how close each stretch comes to your limits.
@@ -4083,8 +4132,13 @@ function pxDrive(g, gen, label, out) {            // run a router generator in ~
 // departure planning has already done is instant.
 function pxRouteOne(F, M, Lm, pts, t0, o, gen, label, out) {
   return pxDrive(pxRouteGen(F, M, Lm, pts, t0, o), gen, label, out).then(res => {
-    if (res && o.keep && res.stuck)                      // can't stay inside the limits: the fastest, and say so
-      return pxDrive(pxRouteGen(F, M, Lm, pts, t0, Object.assign({}, o, { keep: false })), gen, label, out).then(r2 => { if (r2) r2.broke = true; return r2; });
+    // Can't stay inside the limits - stopped, or wandered along the edge of them until the forecast
+    // ran out: show the fastest route instead and say so (if that one gets there).
+    if (res && o.keep && !res.arrive)
+      return pxDrive(pxRouteGen(F, M, Lm, pts, t0, Object.assign({}, o, { keep: false })), gen, label, out).then(r2 => {
+        if (!r2 || !r2.arrive) return r2 && r2.path.length > res.path.length ? r2 : res;
+        r2.broke = true; return r2;
+      });
     return res;
   });
 }
@@ -4107,7 +4161,10 @@ async function pxRouteAll() {
   if (gen !== PX.rgen) return;
   PX.rland = !!Lm;
   const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
-  const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep') };
+  const Cg = await pxEnsure('current', box, tEnd, ['cs', 'cd']);
+  if (gen !== PX.rgen) return;
+  const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep'),
+              C: Cg && !Cg.none ? Cg : null };
   const Fs = {};
   // Every model's route for the departure you picked...
   for (const id of PX.d.models) {
@@ -4135,7 +4192,7 @@ async function pxRouteAll() {
 async function pxRouteCached(id, FM, Lm, pts, ms, o, gen, out) {
   const key = `${id}|${ms}`, c = PX.rc[key];
   if (c && c.run === FM.F.run) return c;
-  if (pxEnv(FM.F, FM.M, pts[0][0], pts[0][1], ms / 1000) === null) return (PX.rc[key] = { none: 'Its forecast doesn’t cover this departure', run: FM.F.run });
+  if (pxEnv(FM.F, FM.M, pts[0][0], pts[0][1], ms / 1000, o.C) === null) return (PX.rc[key] = { none: 'Its forecast doesn’t cover this departure', run: FM.F.run });
   const res = await pxRouteOne(FM.F, FM.M, Lm, pts, ms / 1000, o, gen, pxLabel(id), out);
   if (!res) return null;                                   // interrupted
   res.run = FM.F.run; PX.rc[key] = res;
@@ -4278,7 +4335,9 @@ function pxPaintRoutes() {
   $('pxRSpread').textContent = done.length > 1 ? `The models' arrival times are ${pxDur(spread)} apart.${spread > 12 * 3600 ? ' That much disagreement means low confidence in any of them.' : ''}` : '';
   const runs = ids.filter(id => PX.routes[id] && PX.routes[id].run).map(id => `${pxLabel(id)} ${pxRunName(PX.routes[id].run)}`);
   const M = PX.grids.marine;
-  $('pxRRuns').textContent = (runs.length ? 'Forecast runs: ' + runs.join(' · ') + (M && M.run ? ` · waves GFS-Wave ${pxRunName(M.run)}` : '') + '. ' : '')
+  const Cg = pxCurGrid();
+  $('pxRRuns').textContent = (runs.length ? 'Forecast runs: ' + runs.join(' · ') + (M && M.run ? ` · waves GFS-Wave ${pxRunName(M.run)}` : '')
+    + (Cg ? ` · currents RTOFS ${pxRunName(Cg.run)}` : ' · no current data, so no currents') + '. ' : '')
     + (PX.rland === false ? 'The land map didn’t load, so these routes may cross land.' : '');
   const sel = $('pxDep');
   sel.innerHTML = PX.deps.map(ms => `<option value="${ms}"${ms === PX.rdep ? ' selected' : ''}>${pxDT(ms)}</option>`).join('');
@@ -4296,6 +4355,7 @@ function pxOpenRoute(id) {
     + `<span>Strongest wind</span><b>${Math.round(x.maxWs)} kn</b>`
     + `<span>Strongest gust</span><b>${x.maxWg === x.maxWg ? Math.round(x.maxWg) + ' kn' : 'Not in this model'}</b>`
     + `<span>Highest waves</span><b>${x.maxWh === x.maxWh ? x.maxWh.toFixed(1) + ' ft' : 'No wave data'}</b>`
+    + (pxCurGrid() ? `<span>Strongest current</span><b>${x.maxCs.toFixed(1)} kn${x.wacS ? ` · <span class="px-t-close">wind against it for ${pxDur(x.wacS)}</span>` : ''}</b>` : '')
     + `<span>Wind angle</span><b>${pct(x.up)} upwind · ${pct(x.reach)} reach · ${pct(x.down)} downwind</b></div>`;
   if (x.broke) html += `<p class="note bad" style="margin-top:8px;">${l.warn}.</p>`;
   // One line per hour (per 3 h when it's long): where she is, what she's doing, and the weather there.
@@ -4306,18 +4366,20 @@ function pxOpenRoute(id) {
     nm += haversine(a.lat, a.lon, b.lat, b.lon) / 1852;
   }
   const Lm = PX.d.lim, C = PX_CLOSE, cls = (bad, close) => bad ? ' class="px-t-bad"' : close ? ' class="px-t-close"' : '';
-  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : 'Every 3 h'}</th><th>nm</th><th>Course</th><th>Boat</th><th>Wind kn</th><th>Angle</th><th>Waves ft</th></tr>`;
+  const hasC = !!pxCurGrid();
+  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : 'Every 3 h'}</th><th>nm</th><th>Heading</th><th>Boat</th><th>Wind kn</th><th>Angle</th><th>Waves ft</th>${hasC ? '<th>Current</th>' : ''}</tr>`;
   for (const rw of rows) {
     const d = new Date(rw.t * 1000), e = rw.e, b = rw.b, upw = b.twa < PX_UP;
     html += `<tr class="px-l${b.over && b.over.length ? 2 : 0}"><td>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${String(d.getHours()).padStart(2, '0')}</td><td>${Math.round(rw.nm)}</td>`
       + `<td>${String(Math.round(b.hd) % 360).padStart(3, '0')}°</td><td>${b.spd.toFixed(1)}${b.mot ? ' <small>motor</small>' : ''}</td>`
       + `<td${cls(e.ws > Lm.wind || (upw && e.ws > Lm.up), e.ws > Lm.wind * C)}>${Math.round(e.ws)} <small>${e.wd === e.wd ? compass(e.wd) : ''}</small></td>`
       + `<td${upw ? ' class="px-t-up"' : ''}>${b.twa === b.twa ? Math.round(b.twa) + '° <small>' + b.side + '</small>' : '–'}</td>`
-      + `<td${cls(e.wh > Lm.wave, e.wh > Lm.wave * C)}>${e.wh === e.wh ? e.wh.toFixed(1) + (e.wp === e.wp ? ` <small>${Math.round(e.wp)} s</small>` : '') : '–'}</td></tr>`;
+      + `<td${cls(e.wh > Lm.wave, e.wh > Lm.wave * C)}>${e.wh === e.wh ? e.wh.toFixed(1) + (e.wp === e.wp ? ` <small>${Math.round(e.wp)} s</small>` : '') : '–'}</td>`
+      + (hasC ? `<td${e.wac ? cls(e.ws > Lm.wac, e.ws > Lm.wac * C) : ''}>${pxCurTxt(e.cs, e.cd)}${e.wac ? ' <small>vs wind</small>' : ''}</td>` : '') + '</tr>';
   }
   html += '</table></div>';
-  html += `<p class="note" style="margin-top:8px;">Course is true. Sailed at ${pxR('pct')}% of the IP380 design polar${pxR('motorBelow') > 0 ? `, motoring at ${pxR('motorKn')} kn whenever sailing would be slower than ${pxR('motorBelow')} kn` : ', never motoring'}; each tack or gybe costs 5 minutes. `
-    + `No currents yet, and no slowing for waves. ${pxLabel(id)} run ${pxRunName(x.run)}. For weather strategy only: check every leg against the chart.</p>`;
+  html += `<p class="note" style="margin-top:8px;">Heading is true, through the water${hasC ? '; the current then carries her, so the track made good differs' : ''}. Sailed at ${pxR('pct')}% of the IP380 design polar${pxR('motorBelow') > 0 ? `, motoring at ${pxR('motorKn')} kn whenever sailing would be slower than ${pxR('motorBelow')} kn` : ', never motoring'}; each tack or gybe costs 5 minutes. `
+    + `${hasC ? `Currents from RTOFS ${pxRunName(pxCurGrid().run)} (“vs wind” where the wind blows against a current over 1 kn). ` : 'No current data loaded, so no currents. '}No slowing for waves. ${pxLabel(id)} run ${pxRunName(x.run)}. For weather strategy only: check every leg against the chart.</p>`;
   pxOpenSheet(`${pxLabel(id)} route · leaving ${pxDT(x.t0 * 1000)}`, html);
 }
 

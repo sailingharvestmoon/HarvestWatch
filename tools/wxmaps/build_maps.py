@@ -30,7 +30,7 @@ open data); the app falls back to the Pi's on-demand grids for those.
   python build_maps.py site gfs hrrr     build only these models
   (isobars/highs/lows for the Fronts view are added every run - see isobars.py)
 """
-import sys, os, json, math, time, random, datetime as dt, urllib.request, urllib.error
+import sys, os, re, json, math, time, random, datetime as dt, urllib.request, urllib.error, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
@@ -47,6 +47,7 @@ PACK = {
     "pa": (0.0, 1.0), "cc": (0.0, 0.4), "ps": (940.0, 0.5), "ta": (-20.0, 0.5),
     "ce": (0.0, 20.0), "wh": (0.0, 0.1), "wvd": (0.0, 360 / 254), "wp": (0.0, 0.1),
     "st": (20.0, 0.4),
+    "cs": (0.0, 0.05), "cd": (0.0, 360 / 254),          # ocean current: knots, direction it flows TOWARD
 }
 
 # NOAA fields: key -> (GRIB short name, level text as in the .idx file)
@@ -308,7 +309,8 @@ def pick_run(cfg):
 # the scale. Wind in knots, waves in feet, temperatures in deg F.
 PLAUS = {"ws": (0, 200), "wg": (0, 250), "wd": (0, 360), "pr": (0, 500), "pa": (0, 3000),
          "cc": (0, 100), "ps": (850, 1090), "ta": (-80, 140), "ce": (0, 12000),
-         "wh": (0, 100), "wvd": (0, 360), "wp": (0, 40), "st": (20, 110)}
+         "wh": (0, 100), "wvd": (0, 360), "wp": (0, 40), "st": (20, 110),
+         "cs": (0, 10), "cd": (0, 360)}
 _warned = set()
 
 def quantize(a, key, model=""):
@@ -430,16 +432,141 @@ def build_model(name, out_dir):
     print(f"{name}: {len(times)} steps, vars {sorted(written)}, grid {meta['nx']}x{meta['ny']}", flush=True)
     return {"run": meta["run"], "steps": len(times), "vars": sorted(written), "at": meta["at"], "bbox": meta["bbox"]}
 
+# ---------------------------------------------------------------- ocean currents
+# NOAA Global RTOFS surface currents, from its Western Atlantic regional GRIB2
+# files (10-44.7 N, 100-54 W, 0.08 deg; one run a day, 00z). RTOFS v3.0 renames
+# the files (f024_west_atl_std.grb2 becomes f024.west_atl.std.grib2), so they
+# are found from the day's file listing - AWS's, else NOMADS's - not guessed.
+RT_AWS = "https://noaa-nws-rtofs-pds.s3.amazonaws.com"
+RT_NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod"
+RT_PAT = re.compile(r"rtofs_glo\.t00z\.f(\d{3})[._]west_atl[._]std\.gri?b2$")      # .grb2 (v2.5) or .grib2 (v3.0)
+CURRENT = dict(res=0.1, domain=(10.0, -100.0, 44.6, -54.2), every=3)
+
+def rtofs_files(day):
+    """{forecast hour: url} for one day's Western Atlantic files, and where from."""
+    found, token, names = {}, None, []
+    for _ in range(30):                                   # S3 lists 1000 names a page
+        q = f"{RT_AWS}/?list-type=2&prefix=rtofs.{day}/"
+        if token: q += "&continuation-token=" + urllib.parse.quote(token, safe="")
+        b = http(q)
+        if not b: break
+        t = b.decode("utf-8", "ignore")
+        for k in re.findall(r"<Key>([^<]+)</Key>", t):
+            names.append(k)
+            m = RT_PAT.search(k)
+            if m: found[int(m.group(1))] = f"{RT_AWS}/{k}"
+        m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", t)
+        if not m: break
+        token = m.group(1)
+    if found: return found, "AWS"
+    b = http(f"{RT_NOMADS}/rtofs.{day}/")
+    if b:
+        for n in set(re.findall(r'href="([^"?/]+)"', b.decode("utf-8", "ignore"))):
+            names.append(n)
+            m = RT_PAT.search(n)
+            if m: found[int(m.group(1))] = f"{RT_NOMADS}/rtofs.{day}/{n}"
+    if not found and names:                               # say what IS there, so a rename is easy to spot
+        g = sorted({n.rsplit("/", 1)[-1] for n in names if n.endswith((".grb2", ".grib2"))})[:8]
+        print(f"current: {day}: no Western Atlantic GRIB2 files; GRIB2 files listed include {g or 'none'}", flush=True)
+    return found, "NOMADS"
+
+def rtofs_uv(b):
+    """eccodes handles (u, v) of the surface current in one RTOFS GRIB2 file."""
+    import eccodes as ec, tempfile
+    u = v = None
+    with tempfile.TemporaryFile() as fh:
+        fh.write(b); fh.seek(0)
+        while True:
+            h = ec.codes_grib_new_from_file(fh)
+            if h is None: break
+            try: key = (ec.codes_get(h, "discipline"), ec.codes_get(h, "parameterCategory"), ec.codes_get(h, "parameterNumber"))
+            except Exception: key = None
+            if key == (10, 1, 2) and u is None: u = h           # u-component of current (UOGRD)
+            elif key == (10, 1, 3) and v is None: v = h         # v-component of current (VOGRD)
+            else: ec.codes_release(h)
+    return u, v
+
+def ll_sample(h, lats, lons):
+    """Bilinear from a regular lat/lon grid that may cover only part of the target;
+    missing corners (land) are left out, and outside the grid is NaN."""
+    import eccodes as ec
+    ni, nj = ec.codes_get(h, "Ni"), ec.codes_get(h, "Nj")
+    la0, lo0 = ec.codes_get(h, "latitudeOfFirstGridPointInDegrees"), ec.codes_get(h, "longitudeOfFirstGridPointInDegrees")
+    dla, dlo = ec.codes_get(h, "jDirectionIncrementInDegrees"), ec.codes_get(h, "iDirectionIncrementInDegrees")
+    if not ec.codes_get(h, "jScansPositively"): dla = -dla
+    vals = np.asarray(ec.codes_get_values(h), dtype=np.float64)
+    if ec.codes_get(h, "bitmapPresent"): vals[vals == ec.codes_get(h, "missingValue")] = np.nan
+    a = vals.reshape(nj, ni)
+    fj = np.broadcast_to(((lats - la0) / dla)[:, None], (len(lats), len(lons)))
+    fi = np.broadcast_to((((lons - lo0) % 360) / dlo)[None, :], (len(lats), len(lons)))
+    inside = (fj >= 0) & (fj <= nj - 1) & (fi >= 0) & (fi <= ni - 1)
+    j0 = np.clip(np.floor(fj).astype(int), 0, nj - 2); i0 = np.clip(np.floor(fi).astype(int), 0, ni - 2)
+    tj, ti = np.clip(fj - j0, 0, 1), np.clip(fi - i0, 0, 1)
+    num = np.zeros(fj.shape); den = np.zeros(fj.shape)
+    for dj, di, w in ((0, 0, (1 - tj) * (1 - ti)), (0, 1, (1 - tj) * ti), (1, 0, tj * (1 - ti)), (1, 1, tj * ti)):
+        c = a[j0 + dj, i0 + di]; ok = np.isfinite(c)
+        num += np.where(ok, c * w, 0); den += np.where(ok, w, 0)
+    out = np.where(den > 0.25, num / np.maximum(den, 1e-9), np.nan)   # at least a quarter of the weight on water
+    return np.where(inside, out, np.nan)
+
+def build_current(out_dir):
+    import eccodes as ec
+    now = dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
+    files = src = day = None
+    for back in (0, 1, 2):                                # today's run if it's out far enough, else an earlier one
+        d_ = (now - dt.timedelta(days=back)).strftime("%Y%m%d")
+        f_, s_ = rtofs_files(d_)
+        if f_ and max(f_) >= 24 + 24 * back: files, src, day = f_, s_, d_; break
+    if not files:
+        print("current: no RTOFS run found", flush=True); return None
+    run = dt.datetime.strptime(day, "%Y%m%d")
+    hours = [f for f in sorted(files) if f % CURRENT["every"] == 0 and f <= EXT
+             and (run + dt.timedelta(hours=f)).replace(tzinfo=dt.timezone.utc).timestamp() >= time.time() - 3 * 3600]
+    print(f"current: RTOFS run {day} 00z from {src}, {len(hours)} steps to +{hours[-1] if hours else 0} h", flush=True)
+    def get(f):
+        try: return f, http(files[f])
+        except Exception as e:
+            print(f"current: {f} h failed: {e}", flush=True); return f, None
+    with ThreadPoolExecutor(4) as pool:
+        raw = list(pool.map(get, hours))
+    lats, lons = target_grid(CURRENT["res"], CURRENT["domain"])
+    mdir = os.path.join(out_dir, "current"); os.makedirs(mdir, exist_ok=True)
+    times = []
+    for f, b in raw:
+        if not b:
+            if times: break                               # stop at a hole, so the timeline has no gaps
+            continue
+        u, v = rtofs_uv(b)
+        if u is None or v is None:
+            for h in (u, v):
+                if h is not None: ec.codes_release(h)
+            if times: break
+            continue
+        U, V = ll_sample(u, lats, lons), ll_sample(v, lats, lons)
+        ec.codes_release(u); ec.codes_release(v)
+        ti = len(times); times.append(int((run + dt.timedelta(hours=f)).replace(tzinfo=dt.timezone.utc).timestamp()))
+        write_png(os.path.join(mdir, f"cs_{ti}.png"), quantize(np.hypot(U, V) * 1.943844, "cs", "current"))
+        write_png(os.path.join(mdir, f"cd_{ti}.png"), quantize((np.degrees(np.arctan2(U, V)) + 360) % 360, "cd", "current"))
+    if not times:
+        print("current: nothing usable", flush=True); return None
+    meta = {"model": "current", "run": f"{day}00", "at": int(time.time() * 1000),
+            "bbox": [float(lats[0]), float(lons[0]), float(lats[-1]), float(lons[-1])],
+            "nx": int(len(lons)), "ny": int(len(lats)), "times": times,
+            "vars": {k: list(PACK[k]) for k in ("cd", "cs")}, "ok": True, "pre": True, "source": "RTOFS " + src}
+    with open(os.path.join(mdir, "meta.json"), "w") as fh: json.dump(meta, fh, separators=(",", ":"))
+    print(f"current: {len(times)} steps, grid {meta['nx']}x{meta['ny']}", flush=True)
+    return {"run": meta["run"], "steps": len(times), "vars": ["cd", "cs"], "at": meta["at"], "bbox": meta["bbox"]}
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "site"
     # ECMWF and AIFS come from the same server: build others in between.
-    only = sys.argv[2:] or ["gfs", "ecmwf", "hrrr", "nam", "aifs", "marine"]
+    only = sys.argv[2:] or ["gfs", "ecmwf", "hrrr", "nam", "aifs", "marine", "current"]
     os.makedirs(out, exist_ok=True)
     index = {"generated": int(time.time() * 1000), "region": REGION, "models": {}}
     for name in only:
         t0 = time.time()
         try:
-            r = build_model(name, out)
+            r = build_current(out) if name == "current" else build_model(name, out)
             if r: index["models"][name] = r
         except Exception as e:
             print(f"{name}: FAILED {e}", flush=True)
