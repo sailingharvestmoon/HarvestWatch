@@ -460,6 +460,18 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
 .px-tools { display:flex; gap:22px; justify-content:center; margin-top:18px; }
 .px-tools[hidden] { display:none; }
 .link.danger-link { color:var(--bad); }
+.px-mode { margin:12px 0 2px; }
+.px-leave { margin:14px 0 0; }
+.px-leave .px-sel { max-width:260px; padding-top:9px; padding-bottom:9px; font-size:16px; }
+.px-first { font-size:10.5px; font-weight:700; color:var(--ok); background:color-mix(in srgb, var(--ok) 14%, transparent); padding:1px 6px; border-radius:5px; margin-left:4px; white-space:nowrap; vertical-align:1px; }
+.row.px-rsel { background:color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.row[disabled] { opacity:1; cursor:default; }
+#pxRoutes .txt small { white-space:normal; }
+.px-step { display:flex; align-items:center; gap:6px; flex:none; }
+.px-step button { width:36px; height:36px; border-radius:50%; border:1px solid var(--line); background:var(--surface2); color:var(--ink); font-size:20px; font-weight:600; line-height:1; display:grid; place-items:center; padding:0; }
+.px-step button:active { background:var(--line); }
+.px-step b.num { min-width:70px; text-align:center; font-size:16px; font-variant-numeric:tabular-nums; }
+.px-step b.num i { font-style:normal; font-size:12px; color:var(--muted); font-weight:600; margin-left:3px; }
 
 /* deck camera (Boat tab) */
 .cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
@@ -653,6 +665,16 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
       <div class="px-panel" id="pxPanel">
         <div class="px-route"><select class="px-sel" id="pxSel" onchange="pxPick(this.value)" aria-label="Route"></select><button class="btn" onclick="pxEdit()">Edit route</button></div>
         <p class="note" id="pxSum" style="margin:6px 2px 0;"></p>
+        <div class="seg px-mode" id="pxMode"><button data-m="line" onclick="pxSetMode('line')">Follow my line</button><button data-m="route" onclick="pxSetMode('route')">Weather routing</button></div>
+        <div id="pxRouteBox" hidden>
+          <div class="px-within px-leave"><span class="note">Leave</span><select class="px-sel" id="pxDep" onchange="pxSetDep(this.value)" aria-label="Departure time"></select></div>
+          <div class="section-title" style="display:flex;align-items:center;gap:8px;">Fastest route by model<span style="flex:1"></span><span class="note px-prog" id="pxRProg"></span></div>
+          <div class="list" id="pxRoutes"></div>
+          <p class="note" id="pxRSpread" style="margin:8px 4px 0;"></p>
+          <p class="note" style="margin:4px 4px 0;">Solid line sailing, dotted motoring. Tap a model for its route hour by hour.</p>
+          <p class="note" id="pxRRuns" style="margin:4px 4px 0;"></p>
+        </div>
+        <div id="pxLineBox">
         <div class="section-title">When to leave</div>
         <div class="card pad" id="pxBest"></div>
         <div id="pxGridWrap" hidden>
@@ -663,9 +685,10 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
           <p class="note" style="margin:8px 4px 0;">Each square is one departure time; the number is the strongest wind on the way, in knots.<span class="px-key px-ok"></span>inside your limits<span class="px-key px-close"></span>close to one<span class="px-key px-bad"></span>over one<span class="px-key px-part"></span>forecast ends before arrival (+ means so far). The top row counts the models inside your limits out of those that reach the finish. Shaded hours leave in the dark. Tap a square for the details.</p>
           <p class="note" id="pxRuns" style="margin:4px 4px 0;"></p>
         </div>
-        <div class="section-title">Your limits</div>
+        </div>
+        <div class="section-title" id="pxLimitsTitle">Your limits</div>
         <div class="list" id="pxLimits"></div>
-        <p class="note" style="margin:8px 4px 0;">The boat follows your line at the average speed; it doesn't route around weather yet. Wind and gusts come from each model, waves from GFS-Wave for all of them. Use it as a cross-check on the official forecast and the rally's weather briefing.</p>
+        <p class="note" id="pxNote" style="margin:8px 4px 0;"></p>
         <div class="px-tools" id="pxTools" hidden><button class="link" onclick="pxRename()">Rename</button><button class="link" onclick="pxReverse()">Reverse</button><button class="link danger-link" onclick="pxDelete()">Delete route</button></div>
       </div>
       <div class="sheet px-sheet" id="pxSheet">
@@ -3293,6 +3316,183 @@ function pxSun(lat, lon, ms) {
 }
 // PX-CORE-END
 
+// ─── weather router: isochrones with the IP380 polar ─── PX-ROUTER-START
+// Design estimate from polar_build.py (ESTIMATED): boat speed in knots by
+// true wind speed (rows) and true wind angle (columns). Inside 45° she
+// doesn't sail; under 6 kn of wind speed scales down with the wind.
+const PX_POLAR = {
+  tws: [6, 8, 10, 12, 14, 16, 20, 25],
+  twa: [45, 52, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180],
+  v: [[2.8, 3.6, 4.1, 4.4, 4.7, 4.9, 5.0, 4.9, 4.7, 4.4, 4.1, 3.7, 3.4, 3.1, 3.0],
+      [3.6, 4.8, 5.2, 5.5, 5.8, 5.9, 6.0, 5.9, 5.7, 5.4, 5.0, 4.6, 4.2, 3.9, 3.8],
+      [4.3, 5.5, 5.9, 6.1, 6.4, 6.5, 6.6, 6.6, 6.4, 6.2, 5.8, 5.4, 5.0, 4.7, 4.6],
+      [4.7, 5.9, 6.3, 6.5, 6.8, 6.9, 7.0, 7.0, 6.9, 6.7, 6.4, 6.0, 5.6, 5.3, 5.2],
+      [5.0, 6.2, 6.5, 6.7, 7.0, 7.1, 7.2, 7.3, 7.2, 7.0, 6.7, 6.4, 6.0, 5.7, 5.6],
+      [5.2, 6.4, 6.7, 6.9, 7.2, 7.3, 7.4, 7.5, 7.4, 7.3, 7.0, 6.7, 6.4, 6.1, 6.0],
+      [5.3, 6.5, 6.8, 7.1, 7.4, 7.5, 7.6, 7.7, 7.7, 7.6, 7.4, 7.1, 6.8, 6.5, 6.4],
+      [5.2, 6.4, 6.7, 7.1, 7.4, 7.6, 7.7, 7.8, 7.8, 7.7, 7.5, 7.3, 7.0, 6.7, 6.6]]
+};
+function pxBin(arr, x) {                       // [index, fraction] with arr[i] <= x <= arr[i+1], clamped
+  if (x <= arr[0]) return [0, 0];
+  const n = arr.length - 1; if (x >= arr[n]) return [n - 1, 1];
+  let i = 0; while (arr[i + 1] < x) i++;
+  return [i, (x - arr[i]) / (arr[i + 1] - arr[i])];
+}
+function pxPolar(tws, twa) {
+  if (!(tws > 0) || !(twa >= 45)) return 0;
+  const P = PX_POLAR, k = tws < P.tws[0] ? tws / P.tws[0] : 1;
+  const [i, a] = pxBin(P.tws, Math.max(tws, P.tws[0])), [j, b] = pxBin(P.twa, twa);
+  const v = P.v, r0 = v[i][j] + (v[i][j + 1] - v[i][j]) * b, r1 = v[i + 1][j] + (v[i + 1][j + 1] - v[i + 1][j]) * b;
+  return (r0 + (r1 - r0) * a) * k;
+}
+// Land: 1-minute cells, cut to the area being routed. Cells within 2 nm of
+// your own points don't count, so a start or finish by the shore works.
+function pxLandMake(bits, x0, y0, w, h, pts) {
+  const Lm = { bits, x0, y0, w, h, clear: new Set() };
+  for (const p of pts) {
+    const cx = Math.floor((p[1] + 100) * 60) - x0, cy = Math.floor((p[0] - 5) * 60) - y0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -3; dx <= 3; dx++) {
+      const x = cx + dx, y = cy + dy; if (x >= 0 && y >= 0 && x < w && y < h) Lm.clear.add(y * w + x);
+    }
+  }
+  return Lm;
+}
+function pxLandAt(Lm, lat, lon) {
+  const x = Math.floor((lon + 100) * 60) - Lm.x0, y = Math.floor((lat - 5) * 60) - Lm.y0;
+  if (x < 0 || y < 0 || x >= Lm.w || y >= Lm.h) return false;
+  const i = y * Lm.w + x;
+  return Lm.bits[i] === 1 && !Lm.clear.has(i);
+}
+function pxClear(Lm, la1, lo1, la2, lo2, nm) {  // no land along a straight stretch (checked every 0.4 nm)
+  if (!Lm) return true;
+  const n = Math.max(1, Math.ceil(nm / 0.4));
+  for (let k = 1; k <= n; k++) { const f = k / n; if (pxLandAt(Lm, la1 + (la2 - la1) * f, lo1 + (lo2 - lo1) * f)) return false; }
+  return true;
+}
+// Wind and waves at one place and time; null once the wind forecast has ended or outside the model.
+function pxEnv(F, M, lat, lon, t) {
+  const W = pxWt(F.G, lat, lon); if (!W) return null;
+  const T = pxTi(F.times, t); if (!T) return null;
+  const ws = pxS(F, 'ws', T, W); if (ws !== ws) return null;
+  const e = { ws, wd: pxD(F, 'wd', 'ws', T, W), wg: F.d.wg ? pxS(F, 'wg', T, W) : NaN, wh: NaN, wp: NaN };
+  if (M) { const Wm = pxWt(M.G, lat, lon), Tm = Wm && pxTi(M.times, t); if (Tm) { e.wh = pxS(M, 'wh', Tm, Wm); e.wp = pxS(M, 'wp', Tm, Wm); } }
+  return e;
+}
+function pxTwa(wd, hd) { const rel = ((wd - hd) % 360 + 360) % 360; return [rel > 180 ? 360 - rel : rel, rel > 180 ? 'port' : 'stbd']; }
+// Speed on a heading, or null if that heading breaks a limit you asked the router to keep.
+function pxBoat(e, hd, o) {
+  const [twa] = pxTwa(e.wd, hd);
+  let spd = pxPolar(e.ws, twa) * o.pct, mot = false;
+  if (o.motorBelow > 0 && spd < o.motorBelow) { spd = o.motorKn; mot = true; }
+  if (o.keep && twa < PX_UP && e.ws > o.lim.up) return null;
+  return spd > 0.05 ? { spd, mot, twa } : null;
+}
+const pxOver = (e, L) => e.ws > L.wind || e.wg > L.gust || e.wh > L.wave;
+// One route: from pts[0], through each of your points in order, to the last.
+// o: { pct, motorBelow, motorKn, lim, keep (stay inside the limits), dtS, tackS }.
+// A generator, so the page can stay responsive: it yields its progress (0..1)
+// now and then and returns the result.
+function* pxRouteGen(F, M, Lm, pts, t0, o) {
+  let total = 0; for (let i = 1; i < pts.length; i++) total += haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) / 1852;
+  const dt = o.dtS || Math.min(3600, Math.max(900, Math.round(total / 5.5 * 3600 / 60 / 900) * 900));
+  const HS = 5, SPAN = 150, NSEC = 180;            // headings every 5°, ±150° from the mark; 180 sectors
+  const SEC_RAD = 2 * SPAN * Math.PI / 180 / NSEC, tackS = o.tackS === undefined ? 300 : o.tackS;
+  let node = { lat: pts[0][0], lon: pts[0][1], t: t0, parent: null, d0: 0 }, done = 0;
+  for (let leg = 1; leg < pts.length; leg++) {
+    const tg = pts[leg], A = node, brgA = bearing(A.lat, A.lon, tg[0], tg[1]);
+    const legNm = haversine(A.lat, A.lon, tg[0], tg[1]) / 1852;
+    let front = [A], best = null, steps = 0, lastFront = front;
+    for (;;) {
+      if (++steps > 4000) return { fail: 'took too many steps' };
+      // Two ways of keeping the best few: in each direction from the start, the point
+      // furthest out (the classic isochrone); and in each direction from the mark, the
+      // point closest to it - which stops the front sliding past a mark it reached round
+      // an obstacle.
+      const sec = new Array(NSEC).fill(null), secT = new Array(NSEC).fill(null);
+      let alive = 0;
+      for (const n of front) {
+        const e = n.e || (n.e = pxEnv(F, M, n.lat, n.lon, n.t));
+        if (!e) continue;
+        if (o.keep && pxOver(e, o.lim)) continue;
+        alive++;
+        const bT = bearing(n.lat, n.lon, tg[0], tg[1]), dT = haversine(n.lat, n.lon, tg[0], tg[1]) / 1852;
+        // Close enough to head straight in? "Close" is a few steps, or more where the fan
+        // has spread so wide that its points could pass either side of the mark.
+        const bt = pxBoat(e, bT, o), stepNm = bt ? bt.spd * dt / 3600 : 0;
+        if (bt && dT <= stepNm * Math.max(3, Math.ceil(n.d0 / 1852 * SEC_RAD / stepNm) + 1) && pxClear(Lm, n.lat, n.lon, tg[0], tg[1], dT)) {
+          const tf = n.t + dT / bt.spd * 3600;
+          if (!best || tf < best.t) best = { lat: tg[0], lon: tg[1], t: tf, parent: n, hd: bT, spd: bt.spd, mot: bt.mot, d0: 0 };
+        }
+        for (let k = -SPAN; k <= SPAN; k += HS) {
+          const hd = (bT + k + 360) % 360, b = pxBoat(e, hd, o); if (!b) continue;
+          const side = b.mot ? null : pxTwa(e.wd, hd)[1];
+          let nm = b.spd * dt / 3600;
+          if (side && n.side && side !== n.side) nm *= Math.max(0, 1 - tackS / dt);   // a tack or gybe costs time
+          const p = destPoint(n.lat, n.lon, hd, nm * 1852);
+          if (!pxClear(Lm, n.lat, n.lon, p.lat, p.lon, nm)) continue;
+          const rb = ((bearing(A.lat, A.lon, p.lat, p.lon) - brgA + 540) % 360) - 180;
+          if (rb < -SPAN || rb >= SPAN) continue;
+          const s = Math.floor((rb + SPAN) / (2 * SPAN) * NSEC), d0 = haversine(A.lat, A.lon, p.lat, p.lon);
+          const c = { lat: p.lat, lon: p.lon, t: n.t + dt, parent: n, hd, spd: b.spd, mot: b.mot, side, d0, dT: haversine(p.lat, p.lon, tg[0], tg[1]) };
+          if (!sec[s] || d0 > sec[s].d0) sec[s] = c;
+          const st = Math.floor(bearing(tg[0], tg[1], p.lat, p.lon) / 360 * NSEC) % NSEC;
+          if (!secT[st] || c.dT < secT[st].dT) secT[st] = c;
+        }
+      }
+      // Done once nothing still searching could arrive sooner: every point in the
+      // next front is already at t + dt.
+      if (best && best.t <= front[0].t + dt) break;
+      const next = [...new Set(sec.concat(secT).filter(Boolean))];
+      if (best && (!next.length || !alive)) break;
+      if (!next.length || !alive) {                       // nowhere to go: forecast over, land, or limits
+        // "Forecast over" only if it really has run out by now; anything else (limits,
+        // land, the edge of the model) is "stuck", which lets the page try again
+        // without the limits.
+        const past = front[0].t > F.times[F.times.length - 1] + 60;
+        const all = lastFront.concat(front).filter(n => n !== A || leg > 1);
+        const near = all.reduce((a, n) => { const d = haversine(n.lat, n.lon, tg[0], tg[1]); return !a || d < a.d ? { n, d } : a; }, null);
+        return pxRouteResult(near ? near.n : A, o, { past, stuck: !past, leg, total });
+      }
+      lastFront = front; front = next;
+      if (steps % 4 === 0) {
+        const left = Math.min(...front.map(n => haversine(n.lat, n.lon, tg[0], tg[1]) / 1852));
+        yield Math.min(.99, (done + Math.max(0, legNm - left)) / total);
+      }
+    }
+    node = best; done += legNm;
+  }
+  return pxRouteResult(node, o, { total });
+}
+function pxRouteResult(end, o, info) {
+  const path = []; for (let n = end; n; n = n.parent) path.push(n); path.reverse();
+  const r = Object.assign({ path, t0: path[0].t, arrive: info.past || info.stuck ? null : end.t, nm: 0, motS: 0, maxWs: 0, maxWg: NaN, maxWh: NaN,
+                            up: 0, reach: 0, down: 0, overS: 0, over: {}, keep: o.keep }, info);
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1], b = path[i], s = b.t - a.t, e = a.e;
+    r.nm += haversine(a.lat, a.lon, b.lat, b.lon) / 1852;
+    if (b.mot) r.motS += s;
+    if (!e) continue;
+    const [twa, side] = pxTwa(e.wd, b.hd); b.twa = twa; b.side = side;
+    if (twa < PX_UP) r.up += s; else if (twa > PX_DOWN) r.down += s; else r.reach += s;
+    if (e.ws > r.maxWs) r.maxWs = e.ws;
+    if (e.wg === e.wg && !(e.wg <= r.maxWg)) r.maxWg = e.wg;
+    if (e.wh === e.wh && !(e.wh <= r.maxWh)) r.maxWh = e.wh;
+    const ov = [];
+    if (e.ws > o.lim.wind) ov.push('wind'); if (e.wg > o.lim.gust) ov.push('gust'); if (e.wh > o.lim.wave) ov.push('wave');
+    if (twa < PX_UP && e.ws > o.lim.up) ov.push('up');
+    if (ov.length) { r.overS += s; ov.forEach(x => r.over[x] = true); }
+    b.over = ov;
+  }
+  r.durS = (r.arrive || end.t) - r.t0;
+  return r;
+}
+function pxRouteRun(F, M, Lm, pts, t0, o) {     // run to the end (tests, and short routes)
+  const g = pxRouteGen(F, M, Lm, pts, t0, o); let s;
+  do { s = g.next(); } while (!s.done);
+  return s.value;
+}
+// PX-ROUTER-END
+
 // ═══ PASSAGE: route forecast and departure window ══════════════════
 // Draw a route, set a steady speed and your limits. Every departure over
 // the next few days is checked against each model, the way SeaPeople's
@@ -3304,15 +3504,21 @@ function pxSun(lat, lon, ms) {
 // (weather/<vessel>-passage), nothing on the phone.
 const PX_URL = `${FSB}/weather/${VESSEL}-passage`;
 const PX_MODELS = ['ecmwf', 'gfs', 'aifs', 'nam', 'hrrr'];
-const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3 };
+const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3,
+                 mode: 'line', r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true } };
 const PX_LIMS = [
-  { k: 'speed', label: 'Average speed', sub: 'Over the ground, start to finish', unit: 'kn', step: .5, min: 2, max: 10, dp: 1 },
+  { k: 'speed', label: 'Average speed', sub: 'Over the ground, start to finish', unit: 'kn', step: .5, min: 2, max: 10, dp: 1, mode: 'line' },
+  { k: 'pct', label: 'Boat speed', sub: 'Percent of the IP380 design polar', unit: '%', step: 5, min: 50, max: 120, mode: 'route' },
+  { k: 'motorBelow', label: 'Motor when slower than', sub: '0 means sail only, never motor', unit: 'kn', step: .5, min: 0, max: 6, dp: 1, mode: 'route' },
+  { k: 'motorKn', label: 'Motoring speed', sub: 'Through the water', unit: 'kn', step: .5, min: 3, max: 8, dp: 1, mode: 'route' },
+  { k: 'gph', label: 'Fuel use', sub: 'While motoring', unit: 'gal/h', step: .05, min: .3, max: 2, dp: 2, mode: 'route' },
   { k: 'wind', label: 'Wind', sub: 'Sustained, from any direction', unit: 'kn', step: 1, min: 8, max: 50 },
   { k: 'gust', label: 'Gusts', sub: 'AIFS has no gust forecast', unit: 'kn', step: 1, min: 10, max: 60 },
   { k: 'wave', label: 'Waves', sub: 'Significant height', unit: 'ft', step: 1, min: 2, max: 25 },
   { k: 'up', label: 'Wind ahead of 60°', sub: 'Upwind: motoring or beating into it', unit: 'kn', step: 1, min: 4, max: 40 }
 ];
 const PX = { d: JSON.parse(JSON.stringify(PX_DEF)), loaded: false, map: null, line: null, marks: [], runLayer: null,
+             rgen: 0, routes: {}, rsel: null, rdep: 0, rLayer: null, rland: null, rpct: 0,
              editing: false, undo: [], grids: {}, pend: {}, res: {}, R: null, deps: [], prog: [0, 0], gen: 0, saveT: null, evalT: null };
 
 // ─── saved routes and limits ───────────────────────────────────────
@@ -3323,6 +3529,8 @@ async function pxLoadSaved() {
       const j = JSON.parse(str(((await r.json()).fields || {}).px) || '{}');
       PX.d = Object.assign(JSON.parse(JSON.stringify(PX_DEF)), j);
       PX.d.lim = Object.assign({}, PX_DEF.lim, j.lim || {});
+      PX.d.r = Object.assign({}, PX_DEF.r, j.r || {});
+      if (PX.d.mode !== 'route') PX.d.mode = 'line';
       PX.d.models = (PX.d.models || []).filter(m => PX_MODELS.includes(m));
       if (!PX.d.models.length) PX.d.models = PX_DEF.models.slice();
     }
@@ -3344,7 +3552,17 @@ async function openPassage() {
   if (!PX.map) pxInitMap();
   setTimeout(() => PX.map.invalidateSize(), 60);
   if (!PX.loaded) { pxPaint(); await pxLoadSaved(); pxDraw(true); }
-  pxCompute();
+  pxRefresh();
+}
+// Work it all out again for the current mode: the departure window for
+// "Follow my line", or each model's route for "Weather routing".
+function pxRefresh() {
+  if (PX.d.mode === 'route') {
+    const r = pxCur();
+    PX.R = r && r.pts.length > 1 ? pxSamples(r.pts, PX.d.speed) : null;
+    PX.deps = PX.R ? pxDepartures(PX.d.within) : [];
+    pxDraw(); pxPaint(); pxRouteAll();
+  } else { PX.rgen++; pxClearRoutes(); pxDraw(); pxCompute(); }
 }
 function pxInitMap() {
   PX.map = L.map('pxMap', { zoomControl: false, attributionControl: false, zoomSnap: .5 });
@@ -3360,7 +3578,8 @@ function pxDraw(fit) {
   if (PX.line) PX.line.remove();
   PX.marks.forEach(m => m.remove()); PX.marks = [];
   const r = pxCur(), pts = r ? r.pts : [];
-  PX.line = L.polyline(pts, { color: '#1f6f9a', weight: 3, opacity: .9, dashArray: PX.editing ? '6 6' : null, interactive: false }).addTo(PX.map);
+  const faint = PX.d.mode === 'route' && !PX.editing;      // when routing, your line is only the waypoints
+  PX.line = L.polyline(pts, { color: '#1f6f9a', weight: faint ? 2 : 3, opacity: faint ? .45 : .9, dashArray: PX.editing || faint ? '6 6' : null, interactive: false }).addTo(PX.map);
   pts.forEach((p, i) => {
     const end = i === 0 ? ' s' : i === pts.length - 1 && pts.length > 1 ? ' f' : '';
     const m = L.marker(p, { draggable: PX.editing, keyboard: false,
@@ -3388,7 +3607,7 @@ function pxUndo() {
 }
 function pxEdit() {
   if (!pxCur()) { pxNew(); return; }
-  PX.editing = true; PX.undo = []; pxClearRun();
+  PX.editing = true; PX.undo = []; pxClearRun(); PX.rgen++; pxClearRoutes();
   $('view-passage').classList.add('editing'); $('pxEditBar').hidden = false;
   setTimeout(() => { PX.map.invalidateSize(); pxDraw(true); }, 60);
   pxPaintRoute();
@@ -3397,7 +3616,7 @@ function pxEditDone() {
   PX.editing = false;
   $('view-passage').classList.remove('editing'); $('pxEditBar').hidden = true;
   setTimeout(() => { PX.map.invalidateSize(); pxDraw(true); }, 60);
-  pxSave(); pxCompute();
+  pxSave(); pxRefresh();
 }
 function pxStartAtBoat() {
   const r = pxCur(); if (!r) return;
@@ -3414,7 +3633,7 @@ function pxNew() {
 }
 function pxPick(id) {
   if (id === '__new') { pxNew(); return; }
-  PX.d.cur = id; pxSave(); pxClearRun(); pxDraw(true); pxCompute();
+  PX.d.cur = id; pxSave(); pxClearRun(); pxDraw(true); pxRefresh();
 }
 function pxRename() {
   const r = pxCur(); if (!r) return;
@@ -3424,33 +3643,36 @@ function pxRename() {
 }
 function pxReverse() {
   const r = pxCur(); if (!r || r.pts.length < 2) return;
-  r.pts.reverse(); pxSave(); pxDraw(); pxCompute();
+  r.pts.reverse(); pxSave(); pxDraw(); pxRefresh();
 }
 function pxDelete() {
   const r = pxCur(); if (!r) return;
   if (!confirm(`Delete the route “${r.name}”?`)) return;
   PX.d.routes = PX.d.routes.filter(x => x !== r);
   PX.d.cur = PX.d.routes.length ? PX.d.routes[PX.d.routes.length - 1].id : '';
-  pxSave(); pxClearRun(); pxDraw(true); pxCompute();
+  pxSave(); pxClearRun(); pxDraw(true); pxRefresh();
 }
 
 // ─── settings ──────────────────────────────────────────────────────
-function pxGet(k) { return k === 'speed' ? PX.d.speed : PX.d.lim[k]; }
+function pxGet(k) { return k === 'speed' ? PX.d.speed : k in PX_DEF.r ? pxR(k) : PX.d.lim[k]; }
 function pxBump(k, dir) {
   const L_ = PX_LIMS.find(x => x.k === k);
   const v = Math.min(L_.max, Math.max(L_.min, +(pxGet(k) + dir * L_.step).toFixed(2)));
-  if (k === 'speed') PX.d.speed = v; else PX.d.lim[k] = v;
+  if (k === 'speed') PX.d.speed = v;
+  else if (k in PX_DEF.r) PX.d.r = Object.assign({}, PX_DEF.r, PX.d.r, { [k]: v });
+  else PX.d.lim[k] = v;
   pxPaintLimits(); pxSave();
   clearTimeout(PX.evalT);
-  PX.evalT = setTimeout(() => k === 'speed' ? pxCompute() : (pxEvalAll(), pxPaint()), 250);
+  PX.evalT = setTimeout(() => PX.d.mode === 'route' ? (k === 'gph' ? (pxPaintRoutes()) : pxRouteAll())
+                            : k === 'speed' ? pxCompute() : (pxEvalAll(), pxPaint()), PX.d.mode === 'route' ? 700 : 250);
 }
 function pxToggleModel(id) {
   const on = PX.d.models.includes(id);
   if (on && PX.d.models.length === 1) { toast('Keep at least one model'); return; }
   PX.d.models = on ? PX.d.models.filter(m => m !== id) : PX_MODELS.filter(m => m === id || PX.d.models.includes(m));
-  pxSave(); pxCompute();
+  pxSave(); pxRefresh();
 }
-function pxSetWithin(d) { PX.d.within = d; pxSave(); pxCompute(); }
+function pxSetWithin(d) { PX.d.within = d; pxSave(); pxRefresh(); }
 
 // ─── forecast data ─────────────────────────────────────────────────
 const PXQ = { active: 0, q: [] };
@@ -3572,7 +3794,11 @@ const pxLabel = id => (MODELS.find(m => m.id === id) || { label: id.toUpperCase(
 const pxChip = (id, extra) => { const m = MODELS.find(x => x.id === id) || { bg: '#888', fg: '#fff', label: id }; return `<span class="mchip sm" style="--mbg:${m.bg};--mfg:${m.fg}"${extra || ''}>${m.label}</span>`; };
 function pxPaint() {
   if (!$('pxPanel')) return;
-  pxPaintRoute(); pxPaintBest(); pxPaintGrid(); pxPaintLimits(); pxPaintProg();
+  const route = PX.d.mode === 'route';
+  document.querySelectorAll('#pxMode button').forEach(b => b.classList.toggle('on', b.dataset.m === PX.d.mode));
+  $('pxLineBox').hidden = route; $('pxRouteBox').hidden = !route || !PX.R;
+  pxPaintRoute(); pxPaintLimits(); pxPaintProg();
+  if (route) pxPaintRoutes(); else { pxPaintBest(); pxPaintGrid(); }
 }
 function pxPaintRoute() {
   const r = pxCur();
@@ -3665,12 +3891,18 @@ function pxPaintGrid() {
   $('pxRuns').textContent = runs.length ? 'Forecast runs: ' + runs.join(' · ') : '';
 }
 function pxPaintLimits() {
-  $('pxLimits').innerHTML = PX_LIMS.map(L_ => {
+  const route = PX.d.mode === 'route';
+  $('pxLimitsTitle').textContent = route ? 'Your boat and limits' : 'Your limits';
+  $('pxNote').textContent = route
+    ? 'The router sails each model’s wind on the IP380 design polar, through each of your points in order, keeping clear of land. Put a point outside any shoal, cape or reef you want kept clear (Diamond Shoals, say), and finish outside the cut. No currents yet. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.'
+    : 'The boat follows your line at the average speed; it doesn’t route around weather. Wind and gusts come from each model, waves from GFS-Wave for all of them. Use it as a cross-check on the official forecast and the rally’s weather briefing.';
+  $('pxLimits').innerHTML = PX_LIMS.filter(L_ => !L_.mode || L_.mode === PX.d.mode).map(L_ => {
     const v = pxGet(L_.k);
     return `<div class="row"><div class="txt"><b>${L_.label}</b><small>${L_.sub}</small></div>`
       + `<div class="px-step"><button onclick="pxBump('${L_.k}',-1)" aria-label="Less">−</button>`
       + `<b class="num">${v.toFixed(L_.dp || 0)}<i>${L_.unit}</i></b><button onclick="pxBump('${L_.k}',1)" aria-label="More">+</button></div></div>`;
-  }).join('');
+  }).join('') + (route ? `<label class="row"><div class="txt"><b>Stay inside my limits</b><small>If no route can, it shows the fastest one and says so</small></div>`
+      + `<span class="switch"><input type="checkbox" id="pxKeep"${pxR('keep') ? ' checked' : ''} onchange="pxToggleKeep()"><span></span></span></label>` : '');
 }
 
 // ─── details for one departure ─────────────────────────────────────
@@ -3745,6 +3977,189 @@ function pxOpenRun(id, k) {
   const firstOver = rows.find(rw => rw.lvl === 2);       // a dot where it first goes over
   if (firstOver && firstOver !== rows[0]) L.circleMarker([firstOver.lat, firstOver.lon], { radius: 7, color: '#fff', weight: 2, fillColor: col[2], fillOpacity: 1, interactive: false }).addTo(PX.runLayer);
   pxOpenSheet(`${pxLabel(id)} · leaving ${pxDT(ms)}`, html);
+}
+
+// ─── weather routing (the PredictWind-style part) ──────────────────
+// Each model's fastest route from your first point to your last, passing
+// through each of your points in between, sailed on the IP380 polar. Land
+// from land.png beside this page (Natural Earth, 1 nm cells). Runs here on
+// the phone a slice at a time, so the page stays responsive.
+const PX_RDEF = { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true };
+const PXL = { p: null };
+function pxLandImg() {
+  if (!PXL.p) PXL.p = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'land.png?v=1'; });
+  return PXL.p;
+}
+async function pxLandFor(box, pts) {
+  const img = await pxLandImg(); if (!img) return null;
+  const x0 = Math.max(0, Math.floor((box[1] + 100) * 60)), x1 = Math.min(img.width, Math.ceil((box[3] + 100) * 60));
+  const y0 = Math.max(0, Math.floor((box[0] - 5) * 60)), y1 = Math.min(img.height, Math.ceil((box[2] - 5) * 60));
+  const w = x1 - x0, h = y1 - y0; if (w <= 0 || h <= 0) return null;
+  try {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, -x0, -y0);   // image row 0 is the south edge
+    const d = x.getImageData(0, 0, w, h).data, bits = new Uint8Array(w * h);
+    for (let i = 0; i < bits.length; i++) bits[i] = d[i * 4] > 127 ? 1 : 0;
+    return pxLandMake(bits, x0, y0, w, h, pts);
+  } catch (e) { return null; }
+}
+const pxR = k => (PX.d.r || PX_RDEF)[k] ?? PX_RDEF[k];
+function pxSetMode(m) {
+  PX.d.mode = m; pxSave(); pxPaint();
+  if (m === 'route') pxRouteAll(); else { PX.rgen++; pxClearRoutes(); }
+}
+function pxSetDep(ms) { PX.rdep = +ms; pxRouteAll(); }
+function pxToggleKeep() { PX.d.r = Object.assign({}, PX_RDEF, PX.d.r, { keep: !pxR('keep') }); pxSave(); pxPaintLimits(); pxRouteAll(); }
+function pxDrive(g, gen, label) {                 // run a router generator in ~40 ms slices
+  return new Promise(res => {
+    const tick = () => {
+      if (gen !== PX.rgen) return res(null);
+      const t = performance.now(); let s;
+      do { s = g.next(); if (s.done) return res(s.value); PX.rpct = s.value; } while (performance.now() - t < 40);
+      $('pxRProg').textContent = `Routing ${label} ${Math.round((PX.rpct || 0) * 100)}%`;
+      setTimeout(tick, 0);
+    };
+    tick();
+  });
+}
+async function pxRouteAll() {
+  const gen = ++PX.rgen, r = pxCur();
+  PX.routes = {}; PX.rsel = null; pxClearRoutes(); pxPaintRoutes();
+  if (!r || r.pts.length < 2 || PX.editing || PX.d.mode !== 'route') return;
+  if (!PX.deps.length) PX.deps = pxDepartures(PX.d.within);
+  if (!PX.deps.includes(PX.rdep)) PX.rdep = PX.deps[0];
+  const pts = r.pts, lats = pts.map(p => p[0]), lons = pts.map(p => p[1]);
+  const box = [Math.min(...lats) - 3, Math.min(...lons) - 3, Math.max(...lats) + 3, Math.max(...lons) + 3];
+  let nm = 0; for (let i = 1; i < pts.length; i++) nm += haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) / 1852;
+  const t0 = PX.rdep / 1000, tEnd = t0 + nm / 2.5 * 3600 + 12 * 3600;      // even at 2.5 kn it's done by then
+  $('pxRProg').textContent = 'Loading forecasts…';
+  const [Lm] = await Promise.all([pxLandFor(box, pts)]);
+  if (gen !== PX.rgen) return;
+  PX.rland = !!Lm;
+  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
+  const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep') };
+  for (const id of PX.d.models) {
+    const F = await pxEnsure(id, box, tEnd, ['ws', 'wd', 'wg']), Mg = await marine;
+    if (gen !== PX.rgen) return;
+    if (!F || F.none) { PX.routes[id] = { none: F ? F.none : 'Could not load this model' }; pxPaintRoutes(); continue; }
+    const M = Mg && !Mg.none ? Mg : null;
+    if (pxEnv(F, M, pts[0][0], pts[0][1], t0) === null) { PX.routes[id] = { none: 'Its forecast doesn’t cover this departure' }; pxPaintRoutes(); continue; }
+    let res = await pxDrive(pxRouteGen(F, M, Lm, pts, t0, o), gen, pxLabel(id));
+    if (res && o.keep && res.stuck) {                     // can't stay inside the limits: show the fastest, and say so
+      res = await pxDrive(pxRouteGen(F, M, Lm, pts, t0, Object.assign({}, o, { keep: false })), gen, pxLabel(id));
+      if (res) res.broke = true;
+    }
+    if (gen !== PX.rgen || !res) return;
+    res.run = F.run; PX.routes[id] = res;
+    pxPaintRoutes(); pxDrawRoutes();
+  }
+  if (gen === PX.rgen) { $('pxRProg').textContent = ''; pxPaintRoutes(); pxFitRoutes(); }
+}
+// Widen the chart to the routes if any of them runs off it.
+function pxFitRoutes() {
+  const ll = pxCur().pts.slice();
+  PX.d.models.forEach(id => { const x = PX.routes[id]; if (x && x.path) x.path.forEach(n => ll.push([n.lat, n.lon])); });
+  const b = L.latLngBounds(ll), v = PX.map.getBounds();
+  if (!v.contains(b)) PX.map.fitBounds(b, { paddingTopLeft: [30, 70], paddingBottomRight: [70, 24], maxZoom: 10 });
+}
+function pxClearRoutes() { if (PX.rLayer) { PX.rLayer.remove(); PX.rLayer = null; } }
+function pxLineColor(id) {
+  const dark = document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+  if (id === 'ecmwf') return dark ? '#ffffff' : '#14212d';
+  return (MODELS.find(m => m.id === id) || { bg: '#1f6f9a' }).bg;
+}
+function pxDrawRoutes() {
+  pxClearRoutes(); if (!PX.map || PX.d.mode !== 'route') return;
+  PX.rLayer = L.layerGroup().addTo(PX.map);
+  for (const id of PX.d.models) {
+    const x = PX.routes[id]; if (!x || !x.path) continue;
+    const on = !PX.rsel || PX.rsel === id, col = pxLineColor(id);
+    let run = [x.path[0]], mot = x.path.length > 1 && x.path[1].mot;    // solid while sailing, dashed while motoring
+    const flush = () => { if (run.length > 1) L.polyline(run.map(n => [n.lat, n.lon]), { color: col, weight: PX.rsel === id ? 5 : 3, opacity: on ? .95 : .3, dashArray: mot ? '2 7' : null, lineCap: 'round', interactive: false }).addTo(PX.rLayer); };
+    for (let i = 1; i < x.path.length; i++) {
+      if (!!x.path[i].mot !== mot) { flush(); run = [x.path[i - 1]]; mot = !!x.path[i].mot; }
+      run.push(x.path[i]);
+    }
+    flush();
+    if (!x.arrive) { const e = x.path[x.path.length - 1]; L.circleMarker([e.lat, e.lon], { radius: 5, color: col, weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(PX.rLayer); }
+  }
+}
+// Distance still to go when a route stops short (forecast ended, or nowhere to go).
+function pxLeft(x) {
+  const pts = pxCur().pts, e = x.path[x.path.length - 1]; let d = haversine(e.lat, e.lon, pts[x.leg][0], pts[x.leg][1]) / 1852;
+  for (let i = x.leg + 1; i < pts.length; i++) d += haversine(pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1]) / 1852;
+  return d;
+}
+function pxRouteLine(x) {
+  if (x.none) return { dot: 'part', head: esc(x.none), sub: '' };
+  const fuel = x.motS / 3600 * pxR('gph');
+  const mot = x.motS > 0 ? ` · motor ${pxDur(x.motS)} (${fuel < 10 ? fuel.toFixed(1) : Math.round(fuel)} gal)` : ' · no motoring';
+  const wx = `Wind to ${Math.round(x.maxWs)} kn${x.maxWg === x.maxWg ? ` · gusts ${Math.round(x.maxWg)}` : ''}${x.maxWh === x.maxWh ? ` · waves ${x.maxWh.toFixed(1)} ft` : ''} · ${Math.round(100 * x.up / Math.max(1, x.up + x.reach + x.down))}% upwind`;
+  if (x.past) return { dot: 'part', head: `Forecast ends ${Math.round(pxLeft(x))} nm short`, sub: `${Math.round(x.nm)} nm in ${pxDur(x.durS)}${mot}`, wx };
+  if (x.stuck) return { dot: 'bad', head: 'No route found', sub: `Stopped ${Math.round(pxLeft(x))} nm short: land or no usable wind in the way`, wx };
+  const over = x.overS > 0;
+  return { dot: x.broke || over ? 'bad' : 'ok', head: `Arrive ${pxDT(x.arrive * 1000)}`,
+           sub: `${pxDur(x.durS)} · ${Math.round(x.nm)} nm${mot}`, wx,
+           warn: x.broke ? `No route stays inside your limits: this is the fastest, over ${pxOverTxt(x.over)} for ${pxDur(x.overS)}`
+               : over ? `Over ${pxOverTxt(x.over)} for ${pxDur(x.overS)}` : '' };
+}
+function pxPaintRoutes() {
+  if (!$('pxRoutes')) return;
+  const ids = PX.d.models, done = ids.filter(id => PX.routes[id] && PX.routes[id].arrive);
+  const first = done.length > 1 ? done.reduce((a, id) => PX.routes[id].arrive < PX.routes[a].arrive ? id : a, done[0]) : null;
+  const spread = done.length > 1 ? Math.max(...done.map(id => PX.routes[id].arrive)) - Math.min(...done.map(id => PX.routes[id].arrive)) : 0;
+  $('pxRoutes').innerHTML = ids.map(id => {
+    const x = PX.routes[id];
+    if (!x) return `<div class="row px-mrow">${pxChip(id)}<div class="txt"><small>Waiting…</small></div></div>`;
+    const l = pxRouteLine(x);
+    return `<button class="row px-mrow${PX.rsel === id ? ' px-rsel' : ''}" onclick="pxOpenRoute('${id}')"${x.path ? '' : ' disabled'}>${pxChip(id)}<div class="txt">`
+      + `<b><span class="px-dot px-${l.dot}"></span>${l.head}${id === first ? ' <span class="px-first">first in</span>' : ''}</b>`
+      + `${l.sub ? `<small>${l.sub}</small>` : ''}${l.wx ? `<small>${l.wx}</small>` : ''}${l.warn ? `<small class="px-t-bad">${l.warn}</small>` : ''}</div>${x.path ? '<span class="chev">›</span>' : ''}</button>`;
+  }).join('');
+  $('pxRSpread').textContent = done.length > 1 ? `The models' arrival times are ${pxDur(spread)} apart.${spread > 12 * 3600 ? ' That much disagreement means low confidence in any of them.' : ''}` : '';
+  const runs = ids.filter(id => PX.routes[id] && PX.routes[id].run).map(id => `${pxLabel(id)} ${pxRunName(PX.routes[id].run)}`);
+  const M = PX.grids.marine;
+  $('pxRRuns').textContent = (runs.length ? 'Forecast runs: ' + runs.join(' · ') + (M && M.run ? ` · waves GFS-Wave ${pxRunName(M.run)}` : '') + '. ' : '')
+    + (PX.rland === false ? 'The land map didn’t load, so these routes may cross land.' : '');
+  const sel = $('pxDep');
+  sel.innerHTML = PX.deps.map(ms => `<option value="${ms}"${ms === PX.rdep ? ' selected' : ''}>${pxDT(ms)}</option>`).join('');
+}
+function pxOpenRoute(id) {
+  const x = PX.routes[id]; if (!x || !x.path) return;
+  PX.rsel = id; pxDrawRoutes(); pxPaintRoutes();
+  const fuel = x.motS / 3600 * pxR('gph'), n = Math.max(1, x.up + x.reach + x.down), pct = v => Math.round(100 * v / n) + '%';
+  const l = pxRouteLine(x);
+  let html = `<div class="kv"><span>Leave</span><b>${pxDT(x.t0 * 1000)}</b>`
+    + `<span>Arrive</span><b>${x.arrive ? pxArrive(x.arrive * 1000) : l.head}</b>`
+    + `<span>Sailed</span><b>${Math.round(x.nm)} nm in ${pxDur(x.durS)}</b>`
+    + `<span>Motoring</span><b>${x.motS ? `${pxDur(x.motS)} · ${fuel.toFixed(1)} gal at ${pxR('gph')} gal/h` : 'None'}</b>`
+    + `<span>Over your limits</span><b class="${x.overS ? 'px-t-bad' : ''}">${x.overS ? `${pxDur(x.overS)} · ${pxOverTxt(x.over)}` : 'No'}</b>`
+    + `<span>Strongest wind</span><b>${Math.round(x.maxWs)} kn</b>`
+    + `<span>Strongest gust</span><b>${x.maxWg === x.maxWg ? Math.round(x.maxWg) + ' kn' : 'Not in this model'}</b>`
+    + `<span>Highest waves</span><b>${x.maxWh === x.maxWh ? x.maxWh.toFixed(1) + ' ft' : 'No wave data'}</b>`
+    + `<span>Wind angle</span><b>${pct(x.up)} upwind · ${pct(x.reach)} reach · ${pct(x.down)} downwind</b></div>`;
+  if (x.broke) html += `<p class="note bad" style="margin-top:8px;">${l.warn}.</p>`;
+  // One line per hour (per 3 h when it's long): where she is, what she's doing, and the weather there.
+  const every = x.durS > 36 * 3600 ? 3 : 1, rows = []; let nm = 0, key = -1;
+  for (let i = 1; i < x.path.length; i++) {
+    const a = x.path[i - 1], b = x.path[i], k = Math.floor((a.t - x.t0) / (every * 3600));
+    if (k !== key && a.e) { key = k; rows.push({ t: a.t, nm, b, e: a.e }); }
+    nm += haversine(a.lat, a.lon, b.lat, b.lon) / 1852;
+  }
+  const Lm = PX.d.lim, C = PX_CLOSE, cls = (bad, close) => bad ? ' class="px-t-bad"' : close ? ' class="px-t-close"' : '';
+  html += `<div class="px-tl-wrap"><table class="px-tl"><tr><th>${every === 1 ? 'Hour' : 'Every 3 h'}</th><th>nm</th><th>Course</th><th>Boat</th><th>Wind kn</th><th>Angle</th><th>Waves ft</th></tr>`;
+  for (const rw of rows) {
+    const d = new Date(rw.t * 1000), e = rw.e, b = rw.b, upw = b.twa < PX_UP;
+    html += `<tr class="px-l${b.over && b.over.length ? 2 : 0}"><td>${d.toLocaleDateString('en-US', { weekday: 'short' })} ${String(d.getHours()).padStart(2, '0')}</td><td>${Math.round(rw.nm)}</td>`
+      + `<td>${String(Math.round(b.hd) % 360).padStart(3, '0')}°</td><td>${b.spd.toFixed(1)}${b.mot ? ' <small>motor</small>' : ''}</td>`
+      + `<td${cls(e.ws > Lm.wind || (upw && e.ws > Lm.up), e.ws > Lm.wind * C)}>${Math.round(e.ws)} <small>${e.wd === e.wd ? compass(e.wd) : ''}</small></td>`
+      + `<td${upw ? ' class="px-t-up"' : ''}>${b.twa === b.twa ? Math.round(b.twa) + '° <small>' + b.side + '</small>' : '–'}</td>`
+      + `<td${cls(e.wh > Lm.wave, e.wh > Lm.wave * C)}>${e.wh === e.wh ? e.wh.toFixed(1) + (e.wp === e.wp ? ` <small>${Math.round(e.wp)} s</small>` : '') : '–'}</td></tr>`;
+  }
+  html += '</table></div>';
+  html += `<p class="note" style="margin-top:8px;">Course is true. Sailed at ${pxR('pct')}% of the IP380 design polar${pxR('motorBelow') > 0 ? `, motoring at ${pxR('motorKn')} kn whenever sailing would be slower than ${pxR('motorBelow')} kn` : ', never motoring'}; each tack or gybe costs 5 minutes. `
+    + `No currents yet, and no slowing for waves. ${pxLabel(id)} run ${pxRunName(x.run)}. For weather strategy only: check every leg against the chart.</p>`;
+  pxOpenSheet(`${pxLabel(id)} route · leaving ${pxDT(x.t0 * 1000)}`, html);
 }
 
 // ═══ NAV ═══════════════════════════════════════════════════════════
