@@ -3216,6 +3216,9 @@ const PX_UP = 60, PX_DOWN = 120;       // true wind angle: under 60° upwind, ov
 const PX_CLOSE = 0.85;                 // amber from 85% of a limit
 const PX_WAC_KN = 1;                   // "wind against the current" counts where the current runs at least 1 kn
 // Wind blowing against a current (wind FROM roughly the way the current flows TO): what stands up the Gulf Stream.
+// Past the last current forecast (RTOFS's regional files stop at +72 h) the last field is held:
+// the Gulf Stream moves over days, so that beats dropping it.
+const pxCurT = (C, t) => Math.min(t, C.times[C.times.length - 1]);
 const pxAgainst = (wd, cs, cd) => cs >= PX_WAC_KN && wd === wd && cd === cd && Math.abs(((wd - cd) % 360 + 540) % 360 - 180) < 60;
 
 // Course over a leg as a rhumb line (matches the straight line drawn on the chart).
@@ -3332,7 +3335,7 @@ function pxRun(F, M, R, WF, WM, t0, lim, keepRows, C, WC) {
       if (Tm) { wh = pxS(M, 'wh', Tm, WM[k]); wp = pxS(M, 'wp', Tm, WM[k]); } else r.wavesPast = true;
     }
     let cs = NaN, cd = NaN;
-    if (C && WC && WC[k]) { const Tc = pxTi(C.times, t); if (Tc) { cs = pxS(C, 'cs', Tc, WC[k]); cd = pxD(C, 'cd', 'cs', Tc, WC[k]); } }
+    if (C && WC && WC[k]) { const Tc = pxTi(C.times, pxCurT(C, t)); if (Tc) { cs = pxS(C, 'cs', Tc, WC[k]); cd = pxD(C, 'cd', 'cs', Tc, WC[k]); } }
     const wac = pxAgainst(wd, cs, cd);
     const rel = wd === wd ? ((wd - p.crs) % 360 + 360) % 360 : NaN, twa = rel > 180 ? 360 - rel : rel;
     const over = [];
@@ -3432,7 +3435,7 @@ function pxEnv(F, M, lat, lon, t, C) {
   const e = { ws, wd: pxD(F, 'wd', 'ws', T, W), wg: F.d.wg ? pxS(F, 'wg', T, W) : NaN, wh: NaN, wp: NaN };
   if (M) { const Wm = pxWt(M.G, lat, lon), Tm = Wm && pxTi(M.times, t); if (Tm) { e.wh = pxS(M, 'wh', Tm, Wm); e.wp = pxS(M, 'wp', Tm, Wm); } }
   e.cs = 0; e.cd = 0;
-  if (C) { const Wc = pxWt(C.G, lat, lon), Tc = Wc && pxTi(C.times, t);
+  if (C) { const Wc = pxWt(C.G, lat, lon), Tc = Wc && pxTi(C.times, pxCurT(C, t));
     if (Tc) { const cs = pxS(C, 'cs', Tc, Wc), cd = pxD(C, 'cd', 'cs', Tc, Wc); if (cs === cs && cd === cd) { e.cs = cs; e.cd = cd; } } }
   e.wac = pxAgainst(e.wd, e.cs, e.cd);
   return e;
@@ -3874,6 +3877,8 @@ function pxEvalModel(id) {
 }
 function pxEvalAll() { PX.d.models.forEach(id => pxEvalModel(id)); }
 const pxCurGrid = () => { const C = PX.grids.current; return C && !C.none ? C : null; };
+// "RTOFS 19 Oct 00z, to Tue 22 00:00 then held" - where the current forecast stops, said plainly.
+const pxCurName = C => `RTOFS ${pxRunName(C.run)}, to ${pxDT((C.end || C.times[C.times.length - 1]) * 1000)} then held`;
 // Across the models for one departure: how many reach the finish, and how many of those stay inside.
 function pxAgreeAt(k) {
   const a = { n: 0, ok: 0, close: 0, bad: 0, part: 0, models: 0 };
@@ -3987,7 +3992,7 @@ function pxPaintGrid() {
   const runs = PX.d.models.filter(id => PX.grids[id] && PX.grids[id].run).map(id => `${pxLabel(id)} ${pxRunName(PX.grids[id].run)}`);
   const M = PX.grids.marine;
   if (M && M.run) runs.push(`waves GFS-Wave ${pxRunName(M.run)}`);
-  const Cg = pxCurGrid(); if (Cg) runs.push(`currents RTOFS ${pxRunName(Cg.run)}`);
+  const Cg = pxCurGrid(); if (Cg) runs.push(`currents ${pxCurName(Cg)}`);
   else if (M && M.none) runs.push('no wave data: ' + M.none.toLowerCase());
   $('pxRuns').textContent = runs.length ? 'Forecast runs: ' + runs.join(' · ') : '';
 }
@@ -4074,7 +4079,7 @@ function pxOpenRun(id, k) {
   });
   html += '</table></div>';
   html += `<p class="note" style="margin-top:8px;">Each line shows the strongest values in the ${every === 1 ? 'hour' : '3 hours'} that follow${last && !x.past ? `; arrival ${pxDT(last.t * 1000)}` : ''}. Angle is the true wind angle off the bow; under 60° counts as upwind. `
-    + `${pxLabel(id)} run ${pxRunName(F.run)}${Mok ? `; waves from GFS-Wave ${pxRunName(M.run)}` : ''}${Cg ? `; currents from RTOFS ${pxRunName(Cg.run)} (“vs wind” where the wind blows against a current over 1 kn)` : ''}. The boat follows the line as drawn at ${PX.d.speed.toFixed(1)} kn over the ground, so currents don’t change its speed here; Weather routing accounts for them.</p>`
+    + `${pxLabel(id)} run ${pxRunName(F.run)}${Mok ? `; waves from GFS-Wave ${pxRunName(M.run)}` : ''}${Cg ? `; currents ${pxCurName(Cg)} (“vs wind” where the wind blows against a current over 1 kn)` : ''}. The boat follows the line as drawn at ${PX.d.speed.toFixed(1)} kn over the ground, so currents don’t change its speed here; Weather routing accounts for them.</p>`
     + (F.gaps ? `<p class="note warn">${F.gaps} forecast step(s) didn’t load; parts of the route may show as out of the model’s area.</p>` : '')
     + (x.wavesPast ? '<p class="note warn">The wave forecast ends before arrival.</p>' : '');
   // On the chart: the route coloured by how close each stretch comes to your limits.
@@ -4337,7 +4342,7 @@ function pxPaintRoutes() {
   const M = PX.grids.marine;
   const Cg = pxCurGrid();
   $('pxRRuns').textContent = (runs.length ? 'Forecast runs: ' + runs.join(' · ') + (M && M.run ? ` · waves GFS-Wave ${pxRunName(M.run)}` : '')
-    + (Cg ? ` · currents RTOFS ${pxRunName(Cg.run)}` : ' · no current data, so no currents') + '. ' : '')
+    + (Cg ? ` · currents ${pxCurName(Cg)}` : ' · no current data, so no currents') + '. ' : '')
     + (PX.rland === false ? 'The land map didn’t load, so these routes may cross land.' : '');
   const sel = $('pxDep');
   sel.innerHTML = PX.deps.map(ms => `<option value="${ms}"${ms === PX.rdep ? ' selected' : ''}>${pxDT(ms)}</option>`).join('');
@@ -4379,7 +4384,7 @@ function pxOpenRoute(id) {
   }
   html += '</table></div>';
   html += `<p class="note" style="margin-top:8px;">Heading is true, through the water${hasC ? '; the current then carries her, so the track made good differs' : ''}. Sailed at ${pxR('pct')}% of the IP380 design polar${pxR('motorBelow') > 0 ? `, motoring at ${pxR('motorKn')} kn whenever sailing would be slower than ${pxR('motorBelow')} kn` : ', never motoring'}; each tack or gybe costs 5 minutes. `
-    + `${hasC ? `Currents from RTOFS ${pxRunName(pxCurGrid().run)} (“vs wind” where the wind blows against a current over 1 kn). ` : 'No current data loaded, so no currents. '}No slowing for waves. ${pxLabel(id)} run ${pxRunName(x.run)}. For weather strategy only: check every leg against the chart.</p>`;
+    + `${hasC ? `Currents ${pxCurName(pxCurGrid())} (“vs wind” where the wind blows against a current over 1 kn). ` : 'No current data loaded, so no currents. '}No slowing for waves. ${pxLabel(id)} run ${pxRunName(x.run)}. For weather strategy only: check every leg against the chart.</p>`;
   pxOpenSheet(`${pxLabel(id)} route · leaving ${pxDT(x.t0 * 1000)}`, html);
 }
 

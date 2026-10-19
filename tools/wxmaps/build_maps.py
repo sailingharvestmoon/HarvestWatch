@@ -439,8 +439,10 @@ def build_model(name, out_dir):
 # are found from the day's file listing - AWS's, else NOMADS's - not guessed.
 RT_AWS = "https://noaa-nws-rtofs-pds.s3.amazonaws.com"
 RT_NOMADS = "https://nomads.ncep.noaa.gov/pub/data/nccf/com/rtofs/prod"
-RT_PAT = re.compile(r"rtofs_glo\.t00z\.f(\d{3})[._]west_atl[._]std\.gri?b2$")      # .grb2 (v2.5) or .grib2 (v3.0)
-CURRENT = dict(res=0.1, domain=(10.0, -100.0, 44.6, -54.2), every=3)
+# Forecast files f024, f048, f072 (daily), plus the nowcast valid at the run time itself:
+# n024 in v2.5, tm000 in v3.0. Either extension: .grb2 (v2.5) or .grib2 (v3.0).
+RT_PAT = re.compile(r"rtofs_glo\.t00z\.(?:f(\d{3})|n024|tm000)[._]west_atl[._]std\.gri?b2$")
+CURRENT = dict(res=0.1, domain=(10.0, -100.0, 44.6, -54.2), every=3)   # (the files themselves are daily)
 
 def rtofs_files(day):
     """{forecast hour: url} for one day's Western Atlantic files, and where from."""
@@ -454,7 +456,7 @@ def rtofs_files(day):
         for k in re.findall(r"<Key>([^<]+)</Key>", t):
             names.append(k)
             m = RT_PAT.search(k)
-            if m: found[int(m.group(1))] = f"{RT_AWS}/{k}"
+            if m: found[int(m.group(1) or 0)] = f"{RT_AWS}/{k}"
         m = re.search(r"<NextContinuationToken>([^<]+)</NextContinuationToken>", t)
         if not m: break
         token = m.group(1)
@@ -464,7 +466,7 @@ def rtofs_files(day):
         for n in set(re.findall(r'href="([^"?/]+)"', b.decode("utf-8", "ignore"))):
             names.append(n)
             m = RT_PAT.search(n)
-            if m: found[int(m.group(1))] = f"{RT_NOMADS}/rtofs.{day}/{n}"
+            if m: found[int(m.group(1) or 0)] = f"{RT_NOMADS}/rtofs.{day}/{n}"
     if not found and names:                               # say what IS there, so a rename is easy to spot
         g = sorted({n.rsplit("/", 1)[-1] for n in names if n.endswith((".grb2", ".grib2"))})[:8]
         print(f"current: {day}: no Western Atlantic GRIB2 files; GRIB2 files listed include {g or 'none'}", flush=True)
@@ -520,8 +522,11 @@ def build_current(out_dir):
     if not files:
         print("current: no RTOFS run found", flush=True); return None
     run = dt.datetime.strptime(day, "%Y%m%d")
-    hours = [f for f in sorted(files) if f % CURRENT["every"] == 0 and f <= EXT
-             and (run + dt.timedelta(hours=f)).replace(tzinfo=dt.timezone.utc).timestamp() >= time.time() - 3 * 3600]
+    # Every step from the last one at or before now (so "now" is covered) to the end.
+    ts = lambda f: (run + dt.timedelta(hours=f)).replace(tzinfo=dt.timezone.utc).timestamp()
+    hours = [f for f in sorted(files) if f % CURRENT["every"] == 0 and f <= EXT]
+    before = [f for f in hours if ts(f) <= time.time()]
+    hours = [f for f in hours if ts(f) > time.time() or (before and f == before[-1])]
     print(f"current: RTOFS run {day} 00z from {src}, {len(hours)} steps to +{hours[-1] if hours else 0} h", flush=True)
     def get(f):
         try: return f, http(files[f])
