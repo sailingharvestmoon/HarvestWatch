@@ -473,6 +473,31 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
 .px-step b.num { min-width:70px; text-align:center; font-size:16px; font-variant-numeric:tabular-nums; }
 .px-step b.num i { font-style:normal; font-size:12px; color:var(--muted); font-weight:600; margin-left:3px; }
 
+/* phones: a button to give the chart more of the screen */
+#view-passage.bigmap .px-mapbox { flex-basis:70%; }
+.px-big svg { transition:transform .2s; }
+#view-passage.bigmap .px-big svg { transform:rotate(180deg); }
+
+/* wide screens (laptop, iPad sideways): the tab bar becomes a rail on the left,
+   and Passage puts its panel on the left with the chart filling the rest */
+@media (min-width: 900px) {
+  .app { grid-template-columns:84px 1fr; grid-template-rows:auto 1fr; }
+  .app > .appbar { grid-column:1 / -1; grid-row:1; }
+  .app > main { grid-column:2; grid-row:2; }
+  .app > .tabbar { grid-column:1; grid-row:2; grid-template-columns:none; grid-auto-rows:min-content; align-content:start; gap:4px;
+                   border-top:0; border-right:1px solid var(--line); padding:10px 0 0; }
+  .tabbar .tab { padding:12px 0 10px; font-size:11px; }
+  .sheet:not(.px-sheet) { width:min(560px, 100%); margin:0 auto; }
+  #view-passage.active { flex-direction:row-reverse; }
+  #view-passage .px-mapbox, #view-passage.bigmap .px-mapbox { flex:1 1 auto; min-height:0; border-bottom:0; border-left:1px solid var(--line); }
+  #view-passage .px-panel { flex:0 0 440px; width:440px; }
+  #view-passage .px-sheet { top:0; bottom:0; left:0; right:auto; width:440px; max-height:none; border-radius:0;
+                            box-shadow:8px 0 30px rgba(0,0,0,.18); transform:translateX(-105%); }
+  #view-passage .px-sheet.open { transform:none; }
+  #view-passage .px-sheet .grab { display:none; }
+  .px-big { display:none; }
+}
+
 /* deck camera (Boat tab) */
 .cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
 .cam-frame img { display:block; width:100%; height:100%; object-fit:cover; cursor:zoom-in; }
@@ -656,6 +681,7 @@ table.px-tl tr.px-l1 td:first-child { box-shadow:inset 3px 0 0 var(--warn); }
           <button class="fab" onclick="PX.map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
           <button class="fab" onclick="PX.map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
           <button class="fab" onclick="pxDraw(true)" title="Fit the route" aria-label="Fit the route"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+          <button class="fab px-big" onclick="pxBigMap()" title="Bigger chart" aria-label="Bigger chart"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
         <div class="px-editbar" id="pxEditBar" hidden>
           <p class="note" id="pxEditTip"></p>
@@ -3572,6 +3598,13 @@ function pxInitMap() {
   PX.map.on('click', pxMapClick);
 }
 
+function pxBigMap() {                            // phones: chart takes 70% of the screen, or back to 36%
+  $('view-passage').classList.toggle('bigmap');
+  setTimeout(() => PX.map.invalidateSize(), 80);
+}
+let pxResizeT = null;                            // keep the chart sized when the window or layout changes
+window.addEventListener('resize', () => { clearTimeout(pxResizeT); pxResizeT = setTimeout(() => PX.map && PX.map.invalidateSize(), 150); });
+
 // ─── drawing and editing the route ─────────────────────────────────
 function pxDraw(fit) {
   if (!PX.map) return;
@@ -4004,10 +4037,7 @@ async function pxLandFor(box, pts) {
   } catch (e) { return null; }
 }
 const pxR = k => (PX.d.r || PX_RDEF)[k] ?? PX_RDEF[k];
-function pxSetMode(m) {
-  PX.d.mode = m; pxSave(); pxPaint();
-  if (m === 'route') pxRouteAll(); else { PX.rgen++; pxClearRoutes(); }
-}
+function pxSetMode(m) { PX.d.mode = m; pxSave(); pxRefresh(); }
 function pxSetDep(ms) { PX.rdep = +ms; pxRouteAll(); }
 function pxToggleKeep() { PX.d.r = Object.assign({}, PX_RDEF, PX.d.r, { keep: !pxR('keep') }); pxSave(); pxPaintLimits(); pxRouteAll(); }
 function pxDrive(g, gen, label) {                 // run a router generator in ~40 ms slices
