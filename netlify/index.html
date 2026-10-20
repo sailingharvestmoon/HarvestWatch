@@ -512,6 +512,8 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
 /* phones: pinch to zoom, so no +/- (keeps the button stack inside the short chart) */
 @media (max-width: 899px) { .px-zoom .px-zin { display:none; } }
 .px-mode + .fc-models + #pxPlanBox > .section-title:first-child, #pxPlanBox > .section-title:first-child { margin-top:18px; }
+.px-shallow { image-rendering:pixelated; image-rendering:crisp-edges; }
+.px-moon { font-size:10px; margin-left:1px; opacity:.8; }
 
 /* deck camera (Boat tab) */
 .cam-frame { position:relative; width:100%; aspect-ratio:16/9; background:var(--surface2); border-bottom:1px solid var(--line); border-radius:14px 14px 0 0; overflow:hidden; }
@@ -715,14 +717,14 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
           <div class="px-within" style="margin-top:12px;"><span class="note">Leaving in the next</span><div class="seg px-within-seg"><button data-d="1" onclick="pxSetWithin(1)">1 d</button><button data-d="2" onclick="pxSetWithin(2)">2 d</button><button data-d="3" onclick="pxSetWithin(3)">3 d</button><button data-d="4" onclick="pxSetWithin(4)">4 d</button></div></div>
           <div class="px-within"><span class="note">One departure every</span><div class="seg" id="pxEvery"><button data-h="6" onclick="pxSetEvery(6)">6 h</button><button data-h="12" onclick="pxSetEvery(12)">12 h</button><button data-h="24" onclick="pxSetEvery(24)">24 h</button></div></div>
           <div class="fc-wrap" id="pxPlan"></div>
-          <p class="note" style="margin:8px 4px 0;">Each square is the router's passage for one departure on one model, in hours under way.<span class="px-key px-ok"></span>inside your limits<span class="px-key px-close"></span>close to one<span class="px-key px-bad"></span>over one (✕ no route)<span class="px-key px-part"></span>forecast ends first. The top row counts the models inside your limits out of those that reach the finish. Shaded hours leave in the dark. Tap a square to see those routes in Weather routing.</p>
+          <p class="note" style="margin:8px 4px 0;">Each square is the router's passage for one departure on one model, in hours under way.<span class="px-key px-ok"></span>inside your limits<span class="px-key px-close"></span>close to one<span class="px-key px-bad"></span>over one (✕ no route)<span class="px-key px-part"></span>forecast ends first. ☾ arrives after dark. The top row counts the models inside your limits out of those that reach the finish. Shaded hours leave in the dark. Tap a square to see those routes in Weather routing.</p>
         </div>
         <div id="pxRouteBox" hidden>
           <div class="px-within px-leave"><span class="note">Leave</span><select class="px-sel" id="pxDep" onchange="pxSetDep(this.value)" aria-label="Departure time"></select></div>
           <div class="section-title" style="display:flex;align-items:center;gap:8px;">Fastest route by model<span style="flex:1"></span><span class="note px-prog" id="pxRProg"></span></div>
           <div class="list" id="pxRoutes"></div>
           <p class="note" id="pxRSpread" style="margin:8px 4px 0;"></p>
-          <p class="note" style="margin:4px 4px 0;">Solid line sailing, dotted motoring. Red areas on the chart are shoal keep-out areas. Tap a model for its route hour by hour.</p>
+          <p class="note" style="margin:4px 4px 0;">Solid line sailing, dotted motoring. Red on the chart is where the router won’t go: shallow water and the shoal keep-out areas. Tap a model for its route hour by hour.</p>
         </div>
         <p class="note" id="pxRRuns" style="margin:8px 4px 0;"></p>
         <div class="section-title" id="pxLimitsTitle">Your boat and limits</div>
@@ -3464,7 +3466,8 @@ function pxEnv(F, M, lat, lon, t, C) {
   const T = pxTi(F.times, t); if (!T) return null;
   const ws = pxS(F, 'ws', T, W); if (ws !== ws) return null;
   const e = { ws, wd: pxD(F, 'wd', 'ws', T, W), wg: F.d.wg ? pxS(F, 'wg', T, W) : NaN, wh: NaN, wp: NaN };
-  if (M) { const Wm = pxWt(M.G, lat, lon), Tm = Wm && pxTi(M.times, t); if (Tm) { e.wh = pxS(M, 'wh', Tm, Wm); e.wp = pxS(M, 'wp', Tm, Wm); } }
+  if (M) { const Wm = pxWt(M.G, lat, lon), Tm = Wm && pxTi(M.times, t);
+    if (Tm) { e.wh = pxS(M, 'wh', Tm, Wm); e.wp = pxS(M, 'wp', Tm, Wm); e.wvd = M.d.wvd ? pxD(M, 'wvd', 'wh', Tm, Wm) : NaN; } }
   e.cs = 0; e.cd = 0;
   if (C) { const Wc = pxWt(C.G, lat, lon), Tc = Wc && pxTi(C.times, pxCurT(C, t));
     if (Tc) { const cs = pxS(C, 'cs', Tc, Wc), cd = pxD(C, 'cd', 'cs', Tc, Wc); if (cs === cs && cd === cd) { e.cs = cs; e.cd = cd; } } }
@@ -3472,11 +3475,19 @@ function pxEnv(F, M, lat, lon, t, C) {
   return e;
 }
 function pxTwa(wd, hd) { const rel = ((wd - hd) % 360 + 360) % 360; return [rel > 180 ? 360 - rel : rel, rel > 180 ? 'port' : 'stbd']; }
+// Speed lost to the sea: a rule of thumb, not a measured wave polar. Over 3 ft of significant
+// height, 4% per foot with the waves on the bow (within 60°), half that on the beam, a quarter
+// running; at most 50%. Wave direction from GFS-Wave where there is one, else the wind's.
+function pxWaveLoss(e, hd) {
+  if (!(e.wh > 3)) return 0;
+  const [wa] = pxTwa(e.wvd === e.wvd ? e.wvd : e.wd, hd);
+  return Math.min(.5, (e.wh - 3) * .04 * (wa < 60 ? 1 : wa <= 120 ? .5 : .25));
+}
 // Speed on a heading, or null if that heading breaks a limit you asked the router to keep.
 function pxBoat(e, hd, o) {
-  const [twa] = pxTwa(e.wd, hd);
-  let spd = pxPolar(e.ws, twa) * o.pct, mot = false;
-  if (o.motorBelow > 0 && spd < o.motorBelow) { spd = o.motorKn; mot = true; }
+  const [twa] = pxTwa(e.wd, hd), keep = o.waves ? 1 - pxWaveLoss(e, hd) : 1;
+  let spd = pxPolar(e.ws, twa) * o.pct * keep, mot = false;
+  if (o.motorBelow > 0 && spd < o.motorBelow) { spd = o.motorKn * keep; mot = true; }
   if (o.keep && twa < PX_UP && e.ws > o.lim.up) return null;
   return spd > 0.05 ? { spd, mot, twa } : null;
 }
@@ -3502,7 +3513,7 @@ function pxMove(n, e, hd, nm, dt) {
   return e.cs ? destPoint(p.lat, p.lon, e.cd, e.cs * dt / 3600 * 1852) : p;
 }
 // One route: from pts[0], through each of your points in order, to the last.
-// o: { pct, motorBelow, motorKn, lim, keep (stay inside the limits), dtS, tackS, C (current grids, optional),
+// o: { pct, motorBelow, motorKn, lim, keep (stay inside the limits), dtS, tackS, C (current grids, optional), waves (slow in a sea),
 //      maxS (give up - 'slow' - once the passage would take longer than this) }.
 // A generator, so the page can stay responsive: it yields its progress (0..1)
 // now and then and returns the result.
@@ -3625,12 +3636,13 @@ function pxRouteRun(F, M, Lm, pts, t0, o) {     // run to the end (tests, and sh
 const PX_URL = `${FSB}/weather/${VESSEL}-passage`;
 const PX_MODELS = ['ecmwf', 'gfs', 'aifs', 'nam', 'hrrr'];
 const PX_DEF = { routes: [], cur: '', speed: 5.5, lim: { wind: 25, gust: 32, wave: 8, up: 15, wac: 15 }, models: ['ecmwf', 'gfs', 'aifs'], within: 3,
-                 mode: 'plan', every: 12, r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true } };
+                 mode: 'plan', every: 12, day: false, r: { pct: 85, motorBelow: 4, motorKn: 6, gph: 0.95, keep: true, minDepth: 20, waves: true } };
 const PX_LIMS = [
   { k: 'pct', label: 'Boat speed', sub: 'Percent of the IP380 design polar', unit: '%', step: 5, min: 50, max: 120, mode: 'route' },
   { k: 'motorBelow', label: 'Motor when slower than', sub: '0 means sail only, never motor', unit: 'kn', step: .5, min: 0, max: 6, dp: 1, mode: 'route' },
   { k: 'motorKn', label: 'Motoring speed', sub: 'Through the water', unit: 'kn', step: .5, min: 3, max: 8, dp: 1, mode: 'route' },
   { k: 'gph', label: 'Fuel use', sub: 'While motoring', unit: 'gal/h', step: .05, min: .3, max: 2, dp: 2, mode: 'route' },
+  { k: 'minDepth', label: 'Keep out of water shallower than', sub: 'NOAA depths, shaded red; 0 = off. Start and finish exempt', unit: 'ft', step: 5, min: 0, max: 60 },
   { k: 'wind', label: 'Wind', sub: 'Sustained, from any direction', unit: 'kn', step: 1, min: 8, max: 50 },
   { k: 'gust', label: 'Gusts', sub: 'AIFS has no gust forecast', unit: 'kn', step: 1, min: 10, max: 60 },
   { k: 'wave', label: 'Waves', sub: 'Significant height', unit: 'ft', step: 1, min: 2, max: 25 },
@@ -3916,7 +3928,7 @@ function pxPaintRoute() {
     : !R ? 'Add the finish: tap <b>Edit route</b>, then tap the chart.'
     : `${Math.round(nm)} nm start to finish${via ? `, through ${via} point${via > 1 ? 's' : ''} you added` : ' in a straight line'}. The router finds the way.`;
   $('pxTools').hidden = !r;
-  if (PX.editing) $('pxEditTip').textContent = !r || !r.pts.length ? 'Tap the chart where you start.'
+  if (PX.editing) $('pxEditTip').textContent = !r || !r.pts.length ? 'Tap the chart where you start, in open water.'
     : r.pts.length === 1 ? 'Now tap where you finish. Finish in open water, outside any cut.'
     : `${Math.round(nm)} nm. That's all the router needs. Only add a point between to force the route past it. Drag a point to move it; tap it to remove it.`;
   $('pxUndoBtn').disabled = !PX.undo.length;
@@ -3929,15 +3941,20 @@ function pxPaintLimits() {
   const route = PX.d.mode === 'route';
   $('pxLimitsTitle').textContent = 'Your boat and limits';
   $('pxNote').textContent = route
-    ? 'The router sails each model’s wind on the IP380 design polar, with RTOFS ocean currents (the Gulf Stream included), clear of land and of the shoal keep-out areas drawn on the chart off Hatteras, Cape Lookout and Cape Fear (approximate; not every hazard is in them). Points you add between start and finish are passed in order. Finish outside the cut. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.'
-    : 'Each departure is routed on each model: the IP380 design polar, RTOFS ocean currents, clear of land and of the keep-out areas drawn on the chart off Hatteras, Cape Lookout and Cape Fear. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.';
+    ? `The router sails each model’s wind on the IP380 design polar, with RTOFS ocean currents (the Gulf Stream included), clear of land${PX.depthOk ? `, of water shallower than ${pxR('minDepth')} ft (NOAA ETOPO 2022 depths, shaded red on the chart; a 15-second survey grid, so not every rock or bar is in it)` : ''} and of the keep-out areas drawn off Hatteras, Cape Lookout and Cape Fear. Points you add between start and finish are passed in order. Start and finish in open water, outside any cut. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.`
+    : `Each departure is routed on each model: the IP380 design polar, RTOFS ocean currents, clear of land${PX.depthOk ? `, of water shallower than ${pxR('minDepth')} ft (NOAA ETOPO 2022 depths, shaded red)` : ''} and of the keep-out areas drawn off Hatteras, Cape Lookout and Cape Fear. Use it as a cross-check on the official forecast and the rally’s weather briefing, not a go/no-go.`;
   $('pxLimits').innerHTML = PX_LIMS.map(L_ => {
     const v = pxGet(L_.k);
     return `<div class="row"><div class="txt"><b>${L_.label}</b><small>${L_.sub}</small></div>`
       + `<div class="px-step"><button onclick="pxBump('${L_.k}',-1)" aria-label="Less">−</button>`
       + `<b class="num">${v.toFixed(L_.dp || 0)}<i>${L_.unit}</i></b><button onclick="pxBump('${L_.k}',1)" aria-label="More">+</button></div></div>`;
-  }).join('') + (true ? `<label class="row"><div class="txt"><b>Stay inside my limits</b><small>If no route can, it shows the fastest one and says so</small></div>`
-      + `<span class="switch"><input type="checkbox" id="pxKeep"${pxR('keep') ? ' checked' : ''} onchange="pxToggleKeep()"><span></span></span></label>` : '');
+  }).join('')
+    + `<label class="row"><div class="txt"><b>Arrive in daylight</b><small>A finish after sunset counts against your limits</small></div>`
+    + `<span class="switch"><input type="checkbox" id="pxDay"${PX.d.day ? ' checked' : ''} onchange="pxToggleDay()"><span></span></span></label>`
+    + `<label class="row"><div class="txt"><b>Slow down in waves</b><small>Rule of thumb: over 3 ft, 4% per foot on the bow, less abeam or astern</small></div>`
+    + `<span class="switch"><input type="checkbox" id="pxWaves"${pxR('waves') ? ' checked' : ''} onchange="pxToggleWaves()"><span></span></span></label>`
+    + `<label class="row"><div class="txt"><b>Stay inside my limits</b><small>If no route can, it shows the fastest one and says so</small></div>`
+    + `<span class="switch"><input type="checkbox" id="pxKeep"${pxR('keep') ? ' checked' : ''} onchange="pxToggleKeep()"><span></span></span></label>`;
 }
 
 // ─── details for one departure ─────────────────────────────────────
@@ -3972,8 +3989,57 @@ async function pxLandFor(box, pts) {
     const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, -x0, -y0);   // image row 0 is the south edge
     const d = x.getImageData(0, 0, w, h).data, bits = new Uint8Array(w * h);
     for (let i = 0; i < bits.length; i++) bits[i] = d[i * 4] > 127 ? 1 : 0;
-    return pxShoalMark(pxLandMake(bits, x0, y0, w, h, pts));     // land, plus the shoal keep-out areas
+    const Lm = pxShoalMark(pxLandMake(bits, x0, y0, w, h, pts));   // land, plus the shoal keep-out areas
+    pxDrawShallow(await pxDepthFor(Lm));                            // and water too shallow (NOAA depths)
+    return Lm;
   } catch (e) { return null; }
+}
+// NOAA ETOPO 2022 depths, built by the maps job: the shallowest depth in each 1-minute cell, in
+// feet (0 = land, 255 = deeper than 254 ft), row 0 at the south edge.
+const PXDP = { key: '', p: null };
+function pxDepthImg(info) {
+  if (PXDP.key !== info.built) {
+    PXDP.key = info.built;
+    PXDP.p = new Promise(res => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => res(null); i.src = `${MAPS_BASE}depth.png?v=${info.built}`; });
+  }
+  return PXDP.p;
+}
+// Mark the cells shallower than your setting as off-limits in the cut-out of the land map.
+// Returns what was newly blocked, for shading on the chart (null if no depth map or the setting is off).
+async function pxDepthFor(Lm) {
+  const min = pxR('minDepth'); PX.depthOk = false;
+  if (!Lm || !(min > 0)) return null;
+  const idx = await loadPreIndex(), info = idx && idx.depth; if (!info) return null;
+  const img = await pxDepthImg(info); if (!img) return null;
+  const dx = Math.round((info.bbox[1] + 100) * 60), dy = Math.round((info.bbox[0] - 5) * 60);
+  const cx0 = Math.max(Lm.x0, dx), cx1 = Math.min(Lm.x0 + Lm.w, dx + img.width);
+  const cy0 = Math.max(Lm.y0, dy), cy1 = Math.min(Lm.y0 + Lm.h, dy + img.height);
+  if (cx1 <= cx0 || cy1 <= cy0) return null;
+  const w = cx1 - cx0, h = cy1 - cy0, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(img, -(cx0 - dx), -(cy0 - dy));
+  const d = x.getImageData(0, 0, w, h).data, mask = new Uint8Array(w * h);
+  let n = 0;
+  for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+    if (d[(yy * w + xx) * 4] >= min) continue;
+    const i = (yy + cy0 - Lm.y0) * Lm.w + (xx + cx0 - Lm.x0);
+    if (!Lm.bits[i]) { Lm.bits[i] = 1; if (!Lm.clear.has(i)) { mask[yy * w + xx] = 1; n++; } }
+  }
+  PX.depthOk = true;
+  return { mask, w, h, lat0: 5 + cy0 / 60, lat1: 5 + cy1 / 60, lon0: -100 + cx0 / 60, lon1: -100 + cx1 / 60, n };
+}
+// Shade the water the router won't use because it's too shallow.
+function pxDrawShallow(dp) {
+  if (PX.shallowLayer) { PX.shallowLayer.remove(); PX.shallowLayer = null; }
+  if (!dp || !dp.n || !PX.map) return;
+  const c = document.createElement('canvas'); c.width = dp.w; c.height = dp.h;
+  const x = c.getContext('2d'), img = x.createImageData(dp.w, dp.h);
+  for (let yy = 0; yy < dp.h; yy++) for (let xx = 0; xx < dp.w; xx++) {
+    if (!dp.mask[yy * dp.w + xx]) continue;
+    const o = ((dp.h - 1 - yy) * dp.w + xx) * 4;                 // canvas row 0 is the north edge
+    img.data[o] = 198; img.data[o + 1] = 55; img.data[o + 2] = 44; img.data[o + 3] = 150;
+  }
+  x.putImageData(img, 0, 0);
+  PX.shallowLayer = L.imageOverlay(c.toDataURL(), [[dp.lat0, dp.lon0], [dp.lat1, dp.lon1]], { opacity: .55, interactive: false, className: 'px-shallow' }).addTo(PX.map);
 }
 const pxR = k => (PX.d.r || PX_RDEF)[k] ?? PX_RDEF[k];
 function pxSetMode(m) { PX.d.mode = m; pxSave(); pxRefresh(); }
@@ -4026,11 +4092,11 @@ async function pxRouteAll() {
   $('pxRProg').textContent = 'Loading forecasts…';
   const Lm = await pxLandFor(box, pts);
   if (gen !== PX.rgen) return;
-  PX.rland = !!Lm;
-  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp']);
+  PX.rland = !!Lm; pxPaintLimits();                // the notes say whether the depth map is in use
+  const marine = pxEnsure('marine', box, tEnd, ['wh', 'wp', 'wvd']);
   const Cg = await pxEnsure('current', box, tEnd, ['cs', 'cd']);
   if (gen !== PX.rgen) return;
-  const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep'),
+  const o = { pct: pxR('pct') / 100, motorBelow: pxR('motorBelow'), motorKn: pxR('motorKn'), lim: PX.d.lim, keep: pxR('keep'), waves: pxR('waves'),
               C: Cg && !Cg.none ? Cg : null };
   const Fs = {};
   for (const id of PX.d.models) {
@@ -4071,14 +4137,23 @@ async function pxRouteCached(id, FM, Lm, pts, ms, o, gen, out) {
   res.run = FM.F.run; PX.rc[key] = res;
   return res;
 }
-// How a routed passage did against your limits, for the planning grid.
+// Reaching the finish after sunset (sun below the horizon there).
+function pxDarkArrival(x) {
+  const r = pxCur(); if (!x || !x.arrive || !r) return false;
+  const f = r.pts[r.pts.length - 1];
+  return pxSun(f[0], f[1], x.arrive * 1000) < -0.833;
+}
+// How a routed passage did against your limits, for the planning grid. With "Arrive in daylight"
+// on, a night arrival counts as over a limit.
 function pxRStatus(x) {
   if (!x) return 'wait';
   if (x.none) return 'na';
   if (x.past) return 'part';
-  if (x.stuck || x.broke || x.overS > 0) return 'bad';
+  if (x.stuck || x.broke || x.overS > 0 || (PX.d.day && pxDarkArrival(x))) return 'bad';
   return x.close ? 'close' : 'ok';
 }
+function pxToggleDay() { PX.d.day = !PX.d.day; pxSave(); pxPaint(); }
+function pxToggleWaves() { PX.d.r = Object.assign({}, PX_DEF.r, PX.d.r, { waves: !pxR('waves') }); pxSave(); pxPaintLimits(); pxRouteAll(); }
 function pxPlanAgree(ms) {
   const a = { n: 0, ok: 0, close: 0, bad: 0, part: 0, models: 0 };
   for (const id of PX.d.models) {
@@ -4118,7 +4193,7 @@ function pxPaintPlan() {
       const x = PX.rc[`${id}|${ms}`], st = pxRStatus(x);
       if (st === 'wait') body += `<td class="e${ds[k]}${night[k]}">…</td>`;
       else if (st === 'na') body += `<td class="e${ds[k]}${night[k]}"></td>`;
-      else body += `<td class="px-c px-${st}${ds[k]}" onclick="pxPlanPick(${ms},'${id}')">${x.stuck ? '✕' : Math.round(x.durS / 3600) + (x.past ? '+' : '')}</td>`;
+      else body += `<td class="px-c px-${st}${ds[k]}" onclick="pxPlanPick(${ms},'${id}')">${x.stuck ? '✕' : Math.round(x.durS / 3600) + (x.past ? '+' : '') + (pxDarkArrival(x) ? '<small class="px-moon">☾</small>' : '')}</td>`;
     });
     body += '</tr>';
   }
@@ -4133,7 +4208,8 @@ function pxPaintPlan() {
   if (cur) wins.push(cur);
   const done = deps.every(ms => PX.d.models.every(id => pxRStatus(PX.rc[`${id}|${ms}`]) !== 'wait'));
   const hrs = (i0, i1) => { const v = []; for (let k = i0; k <= i1; k++) PX.d.models.forEach(id => { const x = PX.rc[`${id}|${deps[k]}`]; if (x && x.arrive) v.push(x.durS / 3600); });
-    return v.length ? `${Math.round(Math.min(...v))}–${Math.round(Math.max(...v))} h under way` : ''; };
+    if (!v.length) return ''; const lo = Math.round(Math.min(...v)), hi = Math.round(Math.max(...v));
+    return lo === hi ? `${lo} h under way` : `${lo}–${hi} h under way`; };
   let html = '';
   if (wins.length) html = wins.slice(0, 4).map(w => {
     const one = w.i0 === w.i1;
@@ -4187,11 +4263,11 @@ function pxRouteLine(x) {
   const wx = `Wind to ${Math.round(x.maxWs)} kn${x.maxWg === x.maxWg ? ` · gusts ${Math.round(x.maxWg)}` : ''}${x.maxWh === x.maxWh ? ` · waves ${x.maxWh.toFixed(1)} ft` : ''} · ${Math.round(100 * x.up / Math.max(1, x.up + x.reach + x.down))}% upwind`;
   if (x.past) return { dot: 'part', head: `Forecast ends ${Math.round(pxLeft(x))} nm short`, sub: `${Math.round(x.nm)} nm in ${pxDur(x.durS)}${mot}`, wx };
   if (x.stuck) return { dot: 'bad', head: 'No route found', sub: `Stopped ${Math.round(pxLeft(x))} nm short: land or no usable wind in the way`, wx };
-  const over = x.overS > 0;
-  return { dot: x.broke || over ? 'bad' : 'ok', head: `Arrive ${pxDT(x.arrive * 1000)}`,
+  const over = x.overS > 0, dark = PX.d.day && pxDarkArrival(x);
+  return { dot: x.broke || over || dark ? 'bad' : 'ok', head: `Arrive ${pxDT(x.arrive * 1000)}${pxDarkArrival(x) ? ' <span class="px-dark">after dark</span>' : ''}`,
            sub: `${pxDur(x.durS)} · ${Math.round(x.nm)} nm${mot}${x.slower > 1800 ? ` · ${pxDur(x.slower)} slower than the fastest, to stay inside your limits` : ''}`, wx,
            warn: x.broke ? `No route stays inside your limits: this is the fastest, over ${pxOverTxt(x.over)} for ${pxDur(x.overS)}`
-               : over ? `Over ${pxOverTxt(x.over)} for ${pxDur(x.overS)}` : '' };
+               : over ? `Over ${pxOverTxt(x.over)} for ${pxDur(x.overS)}${dark ? '; arrives after dark' : ''}` : dark ? 'Arrives after dark' : '' };
 }
 function pxPaintRoutes() {
   if (!$('pxRoutes')) return;

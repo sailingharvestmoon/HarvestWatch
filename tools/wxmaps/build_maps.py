@@ -562,6 +562,80 @@ def build_current(out_dir):
     print(f"current: {len(times)} steps, grid {meta['nx']}x{meta['ny']}", flush=True)
     return {"run": meta["run"], "steps": len(times), "vars": ["cd", "cs"], "at": meta["at"], "bbox": meta["bbox"]}
 
+# ---------------------------------------------------------------- depth (for the router)
+# NOAA ETOPO 2022 (15 arc-second relief) via CoastWatch ERDDAP, reduced to 1-arc-minute cells
+# holding the SHALLOWEST depth found in each (so a narrow shoal isn't averaged away), in feet:
+# 0 = land (ETOPO, plus netlify/land.png), 1-254 ft, 255 = deeper. Row 0 is the south edge.
+# It hardly ever changes, so a copy already on the maps site is reused rather than rebuilt.
+DEPTH = dict(box=(15.0, -82.0, 46.0, -60.0), tile=4.0, version=1)        # Maine to the Bahamas
+ETOPO = "https://coastwatch.pfeg.noaa.gov/erddap/griddap/ETOPO_2022_v1_15s.nc"
+
+def pages_base():
+    r = os.environ.get("GITHUB_REPOSITORY", "sailingharvestmoon/HarvestWatch")
+    owner, name = r.split("/", 1)
+    return f"https://{owner.lower()}.github.io/{name}/"
+
+def read_nc(b):
+    """z, latitudes, longitudes from an ERDDAP .nc (classic netCDF) download."""
+    import io
+    from scipy.io import netcdf_file
+    with netcdf_file(io.BytesIO(b), mmap=False) as nc:
+        return (np.array(nc.variables["z"][:], dtype=np.float64), np.array(nc.variables["latitude"][:], dtype=np.float64),
+                np.array(nc.variables["longitude"][:], dtype=np.float64))
+
+def build_depth(out_dir):
+    from PIL import Image
+    s, w, n, e = DEPTH["box"]
+    base = pages_base()
+    try:
+        old = json.loads((http(base + "depth.json") or b"null").decode())
+    except Exception:
+        old = None
+    if old and old.get("version") == DEPTH["version"] and old.get("bbox") == [s, w, n, e]:
+        png = http(base + "depth.png")
+        if png:
+            with open(os.path.join(out_dir, "depth.png"), "wb") as fh: fh.write(png)
+            with open(os.path.join(out_dir, "depth.json"), "w") as fh: json.dump(old, fh, separators=(",", ":"))
+            print(f"depth: reused the published map (built {old.get('built')})", flush=True)
+            return old
+    ny, nx = int(round((n - s) * 60)), int(round((e - w) * 60))
+    out = np.full(ny * nx, 255, dtype=np.uint8)
+    t, eps, tiles = DEPTH["tile"], 1e-6, []
+    for la in np.arange(s, n, t):
+        for lo in np.arange(w, e, t):
+            tiles.append((la, min(la + t, n), lo, min(lo + t, e)))
+    def get(tl):
+        la0, la1, lo0, lo1 = tl
+        q = f"z[({la0 + eps}):1:({la1 - eps})][({lo0 + eps}):1:({lo1 - eps})]"
+        return tl, http(ETOPO + "?" + urllib.parse.quote(q, safe="()!*.'~-_"))
+    done = 0
+    with ThreadPoolExecutor(2) as pool:                    # ERDDAP is a shared server: two at a time
+        for tl, b in pool.map(get, tiles):
+            if not b:
+                print(f"depth: tile {tl} not returned; no depth map this run", flush=True); return None
+            z, lat, lon = read_nc(b)
+            ft = np.where(z >= 0, 0.0, -z * 3.28084)            # height above sea level counts as land
+            ft = np.where(np.isfinite(ft), np.clip(np.floor(ft), 0, 255), 255).astype(np.uint8)
+            r = np.floor((lat - s) * 60).astype(int); c = np.floor((lon - w) * 60).astype(int)
+            R, Cc = np.meshgrid(r, c, indexing="ij")
+            ok = (R >= 0) & (R < ny) & (Cc >= 0) & (Cc < nx)
+            np.minimum.at(out, (R[ok] * nx + Cc[ok]), ft[ok])   # the shallowest sample in each cell
+            done += 1
+    out = out.reshape(ny, nx)
+    # Natural Earth land (the routing land map) counts as land too: it has the barrier islands.
+    lp = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "netlify", "land.png")
+    if os.path.exists(lp):
+        L_ = np.array(Image.open(lp).convert("L")) > 127          # 1-minute cells from 5 N, 100 W; row 0 south
+        r0, c0 = int(round((s - 5.0) * 60)), int(round((w + 100.0) * 60))
+        sub = L_[r0:r0 + ny, c0:c0 + nx]
+        out[:sub.shape[0], :sub.shape[1]][sub] = 0
+    Image.fromarray(out, "L").save(os.path.join(out_dir, "depth.png"), optimize=True)
+    meta = {"version": DEPTH["version"], "bbox": [s, w, n, e], "res": 1 / 60, "built": int(time.time()),
+            "source": "NOAA ETOPO 2022 15 arc-second via CoastWatch ERDDAP; shallowest depth per 1-minute cell, feet; 0 land, 255 deeper than 254 ft"}
+    with open(os.path.join(out_dir, "depth.json"), "w") as fh: json.dump(meta, fh, separators=(",", ":"))
+    print(f"depth: built from {done} ETOPO tiles, grid {nx}x{ny}", flush=True)
+    return meta
+
 def main():
     out = sys.argv[1] if len(sys.argv) > 1 else "site"
     # ECMWF and AIFS come from the same server: build others in between.
@@ -576,6 +650,13 @@ def main():
         except Exception as e:
             print(f"{name}: FAILED {e}", flush=True)
         print(f"{name}: {time.time() - t0:.0f} s", flush=True)
+    t0 = time.time()
+    try:
+        d = build_depth(out)
+        if d: index["depth"] = {"bbox": d["bbox"], "built": d["built"], "version": d["version"]}
+    except Exception as e:
+        print(f"depth: FAILED {e}", flush=True)
+    print(f"depth: {time.time() - t0:.0f} s", flush=True)
     # Isobars + highs/lows for the Fronts view (see isobars.py). WPC's own
     # chart files can't be fetched from here - the app loads those itself.
     t0 = time.time()
