@@ -68,16 +68,22 @@ sudo systemctl enable --now harvest-moon-polar
 journalctl -u harvest-moon-polar -f
 ```
 
-**Motoring.** Engine hours poison everything. If your tach puts RPM on the
-NMEA bus the logger catches it. Otherwise flag it by hand:
+**Motoring and anchored.** Engine hours poison everything. Set the boat state
+with the e-ink frame's side buttons (top to bottom): **A Sailing, B Motoring,
+C Anchored, D Redraw**. The state shows top right on the dashboard (or on a
+"Boat state" card when the dashboard isn't up) and is saved in
+`/var/lib/harvest-moon/boat_state.json`, so it survives a reboot.
 
-```bash
-touch /run/harvestmoon.motoring    # engine on
-rm    /run/harvestmoon.motoring    # engine off
-```
+- Sailing: rows logged and used for the polar.
+- Motoring: rows logged, marked `motoring=1`, `state=motoring`; polar_build drops them.
+- Anchored: nothing logged.
 
-You will forget. Worth wiring to something that already knows — an oil pressure
-switch on a GPIO, or engine state off the Cerbo.
+Check the current state on the Pi: `cat /var/lib/harvest-moon/boat_state.json`.
+The old hand flag (`touch /run/harvestmoon.motoring`) still marks motoring too,
+and RPM on the NMEA bus would as well.
+
+Since 10/30/26 the CSVs have a `state` column. If a day's file was started by the
+older logger, the rest of that day goes to `polar_<day>_2.csv`.
 
 **Not Firebase.** One row a second is 86,400 writes a day against a 20,000 free
 tier. Log locally, rsync when you have signal.

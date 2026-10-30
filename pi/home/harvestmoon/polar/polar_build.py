@@ -74,6 +74,8 @@ def load(log_dir, since=None, until=None):
                 try:
                     if int(r.get("motoring") or 0):
                         continue
+                    if (r.get("state") or "sailing") != "sailing":
+                        continue          # anchored (or motoring) per the frame's buttons
                     rows.append({
                         "utc": r["utc"],
                         "stw": float(r["stw"]),

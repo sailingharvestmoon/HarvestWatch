@@ -1,4 +1,4 @@
-import os, socket, time, math, random
+import os, socket, time, math, random, threading
 import json, urllib.request
 from collections import defaultdict, deque
 from datetime import datetime, timezone
@@ -24,6 +24,99 @@ WEATHER_URL = ('https://firestore.googleapis.com/v1/projects/harvest-moon-watch'
 
 # Spectra 6 (E673) palette indices
 BLACK, WHITE, YELLOW, RED, BLUE, GREEN = 0, 1, 2, 3, 5, 6
+
+# ── Boat state: Sailing / Motoring / Anchored, set with the frame's buttons ──
+# Saved to disk (not /run) so it survives a reboot. The polar logger reads the
+# same file and keeps motoring and anchored time out of the polars.
+STATE_FILES = ['/var/lib/harvest-moon/boat_state.json',
+               '/home/harvestmoon/polar/boat_state.json']   # fallback if /var/lib can't be written
+STATES = ('sailing', 'motoring', 'anchored')
+STATE_LABEL = {'sailing': 'SAILING', 'motoring': 'MOTORING', 'anchored': 'ANCHORED'}
+STATE_COLOR = {'sailing': BLUE, 'motoring': RED, 'anchored': GREEN}
+# Inky Impression 7.3" side buttons A-D, top to bottom (BCM GPIO numbers).
+BUTTON_PINS = {5: 'sailing', 6: 'motoring', 16: 'anchored', 24: 'redraw'}
+BUTTON_DEBOUNCE = 1.0     # seconds; ignore repeat presses of the same button
+redraw_now = threading.Event()   # set by a button press: redraw the screen soon
+
+def read_state():
+    # Newest valid state from either file; 'sailing' if none has been set yet.
+    best = None
+    for p in STATE_FILES:
+        try:
+            with open(p) as f:
+                st = json.load(f)
+            if st.get('state') in STATES and (best is None or
+                    float(st.get('since') or 0) > float(best.get('since') or 0)):
+                best = st
+        except Exception:
+            pass
+    return best or {'state': 'sailing', 'since': None}
+
+def write_state(state):
+    st = {'state': state, 'since': time.time()}
+    for p in STATE_FILES:
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            tmp = p + '.tmp'
+            with open(tmp, 'w') as f:
+                json.dump(st, f)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, p)          # atomic: the logger never reads half a file
+            print(f"Boat state: {state} (saved to {p})", flush=True)
+            return True
+        except Exception as e:
+            print(f"Could not save boat state to {p}: {e}", flush=True)
+    return False
+
+def button_thread():
+    # Any failure here only disables the buttons; the frame keeps running.
+    try:
+        import gpiod, gpiodevice
+        from gpiod.line import Bias, Direction, Edge
+        chip = gpiodevice.find_chip_by_platform()
+        pins = list(BUTTON_PINS)
+        offsets = [chip.line_offset_from_id(p) for p in pins]
+        settings = gpiod.LineSettings(direction=Direction.INPUT, bias=Bias.PULL_UP,
+                                      edge_detection=Edge.FALLING)
+        req = chip.request_lines(consumer='harvest-frame-buttons',
+                                 config=dict.fromkeys(offsets, settings))
+    except Exception as e:
+        print(f"Buttons not available ({e!r}); boat state can't be set from the frame.", flush=True)
+        return
+    print("Buttons ready: A sailing, B motoring, C anchored, D redraw.", flush=True)
+    last = {}
+    while True:
+        try:
+            for ev in req.read_edge_events():
+                action = BUTTON_PINS[pins[offsets.index(ev.line_offset)]]
+                now = time.monotonic()
+                if now - last.get(action, 0) < BUTTON_DEBOUNCE:
+                    continue
+                last[action] = now
+                print(f"Button: {action}", flush=True)
+                if action in STATES and read_state()['state'] != action:
+                    write_state(action)
+                redraw_now.set()
+        except Exception as e:
+            print(f"Button read error: {e!r}", flush=True)
+            time.sleep(5)
+
+def state_since_text(st):
+    t = st.get('since')
+    if not t:
+        return ''
+    dt = datetime.fromtimestamp(t)
+    fmt = "%-I:%M%p" if dt.date() == datetime.now().date() else "%a %-d %b %-I:%M%p"
+    return "since " + dt.strftime(fmt).replace('AM', 'am').replace('PM', 'pm')
+
+def draw_state_badge(draw, box, st, font):
+    s = st['state']
+    draw.rectangle(box, fill=STATE_COLOR[s])
+    text = STATE_LABEL[s]
+    l, t, r, b = draw.textbbox((0, 0), text, font=font)
+    x = box[0] + (box[2] - box[0] - (r - l)) / 2 - l
+    y = box[1] + (box[3] - box[1] - (b - t)) / 2 - t
+    draw.text((x, y), text, font=font, fill=WHITE)
 
 # Rolling peak-wind history: list of (epoch, true_wind_kt, true_wind_dir)
 gust_history = []
@@ -196,6 +289,8 @@ def collect_and_average(display):
                 buf = lines[-1]
                 for line in lines[:-1]:
                     ingest(line, samples, latest, time.time())
+            if redraw_now.is_set():
+                break                       # a button was pressed: draw now
             now = time.time()
             if now - last_mode_check >= MODE_CHECK_EVERY:
                 last_mode_check = now
@@ -206,7 +301,9 @@ def collect_and_average(display):
     finally:
         try: sock.close()
         except Exception: pass
-    return compute_display(samples, latest, time.time()) if samples else None
+    if samples:
+        return compute_display(samples, latest, time.time())
+    return 'REDRAW' if redraw_now.is_set() else None
 
 def tile(draw, x, y, label, value, sub, fonts, val_color=BLACK):
     f_lbl, f_val, f_sub = fonts
@@ -228,6 +325,8 @@ def render_dashboard(display, d):
     draw.text((20, 12), d.get('time', '--:--'), font=f_hdr, fill=BLACK)
     pos = f"{d.get('lat','--')}   {d.get('lon','--')}"
     draw.text((150, 18), pos, font=f_lbl, fill=BLACK)
+    f_badge = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 28)
+    draw_state_badge(draw, (585, 8, 780, 54), read_state(), f_badge)
     draw.line([(20, 62), (780, 62)], fill=BLACK, width=2)
 
     if 'awa' in d and 'aws' in d:
@@ -264,6 +363,36 @@ def render_dashboard(display, d):
                   f"{gtws:.1f} kt   {compass_point(gtwd)} {gtwd:.0f}\u00b0   @ {gtime}",
                   font=f_sub, fill=RED)
 
+    # Which side button does what (A-D, top to bottom)
+    f_key = ImageFont.truetype(F + 'DejaVuSans.ttf', 17)
+    draw.text((600, 430), "A Sail    B Motor", font=f_key, fill=BLACK)
+    draw.text((600, 452), "C Anchor  D Redraw", font=f_key, fill=BLACK)
+
+    display.set_image(img)
+    display.show()
+
+def render_state_card(display):
+    # Shown after a button press when the dashboard isn't up (photos, info,
+    # Vesper off), so a press always gets a visible answer.
+    st = read_state()
+    img = Image.new('P', display.resolution, WHITE)
+    draw = ImageDraw.Draw(img)
+    F = '/usr/share/fonts/truetype/dejavu/'
+    f_hdr = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 30)
+    f_lbl = ImageFont.truetype(F + 'DejaVuSans.ttf', 20)
+    f_huge = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 84)
+    f_med = ImageFont.truetype(F + 'DejaVuSans.ttf', 28)
+    draw.text((20, 12), "BOAT STATE", font=f_hdr, fill=BLACK)
+    draw.text((650, 18), datetime.now().strftime("%-I:%M%p").lower(), font=f_lbl, fill=BLACK)
+    draw.line([(20, 58), (780, 58)], fill=BLACK, width=2)
+    draw_state_badge(draw, (60, 100, 740, 250), st, f_huge)
+    draw.text((60, 270), state_since_text(st), font=f_med, fill=BLACK)
+    polar = ("Polar log: recording" if st['state'] == 'sailing'
+             else f"Polar log: paused while {st['state']}")
+    draw.text((60, 310), polar, font=f_med, fill=BLACK)
+    draw.line([(20, 405), (780, 405)], fill=BLACK, width=1)
+    draw.text((20, 420), "Side buttons, top to bottom:", font=f_lbl, fill=BLUE)
+    draw.text((20, 448), "A Sailing    B Motoring    C Anchored    D Redraw", font=f_lbl, fill=BLACK)
     display.set_image(img)
     display.show()
 
@@ -470,47 +599,63 @@ def get_mode():
 display = Inky()
 mode = None
 last_photo = 0
-print("Frame controller started.")
+last_dash = None          # last averaged dashboard data, for instant redraws
+threading.Thread(target=button_thread, daemon=True).start()
+print(f"Frame controller started. Boat state: {read_state()['state']}.", flush=True)
 
 while True:
     wanted = get_mode()
+    pressed = redraw_now.is_set()      # a button was pressed since the last pass
+    redraw_now.clear()
 
-    # Forced photo mode: slideshow with the info screen interspersed.
-    if wanted == 'photo':
+    # Forced photo mode (slideshow with the info screen interspersed) or
+    # forced info mode (just the weather/tide screen).
+    if wanted in ('photo', 'info'):
         now = time.time()
-        if mode != 'photo' or (now - last_photo) >= PHOTO_INTERVAL:
-            print("Mode=photo - slide.", flush=True)
-            show_slide(display)
+        if pressed:
+            print("Button - state card.", flush=True)
+            render_state_card(display)
             last_photo = now
-        mode = 'photo'
-        time.sleep(POLL_WHEN_OFFLINE)
+        elif mode != wanted or (now - last_photo) >= PHOTO_INTERVAL:
+            if wanted == 'photo':
+                print("Mode=photo - slide.", flush=True)
+                show_slide(display)
+            else:
+                print("Mode=info.", flush=True)
+                w = get_weather()
+                render_info(display, w) if w else show_photo(display)
+            last_photo = now
+        mode = wanted
+        redraw_now.wait(POLL_WHEN_OFFLINE)   # wakes early on a button press
         continue
 
-    # Forced info mode: just the weather/tide screen.
-    if wanted == 'info':
-        now = time.time()
-        if mode != 'info' or (now - last_photo) >= PHOTO_INTERVAL:
-            print("Mode=info.", flush=True)
-            w = get_weather()
-            render_info(display, w) if w else show_photo(display)
-            last_photo = now
-        mode = 'info'
-        time.sleep(POLL_WHEN_OFFLINE)
-        continue
+    # A press while the dashboard was busy drawing: redraw it with the new state.
+    if pressed and mode == 'dash' and last_dash:
+        print("Button - dashboard redraw.", flush=True)
+        render_dashboard(display, last_dash)
 
     # 'auto' or 'dashboard': gather ~5 min of data, average it, and draw.
     result = collect_and_average(display)
+    pressed = pressed or redraw_now.is_set()
+    redraw_now.clear()
     if result == 'PHOTO':
         continue
+    if result == 'REDRAW':
+        result = last_dash
     if result:
         print("Dashboard (5-min avg).", flush=True)
         render_dashboard(display, result)
+        last_dash = result
         mode = 'dash'
     else:
         now = time.time()
-        if mode != 'photo' or (now - last_photo) >= PHOTO_INTERVAL:
+        if pressed:
+            print("Button - state card.", flush=True)
+            render_state_card(display)
+            last_photo = now
+        elif mode != 'photo' or (now - last_photo) >= PHOTO_INTERVAL:
             print("Vesper offline - slide.", flush=True)
             show_slide(display)
             last_photo = now
         mode = 'photo'
-        time.sleep(POLL_WHEN_OFFLINE)
+        redraw_now.wait(POLL_WHEN_OFFLINE)

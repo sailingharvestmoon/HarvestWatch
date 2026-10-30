@@ -12,6 +12,8 @@ Three things to know before running it:
   * True wind is computed here, not taken from the instrument, so the maths is
     visible and the masthead offset can be corrected after the fact.
   * Motoring rows are marked, not discarded. polar_build.py drops them.
+  * The boat state (Sailing / Motoring / Anchored) comes from the e-ink frame's
+    side buttons (frame.py saves it). Anchored time isn't logged at all.
 
 Usage:
     python3 polar_logger.py --probe          # what's on the wire?
@@ -22,6 +24,7 @@ Usage:
 import argparse
 import csv
 import glob
+import json
 import math
 import os
 import random
@@ -49,7 +52,17 @@ MAX_AGE_S = 3.0
 MOTORING_RPM = 400.0
 
 # Touch this file when the engine is on if your tach isn't on the NMEA bus.
+# Still honoured, but the frame's buttons (below) are the normal way now.
 MOTORING_FLAG = "/run/harvestmoon.motoring"
+
+# Boat state set with the e-ink frame's side buttons (frame.py writes these).
+# The newest valid file wins; nothing set yet counts as sailing.
+BOAT_STATE_FILES = [
+    "/var/lib/harvest-moon/boat_state.json",
+    "/home/harvestmoon/polar/boat_state.json",
+]
+BOAT_STATES = ("sailing", "motoring", "anchored")
+USE_BOAT_STATE = True      # turned off for --simulate
 
 # Places to look for a stream when --kind auto. Vesper XB-8000/8010 defaults
 # first, then common Signal K / multiplexer ports.
@@ -60,7 +73,7 @@ AUTO_TARGETS = [
 CSV_FIELDS = [
     "utc", "lat", "lon", "sog", "cog", "hdg_true",
     "stw", "awa", "aws", "twa", "tws", "twd",
-    "heel", "depth", "water_temp", "rpm", "motoring",
+    "heel", "depth", "water_temp", "rpm", "motoring", "state",
 ]
 
 
@@ -461,6 +474,57 @@ def open_stream(args):
 
 
 # ---------------------------------------------------------------------------
+# Boat state from the frame's buttons
+# ---------------------------------------------------------------------------
+
+_state_cache = {"checked": -1e9, "state": "sailing"}
+
+
+def boat_state():
+    """'sailing', 'motoring' or 'anchored'. Re-read at most every 2 s."""
+    if not USE_BOAT_STATE:
+        return "sailing"
+    now = time.monotonic()
+    if now - _state_cache["checked"] < 2.0:
+        return _state_cache["state"]
+    _state_cache["checked"] = now
+    best, best_since = None, -1.0
+    for path in BOAT_STATE_FILES:
+        try:
+            with open(path) as fh:
+                st = json.load(fh)
+            since = float(st.get("since") or 0)
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+        if st.get("state") in BOAT_STATES and since > best_since:
+            best, best_since = st["state"], since
+    best = best or "sailing"
+    if best != _state_cache["state"]:
+        print("[state] now {}".format(best), file=sys.stderr)
+    _state_cache["state"] = best
+    return best
+
+
+def csv_path_for(log_dir, day):
+    """Today's CSV, or a new part file (polar_<day>_2.csv ...) if today's file
+    was started with a different column list (e.g. before the state column)."""
+    n = 1
+    while True:
+        name = "polar_{}.csv".format(day) if n == 1 else "polar_{}_{}.csv".format(day, n)
+        path = os.path.join(log_dir, name)
+        if not os.path.exists(path):
+            return path
+        try:
+            with open(path, newline="") as fh:
+                header = next(csv.reader(fh), [])
+        except OSError:
+            header = []
+        if header == CSV_FIELDS:
+            return path
+        n += 1
+
+
+# ---------------------------------------------------------------------------
 # Derived values
 # ---------------------------------------------------------------------------
 
@@ -493,8 +557,10 @@ def sample(st, stamp=None):
         hdg = mag                              # variation not applied; noted in README
     twd = norm360(hdg + twa) if hdg is not None else None
     rpm = st.get("rpm")
-    motoring = bool(
-        (rpm is not None and rpm > MOTORING_RPM) or os.path.exists(MOTORING_FLAG))
+    state = boat_state()
+    if state == "sailing" and (
+            (rpm is not None and rpm > MOTORING_RPM) or os.path.exists(MOTORING_FLAG)):
+        state = "motoring"
 
     def r(x, n=2):
         return None if x is None else round(x, n)
@@ -508,7 +574,8 @@ def sample(st, stamp=None):
         "twa": r(twa, 1), "tws": r(tws), "twd": r(twd, 1),
         "heel": r(st.get("heel"), 1), "depth": r(st.get("depth"), 1),
         "water_temp": r(st.get("water_temp"), 1), "rpm": r(rpm, 0),
-        "motoring": int(motoring),
+        "motoring": int(state == "motoring"),
+        "state": state,
     }
 
 
@@ -612,12 +679,14 @@ def run_logger(stream, args):
             row = sample(st, stamp)
             if row is None:
                 continue
+            if row["state"] == "anchored":      # anchored time stays out entirely
+                continue
             day = row["utc"][:10]
             if day != current_day:
                 if handle:
                     handle.close()
-                path = os.path.join(log_dir, "polar_{}.csv".format(day))
-                fresh = not os.path.exists(path)
+                path = csv_path_for(log_dir, day)
+                fresh = not os.path.exists(path) or os.path.getsize(path) == 0
                 handle = open(path, "a", newline="")
                 writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS)
                 if fresh:
@@ -664,6 +733,9 @@ def main():
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
+    global USE_BOAT_STATE
+    if args.simulate:
+        USE_BOAT_STATE = False       # fake data shouldn't follow the real buttons
     stream = open_stream(args)
     if args.probe:
         return run_probe(stream, args.probe_seconds)
