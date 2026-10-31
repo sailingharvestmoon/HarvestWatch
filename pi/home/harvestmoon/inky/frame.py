@@ -22,8 +22,19 @@ MODE_URL = ('https://firestore.googleapis.com/v1/projects/harvest-moon-watch'
 WEATHER_URL = ('https://firestore.googleapis.com/v1/projects/harvest-moon-watch'
               '/databases/(default)/documents/weather/harvest-moon')
 
-# Spectra 6 (E673) palette indices
-BLACK, WHITE, YELLOW, RED, BLUE, GREEN = 0, 1, 2, 3, 5, 6
+# Spectra 6 colours. Each screen is drawn on a canvas that carries its own
+# six-colour palette (below), so the Inky library matches every colour by its
+# actual RGB value. Don't use the library's "native" numbers here (BLUE=5,
+# GREEN=6): with a plain canvas the library reads 5 as green and 6 as white,
+# which made the green ANCHORED badge white-on-white.
+BLACK, WHITE, YELLOW, RED, BLUE, GREEN = 0, 1, 2, 3, 4, 5
+CANVAS_PALETTE = [0, 0, 0,  255, 255, 255,  255, 255, 0,
+                  255, 0, 0,  0, 0, 255,  0, 255, 0]
+
+def new_canvas(display):
+    img = Image.new('P', display.resolution, WHITE)
+    img.putpalette(CANVAS_PALETTE)
+    return img
 
 # ── Boat state: Sailing / Motoring / Anchored, set with the frame's buttons ──
 # Saved to disk (not /run) so it survives a reboot. The polar logger reads the
@@ -289,8 +300,10 @@ def collect_and_average(display):
                 buf = lines[-1]
                 for line in lines[:-1]:
                     ingest(line, samples, latest, time.time())
-            if redraw_now.is_set():
+            if redraw_now.is_set() and samples:
                 break                       # a button was pressed: draw now
+                                            # (waits for the first readings,
+                                            # usually under a second)
             now = time.time()
             if now - last_mode_check >= MODE_CHECK_EVERY:
                 last_mode_check = now
@@ -313,7 +326,7 @@ def tile(draw, x, y, label, value, sub, fonts, val_color=BLACK):
         draw.text((x, y + 84), sub, font=f_sub, fill=BLACK)
 
 def render_dashboard(display, d):
-    img = Image.new('P', display.resolution, WHITE)
+    img = new_canvas(display)
     draw = ImageDraw.Draw(img)
     F = '/usr/share/fonts/truetype/dejavu/'
     f_hdr = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 30)
@@ -375,7 +388,7 @@ def render_state_card(display):
     # Shown after a button press when the dashboard isn't up (photos, info,
     # Vesper off), so a press always gets a visible answer.
     st = read_state()
-    img = Image.new('P', display.resolution, WHITE)
+    img = new_canvas(display)
     draw = ImageDraw.Draw(img)
     F = '/usr/share/fonts/truetype/dejavu/'
     f_hdr = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 30)
@@ -484,7 +497,7 @@ def draw_wx_icon(draw, cx, cy, s, sky):
             draw.line([(cx-s*0.4, y), (cx+s*0.4, y)], fill=BLACK, width=max(2, int(s*0.06)))
 
 def render_info(display, w):
-    img = Image.new('P', display.resolution, WHITE)
+    img = new_canvas(display)
     draw = ImageDraw.Draw(img)
     F = '/usr/share/fonts/truetype/dejavu/'
     f_hdr = ImageFont.truetype(F + 'DejaVuSans-Bold.ttf', 30)
