@@ -12,6 +12,7 @@ AVG_WINDOW = 300         # seconds of data to average (5 min)
 RENDER_EVERY = 300       # redraw the dashboard this often (5 min)
 GUST_WINDOW = 3600       # remember the peak wind over this long (1 hour)
 MODE_CHECK_EVERY = 20    # check the photo/dashboard flag this often
+PRESS_MIN_DATA = 10      # after a restart, gather this many seconds before a button redraw
 PHOTO_INTERVAL = 600
 POLL_WHEN_OFFLINE = 30
 PHOTO_SATURATION = 0.5   # lower to 0.3 for softer color
@@ -300,10 +301,9 @@ def collect_and_average(display):
                 buf = lines[-1]
                 for line in lines[:-1]:
                     ingest(line, samples, latest, time.time())
-            if redraw_now.is_set() and samples:
+            if redraw_now.is_set() and (last_dash or
+                                        (samples and time.time() - start >= PRESS_MIN_DATA)):
                 break                       # a button was pressed: draw now
-                                            # (waits for the first readings,
-                                            # usually under a second)
             now = time.time()
             if now - last_mode_check >= MODE_CHECK_EVERY:
                 last_mode_check = now
@@ -314,9 +314,18 @@ def collect_and_average(display):
     finally:
         try: sock.close()
         except Exception: pass
+    if redraw_now.is_set():
+        # Cut short by a button: start from the last full 5-minute picture and
+        # lay whatever has arrived since on top, so nothing drops to dashes.
+        d = dict(last_dash or {})
+        if samples:
+            for k, v in compute_display(samples, latest, time.time()).items():
+                if v not in (None, '--', '--:--'):
+                    d[k] = v
+        return d or None
     if samples:
         return compute_display(samples, latest, time.time())
-    return 'REDRAW' if redraw_now.is_set() else None
+    return None
 
 def tile(draw, x, y, label, value, sub, fonts, val_color=BLACK):
     f_lbl, f_val, f_sub = fonts
@@ -612,7 +621,7 @@ def get_mode():
 display = Inky()
 mode = None
 last_photo = 0
-last_dash = None          # last averaged dashboard data, for instant redraws
+last_dash = None          # last full dashboard data; button redraws start from it
 threading.Thread(target=button_thread, daemon=True).start()
 print(f"Frame controller started. Boat state: {read_state()['state']}.", flush=True)
 
@@ -653,8 +662,6 @@ while True:
     redraw_now.clear()
     if result == 'PHOTO':
         continue
-    if result == 'REDRAW':
-        result = last_dash
     if result:
         print("Dashboard (5-min avg).", flush=True)
         render_dashboard(display, result)
