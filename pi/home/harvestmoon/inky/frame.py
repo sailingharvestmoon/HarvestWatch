@@ -233,6 +233,7 @@ def ingest(line, samples, latest, now):
         if k == 'sog' and not (0 <= v <= 30): continue
         if k == 'depth' and not (0 < v < 150): continue
         if k == 'temp' and not (-5 < v < 45): continue
+        if k in ('hdg_mag', 'cog') and not (0 <= v <= 360): continue
         latest[k] = v                       # newest value of everything
         if k in AVG_KEYS:
             samples[k].append((now, v))     # timestamped history for averaging
@@ -366,15 +367,23 @@ def render_dashboard(display, d):
     temp_f = f"{d['temp'] * 9/5 + 32:.0f}\u00b0F" if 'temp' in d else '--'
     depth_ft = f"{d['depth'] * 3.28084:.0f} ft" if 'depth' in d else '--'
 
+    # Heading is magnetic (the Vesper's HDG sentence), to match the steering
+    # compass and autopilot. COG comes from the GPS and is true, so both are
+    # marked M / T: side by side they differ by the local variation.
+    hdg = (f"{round(d['hdg_mag']) % 360:03d}\u00b0M"
+           if d.get('hdg_mag') is not None else '--')
+    cog = (f"{round(d['cog']) % 360:03d}\u00b0T"
+           if d.get('cog') is not None else '--')
+    water = f"Water {temp_f}" if 'temp' in d else ''
+
     tile(draw, col[0], row1, "TRUE WIND", wind_val, wind_sub, fonts, val_color=RED)
-    tile(draw, col[1], row1, "DEPTH", depth_ft, '', fonts)
-    tile(draw, col[2], row1, "WATER TEMP", temp_f, '', fonts)
-    tile(draw, col[0], row2, "COG",
-         f"{d['cog']:.0f}\u00b0" if d.get('cog') is not None else '--', '', fonts)
-    tile(draw, col[1], row2, "SOG",
-         f"{d['sog']:.1f} kt" if d.get('sog') is not None else '--', '', fonts)
-    tile(draw, col[2], row2, "BOAT SPD",
+    tile(draw, col[1], row1, "DEPTH", depth_ft, water, fonts)
+    tile(draw, col[2], row1, "BOAT SPD",
          f"{d.get('boatspd',0):.1f} kt" if 'boatspd' in d else '--', '', fonts)
+    tile(draw, col[0], row2, "HEADING", hdg, '', fonts)
+    tile(draw, col[1], row2, "COG", cog, '', fonts)
+    tile(draw, col[2], row2, "SOG",
+         f"{d['sog']:.1f} kt" if d.get('sog') is not None else '--', '', fonts)
 
     # Gust line along the bottom
     g = d.get('gust')
