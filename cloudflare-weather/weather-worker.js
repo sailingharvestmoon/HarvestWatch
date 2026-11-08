@@ -4,7 +4,10 @@
 //
 //   every 30 min  "Now" summary -> weather/<vessel>
 //                 (NWS observation + text forecast, NOAA tides, sun, moon,
-//                  pressure trend; Open-Meteo "current" when outside NWS land)
+//                  pressure trend). Outside NWS land - the Bahamas, the
+//                  Caribbean, well offshore - "Now" and the 3-day forecast
+//                  come from Open-Meteo at the boat, and the place name from
+//                  OpenStreetMap (see NWS_MAX_KM).
 //   every hour    7-model point forecast -> weather/<vessel>-forecast
 //   on request    the same, within a minute of the app's Refresh button
 //   by hand only  ?run=fronts (coded fronts -> weather/<vessel>-fronts) and
@@ -30,6 +33,12 @@
 // Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
 
 const FALLBACK = { lat: 44.10, lon: -69.10 };            // midcoast Maine
+// NWS answers for some places outside the US - the northern Bahamas are inside
+// its forecast grid - but then names the nearest US town (in Florida, from the
+// Abacos) and reports that town's airport weather. So NWS is used only when its
+// nearest town is within this distance of the boat. Anywhere else "Now" and the
+// forecast come from Open-Meteo at the boat, and the name from OpenStreetMap.
+const NWS_MAX_KM = 60;
 const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60;
 
 const FC_MODELS = [
@@ -212,7 +221,8 @@ const parse = (s, d) => { try { return JSON.parse(s); } catch (e) { return d; } 
 async function getState(e) {
   const f = await fsGet(e, `weather/${e.VESSEL_ID}-wxstate`) || {};
   return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0, lastWx: num(f.lastWx) || 0,
-           station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []) };
+           station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []),
+           place: parse(str(f.place), null), pressSrc: str(f.pressSrc) };
 }
 async function boatPosition(e) {
   try {
@@ -537,6 +547,8 @@ async function nws(e, lat, lon, shore) {
   catch (err) { return out; }                                     // outside NWS land - caller falls back
   const rel = (p.relativeLocation || {}).properties || {};
   out.city = rel.city || ''; out.state = rel.state || ''; out.tzName = p.timeZone || '';
+  const dist = rel.distance || {};                                 // how far that town is (metres)
+  if (typeof dist.value === 'number') out.cityKm = /km$/.test(dist.unitCode || '') ? dist.value : dist.value / 1000;
   try {
     let fc, src = 'boat position';
     try { fc = await getJson(p.forecast, hdr, 1); }
@@ -570,23 +582,67 @@ async function nws(e, lat, lon, shore) {
     if (ob.textDescription) out.nowSky = ob.textDescription;
     let pr = ob.barometricPressure && ob.barometricPressure.value;
     if (pr === null || pr === undefined) pr = ob.seaLevelPressure && ob.seaLevelPressure.value;
-    if (pr !== null && pr !== undefined) out.pressureMb = Math.round(pr / 10) / 10;
+    if (pr !== null && pr !== undefined) { out.pressureMb = Math.round(pr / 10) / 10; out.pressureFrom = 'nws:' + sid; }
   } catch (err) { console.log('nws obs failed:', String(err)); }
   return out;
 }
 
 // Outside NWS coverage (Bahamas, Caribbean...): current conditions from Open-Meteo.
 const WMO = { 0: 'Clear', 1: 'Mostly Clear', 2: 'Partly Cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Fog', 51: 'Light Drizzle', 53: 'Drizzle', 55: 'Drizzle',
-  61: 'Light Rain', 63: 'Rain', 65: 'Heavy Rain', 71: 'Light Snow', 73: 'Snow', 75: 'Heavy Snow', 80: 'Rain Showers', 81: 'Rain Showers', 82: 'Heavy Showers', 95: 'Thunderstorms', 96: 'Thunderstorms', 99: 'Thunderstorms' };
+  61: 'Light Rain', 63: 'Rain', 65: 'Heavy Rain', 71: 'Light Snow', 73: 'Snow', 75: 'Heavy Snow', 80: 'Rain Showers', 81: 'Rain Showers', 82: 'Heavy Showers', 95: 'Thunderstorms', 96: 'Thunderstorms', 99: 'Thunderstorms',
+  56: 'Freezing Drizzle', 57: 'Freezing Drizzle', 66: 'Freezing Rain', 67: 'Freezing Rain', 77: 'Snow', 85: 'Snow Showers', 86: 'Snow Showers' };
 const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
 async function omCurrent(lat, lon) {
+  // Current conditions plus a 3-day forecast, one call. The forecast lines use
+  // the same "Sun: 81° E 15kt Partly Cloudy" format as the NWS ones.
   const j = await omJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-    + `&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl&wind_speed_unit=kn&temperature_unit=fahrenheit&timezone=auto`);
+    + `&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl`
+    + `&daily=weather_code,temperature_2m_max,wind_speed_10m_max,wind_direction_10m_dominant&forecast_days=4`
+    + `&wind_speed_unit=kn&temperature_unit=fahrenheit&timezone=auto`);
   const c = j.current || {};
-  return { nowTemp: c.temperature_2m !== undefined ? Math.round(c.temperature_2m) : null, nowSky: WMO[c.weather_code] || '',
-           nowWind: c.wind_speed_10m !== undefined ? `${COMPASS[Math.round((c.wind_direction_10m || 0) / 22.5) % 16]} ${Math.round(c.wind_speed_10m)}kt` : '',
+  const pt = d => COMPASS[Math.round((((d || 0) % 360) + 360) % 360 / 22.5) % 16];
+  const out = { nowTemp: c.temperature_2m !== undefined ? Math.round(c.temperature_2m) : null, nowSky: WMO[c.weather_code] || '',
+           nowWind: c.wind_speed_10m !== undefined ? `${pt(c.wind_direction_10m)} ${Math.round(c.wind_speed_10m)}kt` : '',
            pressureMb: c.pressure_msl !== undefined ? Math.round(c.pressure_msl * 10) / 10 : null,
-           tzName: j.timezone || '', forecastFrom: 'Open-Meteo', forecastAt: Date.now() };
+           pressureFrom: 'om', tzName: j.timezone || '', forecastFrom: 'Open-Meteo', forecastAt: Date.now() };
+  // Daily lines: today, then the next two days - from tomorrow once it's
+  // evening at the boat, as NWS does.
+  let i;
+  const dl = j.daily || {}, times = dl.time || [], at = k => (dl[k] || [])[i];
+  const hour = parseInt(String(c.time || '').slice(11, 13), 10);
+  const days = [];
+  for (i = hour >= 18 ? 1 : 0; i < times.length && days.length < 3; i++) {
+    const lbl = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' }).format(new Date(times[i] + 'T12:00:00Z'));
+    const t = at('temperature_2m_max'), ws = at('wind_speed_10m_max'), wd = at('wind_direction_10m_dominant');
+    const wind = ws === null || ws === undefined ? '' : `${wd === null || wd === undefined ? '' : pt(wd) + ' '}${Math.round(ws)}kt`;
+    days.push(`${lbl}: ${t === null || t === undefined ? '--' : Math.round(t)}° ${wind} ${shortSky(WMO[at('weather_code')] || '')}`.replace(/\s+/g, ' ').trim());
+  }
+  if (days.length) out.forecast = days.join(' | ');
+  return out;
+}
+
+// Place name outside NWS land, from OpenStreetMap's Nominatim. Their rules:
+// name the app, at most one request a second, keep the answer - this asks
+// again only when the boat has moved more than 5 nm. Map data (c)
+// OpenStreetMap contributors. With no answer (open water, or Nominatim down)
+// the position is shown instead, and it asks again next time.
+function dm(v, pos, neg) {
+  const a = Math.abs(v); let d = Math.floor(a), m = Math.round((a - d) * 60);
+  if (m === 60) { d += 1; m = 0; }
+  return `${d}°${String(m).padStart(2, '0')}'${v >= 0 ? pos : neg}`;
+}
+async function placeName(e, lat, lon, cached) {
+  if (cached && !cached.coords && isFinite(cached.forLat) && havKm(lat, lon, cached.forLat, cached.forLon) <= 5 * 1.852) return cached;
+  const coords = { city: `${dm(lat, 'N', 'S')} ${dm(lon, 'E', 'W')}`, state: '', forLat: lat, forLon: lon, coords: true };
+  try {
+    const j = await getJson(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat.toFixed(4)}&lon=${lon.toFixed(4)}&zoom=14&accept-language=en`,
+      { 'User-Agent': e.NWS_UA }, 1);
+    const a = (j && j.address) || {};
+    const city = a.village || a.town || a.city || a.hamlet || a.island || a.suburb || a.municipality || a.county || '';
+    const country = String(a.country || '').replace(/^The /, '');
+    if (!city && !country) return coords;
+    return { city: (city || country).slice(0, 24), state: city ? country.slice(0, 20) : '', forLat: lat, forLon: lon };
+  } catch (err) { console.log('place name failed:', String(err)); return coords; }
 }
 
 // ─── tides (NOAA CO-OPS) ──────────────────────────────────────────
@@ -689,19 +745,32 @@ async function jobNow(e, st) {
   }
   const shore = station ? { lat: station.lat, lon: station.lng, name: station.name } : null;
   let d = await nws(e, lat, lon, shore);
-  if (d.nowTemp === undefined) {
+  const nwsTz = d.tzName;
+  let place = st.place;
+  if (!(d.cityKm !== undefined && d.cityKm <= NWS_MAX_KM)) {
+    // Outside NWS land (see NWS_MAX_KM): Open-Meteo at the boat, and the place
+    // named from OpenStreetMap. If Open-Meteo fails, show nothing rather than
+    // the faraway US town's weather.
+    try { d = await omCurrent(lat, lon); } catch (err) { d = {}; console.log('open-meteo now failed:', String(err)); }
+    place = await placeName(e, lat, lon, st.place);
+    d.city = place.city; d.state = place.state;
+  } else if (d.nowTemp === undefined) {
     try { d = Object.assign(await omCurrent(lat, lon), d.city ? { city: d.city, state: d.state } : {}); } catch (err) { console.log('open-meteo current failed:', String(err)); }
   }
-  const tz = d.tzName || 'America/New_York';
+  const tz = d.tzName || nwsTz || 'America/New_York';
   try { Object.assign(d, await tides(lat, lon, station, tz)); } catch (err) { console.log('tides failed:', String(err)); }
   [d.sunrise, d.sunset] = sunTimes(lat, lon, tz);
   d.moon = moonPhase();
-  let log = st.pressLog;
+  // A different barometer (another NWS station, or Open-Meteo): start the
+  // trend over rather than read the step between them as rising or falling.
+  const pressSrc = d.pressureFrom || '';
+  let log = pressSrc === st.pressSrc ? st.pressLog : [];
   if (d.pressureMb !== null && d.pressureMb !== undefined) { const r = pressureTrend(log, d.pressureMb); log = r.log; if (r.trend) d.pressureTrend = r.trend; }
   const at = Date.now();
   d.updatedAt = at; d.source = 'cloud';
-  delete d.tzName;
+  delete d.tzName; delete d.cityKm; delete d.pressureFrom;
   await fsWrite(e, `weather/${e.VESSEL_ID}`, d, false);
-  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastNow: at, station: station ? JSON.stringify(station) : '', pressLog: JSON.stringify(log) }, true);
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastNow: at, station: station ? JSON.stringify(station) : '', pressLog: JSON.stringify(log),
+    pressSrc, place: place ? JSON.stringify(place) : '' }, true);
   return { ok: true, wrote: Object.keys(d) };
 }

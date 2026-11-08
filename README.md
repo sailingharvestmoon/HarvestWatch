@@ -122,6 +122,7 @@ the "Now" summary + tides + sun/moon every 30 min → `weather/harvest-moon`, an
 position, so it keeps working with the boat shut down. Deployed by Cloudflare Workers Builds from this repo
 (root directory `cloudflare-weather`). Check it: `https://harvest-weather.<your-subdomain>.workers.dev/`.
 Kept separate from the anchor watcher so weather can never slow an alarm.
+Outside NWS land (the Bahamas, the Caribbean, well offshore: anywhere NWS's nearest town is more than 60 km from the boat, `NWS_MAX_KM`), the "Now" summary and 3-day forecast come from Open-Meteo at the boat, and the place name from OpenStreetMap (Nominatim, asked again only after the boat moves 5 nm; position shown if it has no name). Tides stay NOAA, which still covers some Bahamas stations (e.g. Pelican Harbor, Abaco).
 Secrets (Cloudflare dashboard → the worker → Settings → Variables and Secrets, type **Secret**): `FB_EMAIL`, `FB_PASSWORD`
 — the boat systems Firebase login, so its writes pass the locked database rules.
 
