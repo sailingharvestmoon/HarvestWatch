@@ -345,6 +345,17 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 
 .wm-status { position:absolute; left:50%; top:112px; transform:translateX(-50%); z-index:800; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; display:none; white-space:nowrap; box-shadow:var(--shadow); }
 .wm-status.show { display:block; }
+/* distance & bearing ruler on the Maps view */
+.wm-meas-btn { position:absolute; right:10px; bottom:212px; z-index:800; }
+.wm-meas { position:absolute; left:50%; top:104px; transform:translateX(-50%); z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:7px 14px; box-shadow:var(--shadow); text-align:center; display:none; pointer-events:none; max-width:calc(100% - 24px); }
+.wm-meas.show { display:block; }
+.wm-meas b { font-size:17px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.wm-meas small { display:block; font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.wm-stage.measuring .wm-status { top:170px; }
+.meas-icon { background:none; border:0; }
+.meas-a, .meas-b { width:100%; height:100%; display:grid; place-items:center; touch-action:none; }
+.meas-a::after { content:''; width:22px; height:22px; border-radius:50%; border:3px solid var(--ink); box-shadow:0 0 0 2px #fff, 0 0 6px rgba(0,0,0,.4); }   /* a ring round the boat dot */
+.meas-b::after { content:''; width:22px; height:22px; border-radius:50%; background:color-mix(in srgb, var(--accent) 30%, transparent); border:3px solid var(--accent); box-shadow:0 0 0 2px #fff, 0 1px 6px rgba(0,0,0,.45); }
 /* fronts */
 #view-fronts { overflow:hidden; display:none; flex-direction:column; }
 #view-fronts.active { display:flex; }
@@ -655,6 +666,9 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
         <div class="wm-zoom"><button class="fab" onclick="WM.sides[0].map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="WM.sides[0].map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
         <button class="fab wm-split" id="wmSplitBtn" onclick="wmSetSplit(!WMP.split)" title="Split screen" aria-label="Split screen">
           <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="fab wm-meas-btn" id="wmMeasBtn" onclick="measToggle()" title="Distance and bearing" aria-label="Distance and bearing">
+          <svg viewBox="0 0 24 24"><path d="M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2.5 3"/><circle cx="5" cy="19" r="2.4" fill="currentColor"/><circle cx="19" cy="5" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <div class="wm-meas" id="wmMeas"></div>
         <div class="wm-leg" id="wmLegA"></div><div class="wm-leg r" id="wmLegB" style="display:none"></div>
       </div>
       <div class="wm-timebar">
@@ -2586,6 +2600,7 @@ function wmQueueDraw() { if (!wmDrawQueued) { wmDrawQueued = true; requestAnimat
 function wmDrawAll(resetParticles) {
   if (!WM.ready) return;
   WM.sides.forEach((s, k) => { if (k === 1 && !WMP.split) return; wmDrawSide(s, k ? WMP.b : WMP.a, resetParticles); });
+  measPaint();                                // the ruler's card follows the time slider
   // Fetch the next couple of steps ahead of the slider / play button.
   [WMP.a].concat(WMP.split ? [WMP.b] : []).forEach(cfg => {
     const g = GRIDS[wmGridName(cfg)]; if (!g || !g.pre) return;
@@ -2676,16 +2691,96 @@ function wmAnimate() {
     ctx.stroke();
   });
 }
-function wmReadout(s, ll) {
-  const cur = s.cur; if (!cur) return;
+// What the map layer says at a point - the tap popup and the ruler's card.
+function wmValueAt(s, ll) {
+  const cur = s.cur; if (!cur) return null;
   const v = sampleAt(cur.g, cur.arr, ll.lat, ll.lng);
   const cfg = s.k ? WMP.b : WMP.a, m = MODELS.find(x => x.id === cfg.model);
   let txt = v !== v ? 'No data here' : `${cur.lay.contours ? v.toFixed(0) : v < 10 && cur.lay.unit !== '%' ? v.toFixed(1) : Math.round(v)} ${cur.lay.unit}`;
   if (v === v && cur.lay.flow === 'wind') { const d = sampleAt(cur.g, gridField(cur.g, 'wd', cur.ti), ll.lat, ll.lng); if (d === d) txt += ` from ${compass(d)}`; }
   if (v === v && cur.lay.flow === 'current') { const d = sampleAt(cur.g, gridField(cur.g, 'cd', cur.ti), ll.lat, ll.lng); if (d === d && v >= .1) txt += ` toward ${compass(d)}`; }
   if (v === v && cur.lay.id === 'wave') { const p = sampleAt(cur.g, gridField(cur.g, 'wp', cur.ti), ll.lat, ll.lng); if (p === p) txt += ` · ${Math.round(p)} s`; }
+  return { title: `${cur.lay.grid === 'current' ? 'RTOFS' : cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}`, txt };
+}
+function wmReadout(s, ll) {
+  if (MEAS.on) { MEAS.b = ll; measPaint(); return; }       // ruler on: a tap moves the far pin
+  const r = wmValueAt(s, ll); if (!r) return;
   L.popup({ closeButton: false, autoClose: true, className: 'wm-pop' }).setLatLng(ll)
-    .setContent(`<b>${cur.lay.grid === 'current' ? 'RTOFS' : cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}</b><br>${txt}`).openOn(s.map);
+    .setContent(`<b>${r.title}</b><br>${r.txt}`).openOn(s.map);
+}
+
+// ─── distance & bearing ruler ──────────────────────────────────
+// Like Navionics: one pin on the boat, one you drag - or tap the map to move
+// it. The card shows the distance, the bearing true and magnetic, and what the
+// map layer says where the far pin sits (e.g. the current there). The line is
+// a rhumb line: the steady compass course you'd steer, and the straight line
+// on this map. The boat pin follows the boat until you drag it somewhere else.
+const MEAS = { on: false, a: null, b: null, followBoat: true, sides: [], drawn: '' };
+function rhumb(lat1, lon1, lat2, lon2) {
+  const R = 6371000, r = Math.PI / 180, p1 = lat1 * r, p2 = lat2 * r, dp = p2 - p1;
+  let dl = (lon2 - lon1) * r;
+  if (Math.abs(dl) > Math.PI) dl = dl > 0 ? dl - 2 * Math.PI : dl + 2 * Math.PI;
+  const dpsi = Math.log(Math.tan(Math.PI / 4 + p2 / 2) / Math.tan(Math.PI / 4 + p1 / 2));
+  const q = Math.abs(dpsi) > 1e-12 ? dp / dpsi : Math.cos(p1);
+  return { m: Math.sqrt(dp * dp + q * q * dl * dl) * R, brg: (Math.atan2(dl, dpsi) / r + 360) % 360 };
+}
+function measIcon(cls, size) { return L.divIcon({ className: 'meas-icon', html: `<div class="${cls}"></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }); }
+function measToggle() {
+  if (!WM.ready) return;
+  MEAS.on = !MEAS.on;
+  $('wmMeasBtn').classList.toggle('on', MEAS.on);
+  $('wmStage').classList.toggle('measuring', MEAS.on);
+  if (!MEAS.on) {
+    MEAS.sides.forEach(m => [m.casing, m.line, m.pa, m.pb].forEach(x => m.map.removeLayer(x)));
+    MEAS.sides = []; MEAS.drawn = ''; $('wmMeas').classList.remove('show');
+    return;
+  }
+  const map = WM.sides[0].map, p = S.pos;
+  MEAS.followBoat = !!p;
+  MEAS.a = p ? L.latLng(p.lat, p.lon) : map.getCenter();
+  // Far pin: the middle of the screen - or, when the boat is already there,
+  // a quarter of the screen up and to the right of it.
+  const sz = map.getSize(), mid = sz.divideBy(2), pa = map.latLngToContainerPoint(MEAS.a);
+  MEAS.b = map.containerPointToLatLng(pa.distanceTo(mid) > 80 ? mid : pa.add([sz.x * .25, -sz.y * .2]));
+  WM.sides.forEach(s => {                      // both maps, so it carries over to split view
+    const m = { map: s.map };
+    m.casing = L.polyline([MEAS.a, MEAS.b], { color: '#ffffff', weight: 6, opacity: .8, interactive: false }).addTo(s.map);
+    m.line = L.polyline([MEAS.a, MEAS.b], { color: '#14212d', weight: 2.5, dashArray: '7 6', interactive: false }).addTo(s.map);
+    m.pa = L.marker(MEAS.a, { icon: measIcon('meas-a', 34), draggable: true, zIndexOffset: 900 }).addTo(s.map);
+    m.pb = L.marker(MEAS.b, { icon: measIcon('meas-b', 48), draggable: true, zIndexOffset: 1000 }).addTo(s.map);
+    m.pa.on('drag', e => { MEAS.followBoat = false; MEAS.a = e.target.getLatLng(); measPaint(); });
+    m.pb.on('drag', e => { MEAS.b = e.target.getLatLng(); measPaint(); });
+    MEAS.sides.push(m);
+  });
+  measPaint();
+  toast('Drag the pins, or tap the map to move the far one');
+}
+function measPaint() {
+  if (!MEAS.on || !MEAS.a || !MEAS.b) return;
+  if (MEAS.followBoat && S.pos) MEAS.a = L.latLng(S.pos.lat, S.pos.lon);
+  const key = [MEAS.a.lat, MEAS.a.lng, MEAS.b.lat, MEAS.b.lng].join(',');
+  if (key !== MEAS.drawn) {                    // only touch the map when a pin moved
+    MEAS.drawn = key;
+    MEAS.sides.forEach(m => {
+      m.casing.setLatLngs([MEAS.a, MEAS.b]); m.line.setLatLngs([MEAS.a, MEAS.b]);
+      if (!m.pa.getLatLng().equals(MEAS.a)) m.pa.setLatLng(MEAS.a);   // not the one under your finger
+      if (!m.pb.getLatLng().equals(MEAS.b)) m.pb.setLatLng(MEAS.b);
+    });
+  }
+  const r = rhumb(MEAS.a.lat, MEAS.a.lng, MEAS.b.lat, MEAS.b.lng), nm = r.m / 1852;
+  const three = d => String(Math.round(d) % 360).padStart(3, '0') + '°';
+  // Magnetic from the Pi's variation at the boat (true = magnetic + variation).
+  const t = S.tel, v = t && ['model', 'gps'].includes(str(t.variationSource)) ? num(t.variationDeg) : null;
+  const dist = nm < 10 ? nm.toFixed(2) : nm < 100 ? nm.toFixed(1) : String(Math.round(nm));
+  let html = `<b>${dist} nm · ${three(r.brg)}T${v !== null ? ' · ' + three(r.brg - v + 720) + 'M' : ''}</b>`;
+  const seen = new Set();
+  WM.sides.forEach((s, k) => {
+    if (k === 1 && !WMP.split) return;
+    const val = wmValueAt(s, MEAS.b); if (!val) return;
+    const line = `${val.title} at pin: ${val.txt}`;
+    if (!seen.has(line)) { seen.add(line); html += `<small>${line}</small>`; }
+  });
+  $('wmMeas').innerHTML = html; $('wmMeas').classList.add('show');
 }
 
 // ─── asking the Pi for the area on screen ──────────────────────
