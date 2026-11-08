@@ -14,6 +14,9 @@ Three things to know before running it:
   * Motoring rows are marked, not discarded. polar_build.py drops them.
   * The boat state (Sailing / Motoring / Anchored) comes from the e-ink frame's
     side buttons (frame.py saves it). Anchored time isn't logged at all.
+  * It also keeps the TRIP distance shown on the e-ink dashboard (see Trip
+    below), because this is the one program that hears the Vesper all the
+    time and already follows the boat state.
 
 Usage:
     python3 polar_logger.py --probe          # what's on the wire?
@@ -505,6 +508,99 @@ def boat_state():
     return best
 
 
+# ---------------------------------------------------------------------------
+# Trip distance, shown under SOG on the e-ink dashboard (frame.py reads it)
+# ---------------------------------------------------------------------------
+# A new trip starts when the boat leaves anchor: the state goes from Anchored
+# to Sailing or Motoring. Time at anchor adds nothing.
+#
+# The distance is a breadcrumb trail. The next point is taken only once the
+# boat is TRIP_STEP_M from the last one, and each step adds the straight line
+# between them - so GPS wander while stopped adds nothing, and tacks are
+# followed closely. A step made slower than TRIP_MIN_KN (swinging at anchor
+# with the state left on Sailing) moves the trail without adding to it; one
+# faster than TRIP_MAX_KN is a GPS glitch and is dropped the same way. After
+# the Vesper has been off while the boat moved, the straight line from the
+# last point is added, as long as it's at a believable speed.
+TRIP_FILE = "/home/harvestmoon/polar/trip.json"
+TRIP_STEP_M = 25.0
+TRIP_MIN_KN = 0.5
+TRIP_MAX_KN = 20.0
+TRIP_SAVE_S = 60.0          # the frame redraws every 5 min; no need to write more often
+M_PER_NM = 1852.0
+
+
+def haversine_m(lat1, lon1, lat2, lon2):
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(h)))
+
+
+class Trip:
+    def __init__(self, path=None):
+        self.path = path or TRIP_FILE
+        self.nm, self.started = 0.0, time.time()
+        self.last, self.last_t, self.prev_state = None, None, None
+        self.saved, self.dirty = 0.0, True
+        try:
+            with open(self.path) as fh:
+                d = json.load(fh)
+            self.nm = float(d.get("nm") or 0.0)
+            self.started = float(d.get("started") or self.started)
+            if d.get("last") and d.get("last_t"):
+                self.last, self.last_t = (float(d["last"][0]), float(d["last"][1])), float(d["last_t"])
+            self.prev_state = d.get("state")
+            self.dirty = False
+        except (OSError, ValueError, TypeError, KeyError, IndexError):
+            pass
+
+    def save(self, force=False):
+        now = time.time()
+        if not self.dirty or (not force and now - self.saved < TRIP_SAVE_S):
+            return
+        d = {"nm": round(self.nm, 3), "started": self.started, "updated": now,
+             "state": self.prev_state,
+             "last": list(self.last) if self.last else None, "last_t": self.last_t}
+        tmp = self.path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(d, fh)
+        os.replace(tmp, self.path)          # never a half-written file for the frame
+        self.saved, self.dirty = now, False
+
+    def update(self, lat, lon, state):
+        now = time.time()
+        if state != self.prev_state:
+            if self.prev_state == "anchored" and state in ("sailing", "motoring"):
+                print("[trip] left anchor - new trip (last one {:.1f} nm)".format(self.nm), file=sys.stderr)
+                self.nm, self.started, self.last = 0.0, now, None
+                self.prev_state = state
+                self.dirty = True
+                self.save(force=True)
+            self.prev_state, self.dirty = state, True
+        if state == "anchored":
+            if self.last is not None:
+                self.last, self.dirty = None, True
+            self.save()
+            return
+        if lat is None or lon is None:
+            return
+        if self.last is None:
+            self.last, self.last_t, self.dirty = (lat, lon), now, True
+            self.save()
+            return
+        d = haversine_m(self.last[0], self.last[1], lat, lon)
+        if d < TRIP_STEP_M:
+            self.save()
+            return
+        kn = d / max(1.0, now - (self.last_t or now)) * 3600.0 / M_PER_NM
+        if TRIP_MIN_KN <= kn <= TRIP_MAX_KN:
+            self.nm += d / M_PER_NM
+        self.last, self.last_t, self.dirty = (lat, lon), now, True
+        self.save()
+
+
 def csv_path_for(log_dir, day):
     """Today's CSV, or a new part file (polar_<day>_2.csv ...) if today's file
     was started with a different column list (e.g. before the state column)."""
@@ -660,6 +756,8 @@ def run_logger(stream, args):
 
     sim_seconds = 0
     base = datetime.now(timezone.utc)
+    trip = None if args.simulate else Trip()     # fake data mustn't touch the real trip
+    trip_err = [False]
 
     print("Logging to {} (Ctrl-C to stop)".format(log_dir), file=sys.stderr)
     try:
@@ -676,6 +774,13 @@ def run_logger(stream, args):
                 continue
             last_tick = now
             stamp = base + timedelta(seconds=sim_seconds) if args.simulate else None
+            if trip is not None:
+                try:
+                    trip.update(st.get("lat", 10), st.get("lon", 10), boat_state())
+                except Exception as exc:         # the trip must never stop the polar log
+                    if not trip_err[0]:
+                        print("[trip] error: {}".format(exc), file=sys.stderr)
+                        trip_err[0] = True
             row = sample(st, stamp)
             if row is None:
                 continue
@@ -707,6 +812,11 @@ def run_logger(stream, args):
     finally:
         if handle:
             handle.close()
+        if trip is not None:
+            try:
+                trip.save(force=True)
+            except Exception:
+                pass
     print("\n{} rows written.".format(rows), file=sys.stderr)
     return 0
 

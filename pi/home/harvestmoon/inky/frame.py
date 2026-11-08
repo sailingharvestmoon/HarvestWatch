@@ -173,10 +173,22 @@ def circular_mean(vals):
     return math.degrees(math.atan2(y, x)) % 360
 
 def conv_lat(raw, hemi):
-    return f"{int(raw[:2])}\u00b0{float(raw[2:]):.3f}'{hemi}"
+    return f"{int(raw[:2])}\u00b0{float(raw[2:]):06.3f}'{hemi}"     # minutes always 2 digits: 05.123, not 5.123
 
 def conv_lon(raw, hemi):
-    return f"{int(raw[:3])}\u00b0{float(raw[3:]):.3f}'{hemi}"
+    return f"{int(raw[:3])}\u00b0{float(raw[3:]):06.3f}'{hemi}"
+
+# Trip distance, kept by the polar logger (it hears the Vesper all the time and
+# starts a new trip when the boat leaves anchor). Shown under SOG.
+TRIP_FILE = '/home/harvestmoon/polar/trip.json'
+
+def read_trip_nm():
+    try:
+        with open(TRIP_FILE) as f:
+            nm = float(json.load(f).get('nm'))
+        return nm if 0 <= nm < 100000 else None
+    except Exception:
+        return None
 
 def parse(sentence, d):
     try:
@@ -422,8 +434,10 @@ def render_dashboard(display, d):
          f"{d.get('boatspd',0):.1f} kt" if 'boatspd' in d else '--', '', fonts)
     tile(draw, col[0], row2, "HEADING", hdg, '', fonts)
     tile(draw, col[1], row2, "COG", cog, '', fonts)
+    trip = read_trip_nm()
+    trip_txt = '' if trip is None else f"Trip {trip:.1f} nm" if trip < 100 else f"Trip {trip:.0f} nm"
     tile(draw, col[2], row2, "SOG",
-         f"{d['sog']:.1f} kt" if d.get('sog') is not None else '--', '', fonts)
+         f"{d['sog']:.1f} kt" if d.get('sog') is not None else '--', trip_txt, fonts)
 
     # Gust line along the bottom
     g = d.get('gust')
