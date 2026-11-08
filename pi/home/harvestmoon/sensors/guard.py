@@ -52,6 +52,14 @@ except Exception:
     def fs_auth():
         return {}
 
+# Magnetic variation from the World Magnetic Model (~/lib/magvar.py), for
+# projecting the bow along TRUE heading. If the file is missing, the value set
+# on the watch page is used instead.
+try:
+    import magvar
+except Exception:
+    magvar = None
+
 XB_HOST     = os.environ.get("XB_HOST", "192.168.1.167")
 XB_PORT     = int(os.environ.get("XB_PORT", "39150"))
 PROJECT_ID  = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
@@ -94,7 +102,7 @@ DEFAULTS = {
     "renotifyMin": 10,
     "bowOffsetEnabled": False,
     "bowOffsetFt": 0.0,
-    "magVarDeg": 0.0,          # used when the GPS sends no variation
+    "magVarDeg": 0.0,          # last resort: only if neither the GPS nor the model gives one
     # Dead man's switch. See deadman_refresh() for why this exists.
     "deadmanEnabled": True,
     "deadmanDelayMin": 30,     # alert fires this long after the last refresh
@@ -568,7 +576,14 @@ def bow_position(lat, lon):
         return lat, lon, False
     var = fresh("var")
     if var is None:
-        var = cfg["magVarDeg"]        # GPS sends no variation; use the configured value
+        # This Vesper sends no variation: work it out from the position with
+        # the World Magnetic Model, and only if that fails use the setting.
+        var = cfg["magVarDeg"]
+        if magvar is not None:
+            try:
+                var = magvar.variation(lat, lon)
+            except Exception:
+                pass
     d = cfg["bowOffsetFt"] * FT_TO_M
     brg = math.radians((hdg + var) % 360)
     R = 6371000.0

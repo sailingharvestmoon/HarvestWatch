@@ -5,6 +5,19 @@ from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from inky.inky_e673 import Inky
 
+# Magnetic variation from the World Magnetic Model (~/lib/magvar.py). The
+# Vesper sends magnetic heading and no variation; this is what makes the wind
+# and gust directions true. If it's missing they're shown marked M (magnetic).
+import sys
+for _p in (os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'lib'),
+           '/home/harvestmoon/lib'):
+    if _p not in sys.path:
+        sys.path.append(_p)
+try:
+    import magvar
+except Exception:
+    magvar = None
+
 VESPER_IP = '192.168.1.167'
 VESPER_PORT = 39150
 PHOTO_DIR = '/home/harvestmoon/inky/examples/7color/slideshow_photos'
@@ -184,6 +197,8 @@ def parse(sentence, d):
             d['cog'] = float(p[8]) if p[8] else None
             d['lat'] = conv_lat(p[3], p[4])
             d['lon'] = conv_lon(p[5], p[6])
+            d['lat_deg'] = (int(p[3][:2]) + float(p[3][2:]) / 60.0) * (-1 if p[4] == 'S' else 1)
+            d['lon_deg'] = (int(p[5][:3]) + float(p[5][3:]) / 60.0) * (-1 if p[6] == 'W' else 1)
             if p[10]:
                 d['var'] = float(p[10]) * (-1 if p[11] == 'W' else 1)
             try:
@@ -234,6 +249,8 @@ def ingest(line, samples, latest, now):
         if k == 'depth' and not (0 < v < 150): continue
         if k == 'temp' and not (-5 < v < 45): continue
         if k in ('hdg_mag', 'cog') and not (0 <= v <= 360): continue
+        if k == 'lat_deg' and not (-90 <= v <= 90): continue
+        if k == 'lon_deg' and not (-180 <= v <= 180): continue
         latest[k] = v                       # newest value of everything
         if k in AVG_KEYS:
             samples[k].append((now, v))     # timestamped history for averaging
@@ -241,19 +258,37 @@ def ingest(line, samples, latest, now):
     # (a real anemometer glitch) can't define the hour's peak.
     if 'awa' in cur and 'aws' in cur and 0 <= cur['aws'] <= GUST_MAX_KT:
         twa, tws = true_wind(cur['awa'], cur['aws'], latest.get('boatspd', 0.0))
-        twd = (latest.get('hdg_mag', 0.0) + latest.get('var', 0.0) + twa) % 360
+        var, var_known = frame_variation(latest)
+        if latest.get('hdg_mag') is not None:
+            twd = (latest['hdg_mag'] + var + twa) % 360
+        else:
+            twd, var_known = None, False     # no heading, so no wind direction
         _recent_tws.append(tws)
         if len(_recent_tws) >= 3:
             g = _median(_recent_tws)
             if 0 <= g <= GUST_MAX_KT:
-                gust_history.append((now, g, twd))
+                gust_history.append((now, g, twd, var_known))
+
+def frame_variation(latest):
+    # (variation, True) when it's known - from the GPS if it sends one, else
+    # from the World Magnetic Model at the boat's position - or (0.0, False),
+    # in which case directions are drawn marked M instead of T.
+    if latest.get('var') is not None:
+        return latest['var'], True
+    lat, lon = latest.get('lat_deg'), latest.get('lon_deg')
+    if magvar is not None and lat is not None and lon is not None:
+        try:
+            return magvar.variation(lat, lon), True
+        except Exception:
+            pass
+    return 0.0, False
 
 def compute_display(samples, latest, now):
     d = {}
     d['time'] = latest.get('time', '--:--')
     d['lat'] = latest.get('lat', '--')
     d['lon'] = latest.get('lon', '--')
-    d['var'] = latest.get('var', 0.0)
+    d['var'], d['var_known'] = frame_variation(latest)
 
     def vals(k):
         return [v for (t, v) in samples.get(k, [])]
@@ -272,8 +307,8 @@ def compute_display(samples, latest, now):
     cutoff = now - GUST_WINDOW
     gust_history = [g for g in gust_history if g[0] >= cutoff]
     if gust_history:
-        gt, gtws, gtwd = max(gust_history, key=lambda g: g[1])
-        d['gust'] = (gtws, gtwd, datetime.fromtimestamp(gt).strftime("%H:%M"))
+        gt, gtws, gtwd, gtrue = max(gust_history, key=lambda g: g[1])
+        d['gust'] = (gtws, gtwd, datetime.fromtimestamp(gt).strftime("%H:%M"), gtrue)
     return d
 
 def collect_and_average(display):
@@ -352,12 +387,17 @@ def render_dashboard(display, d):
     draw_state_badge(draw, (585, 8, 780, 54), read_state(), f_badge)
     draw.line([(20, 62), (780, 62)], fill=BLACK, width=2)
 
+    # Directions are TRUE (T) once the variation is known - from the GPS or
+    # from the World Magnetic Model at the boat's position. Without it they're
+    # magnetic and marked M rather than passed off as true.
+    tm = 'T' if d.get('var_known') else 'M'
     if 'awa' in d and 'aws' in d:
         twa, tws = true_wind(d['awa'], d['aws'], d.get('boatspd', 0.0))
-        hdg_true = d.get('hdg_mag', 0) + d.get('var', 0)
-        twd = (hdg_true + twa) % 360
         wind_val = f"{tws:.1f} kt"                            # big: speed
-        wind_sub = f"{compass_point(twd)}  {twd:.0f}\u00b0"   # small: direction
+        wind_sub = ''                                         # small: direction
+        if d.get('hdg_mag') is not None:
+            twd = round(d['hdg_mag'] + d.get('var', 0) + twa) % 360
+            wind_sub = f"{compass_point(twd)}  {twd}\u00b0{tm}"
     else:
         wind_val, wind_sub = '--', ''
 
@@ -388,10 +428,13 @@ def render_dashboard(display, d):
     # Gust line along the bottom
     g = d.get('gust')
     if g:
-        gtws, gtwd, gtime = g
+        gtws, gtwd, gtime, gtrue = g
+        gdir = ''
+        if gtwd is not None:
+            gd = round(gtwd) % 360
+            gdir = f"{compass_point(gd)} {gd}\u00b0{'T' if gtrue else 'M'}   "
         draw.text((20, 428), "GUST", font=f_lbl, fill=BLUE)
-        draw.text((130, 426),
-                  f"{gtws:.1f} kt   {compass_point(gtwd)} {gtwd:.0f}\u00b0   @ {gtime}",
+        draw.text((130, 426), f"{gtws:.1f} kt   {gdir}@ {gtime}",
                   font=f_sub, fill=RED)
 
     # Which side button does what (A-D, top to bottom)

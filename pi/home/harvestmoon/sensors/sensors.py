@@ -36,6 +36,15 @@ except Exception:
     def fs_auth():
         return {}
 
+# Magnetic variation from the World Magnetic Model (~/lib/magvar.py). The
+# Vesper sends magnetic heading and leaves the variation field empty, so this is
+# what turns heading, wind and gust directions and the bow position into true.
+# If the file is missing, the value set on the watch page is used instead.
+try:
+    import magvar
+except Exception:
+    magvar = None
+
 XB_HOST    = os.environ.get("XB_HOST", "192.168.1.167")
 XB_PORT    = int(os.environ.get("XB_PORT", "39150"))
 PROJECT_ID = os.environ.get("PROJECT_ID", "harvest-moon-watch").strip()
@@ -99,9 +108,7 @@ def gust_sample(awa, aws):
     hdg = fresh('hdg_mag')
     twd = None
     if hdg is not None:
-        var = fresh('var')
-        if var is None: var = bow_offset_config()[2]
-        twd = (hdg + var + twa) % 360
+        twd = (hdg + variation()[0] + twa) % 360
     now = time.time()
     gust_hist.append((now, g, twd))
     while gust_hist and now - gust_hist[0][0] > GUST_WINDOW:
@@ -173,8 +180,8 @@ def build_fields():
         f['windSpeedTrueKn'] = round(tws, 1)
         hdg = fresh('hdg_mag')
         if hdg is not None:
-            hdg_true = hdg + (fresh('var') or 0.0)
-            f['windDirTrueDeg'] = round((hdg_true + twa) % 360)
+            hdg_true = hdg + variation()[0]
+            f['windDirTrueDeg'] = round((hdg_true + twa) % 360) % 360
     depth_m = fresh('depth_m')
     if depth_m is not None: f['depthFt'] = round(depth_m * 3.280839895, 1)
     temp_c = fresh('temp_c')
@@ -188,16 +195,15 @@ def build_fields():
     # Magnetic would be wrong by the local variation - about 13 degrees in Long
     # Island Sound, which throws a 30 ft offset sideways by roughly 7 ft.
     if fresh('hdg_mag') is not None:
-        _v = fresh('var')
-        if _v is None:
-            _v = bow_offset_config()[2]      # configured fallback
-        f['headingTrueDeg'] = round((fresh('hdg_mag') + _v) % 360)
+        _v, _src = variation()
+        f['headingTrueDeg'] = round((fresh('hdg_mag') + _v) % 360) % 360
         f['variationDeg'] = round(_v, 1)
-        f['variationFromGps'] = (fresh('var') is not None)
+        f['variationFromGps'] = (_src == 'gps')
+        f['variationSource'] = _src          # gps / model / setting
     pk = gust_peak()
     if pk is not None:
         f['gustKn'] = round(pk[1], 1)
-        if pk[2] is not None: f['gustDirDeg'] = round(pk[2])
+        if pk[2] is not None: f['gustDirDeg'] = round(pk[2]) % 360
         f['gustAt'] = int(pk[0] * 1000)
     if fresh('lat') is not None: f['lat'] = round(fresh('lat'), 6)
     if fresh('lon') is not None: f['lon'] = round(fresh('lon'), 6)
@@ -249,6 +255,29 @@ def bow_offset_config():
         print(f"bow offset config read failed: {e}", flush=True)
     return _cfg_cache["offset_ft"], _cfg_cache["enabled"], _cfg_cache["magvar"]
 
+_var_warned = [False]
+
+def variation():
+    """
+    Magnetic variation to add to the Vesper's magnetic heading (East +, West -)
+    and where it came from:
+      'gps'      the GPS sent it in its RMC sentence (this Vesper doesn't)
+      'model'    worked out from the boat's position (World Magnetic Model)
+      'setting'  the value set on the watch page - only with no GPS fix
+    """
+    v = fresh('var')
+    if v is not None:
+        return v, 'gps'
+    lat, lon = fresh('lat'), fresh('lon')
+    if magvar is not None and lat is not None and lon is not None:
+        try:
+            return magvar.variation(lat, lon), 'model'
+        except Exception as e:
+            if not _var_warned[0]:
+                print(f"variation model failed ({e}) - using the watch page setting", flush=True)
+                _var_warned[0] = True
+    return bow_offset_config()[2], 'setting'
+
 def dest_point(lat, lon, bearing_deg, dist_m):
     R = 6371000.0
     br = math.radians(bearing_deg); d = dist_m / R
@@ -278,15 +307,14 @@ def push_position():
     # from the anchor on a calm night with nothing dragging at all.
     # Projected along the heading rather than subtracted as a constant, because
     # subtracting is only correct while the bow happens to point at the anchor.
-    off_ft, off_en, cfg_var = bow_offset_config()
+    off_ft, off_en, _cfg_var = bow_offset_config()
     hdg = fresh('hdg_mag')
-    # Magnetic variation from the GPS if it sends one - many units, including
-    # this Vesper, leave the RMC variation field empty - otherwise the value
-    # configured on the watch page. Without it the bow would be projected along
-    # a magnetic bearing, throwing a 30 ft offset sideways by about 7 ft here.
-    var = fresh('var')
-    if var is None:
-        var = cfg_var
+    # Magnetic variation: from the GPS if it sends one (this Vesper leaves the
+    # RMC field empty), otherwise worked out from this position with the World
+    # Magnetic Model, and only failing that the value set on the watch page.
+    # Without it the bow would be projected along a magnetic bearing, throwing
+    # a 30 ft offset sideways by about 6 ft here.
+    var = variation()[0]
     if off_en and off_ft > 0 and hdg is not None:
         b_lat, b_lon = dest_point(lat, lon, (hdg + var) % 360, off_ft * 0.3048)
         fields["bowLat"] = {"doubleValue": b_lat}

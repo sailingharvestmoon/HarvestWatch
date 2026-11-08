@@ -45,6 +45,7 @@ Michael DataHub Files/
 | `pi/etc/systemd/system/*.service` | `/etc/systemd/system/` | — | `sudo systemctl daemon-reload` then restart that unit |
 | `pi/etc/harvest-moon/ntfy.env.example` | template for `/etc/harvest-moon/ntfy.env` (secret, never stored here) | read by `guard` | `sudo systemctl restart guard` |
 | `pi/home/harvestmoon/lib/fsauth.py` | `/home/harvestmoon/lib/fsauth.py` | imported by sensors, guard, camera | restart those three |
+| `pi/home/harvestmoon/lib/magvar.py` | `/home/harvestmoon/lib/magvar.py` | imported by sensors, guard, frame (magnetic variation from the World Magnetic Model; the Vesper sends none) | restart those three (the auto-updater won't on its own). Check by hand: `python3 ~/lib/magvar.py 36.95 -76.30` |
 | `pi/home/harvestmoon/lib/rulecheck.py` | `/home/harvestmoon/lib/rulecheck.py` | run by hand (tests the database rules) | — |
 | `pi/etc/harvest-moon/firebase.env.example` | template for `/etc/harvest-moon/firebase.env` (secret, never stored here; `root:harvestmoon`, `chmod 640`) | read by `fsauth.py` | restart sensors, guard, camera |
 

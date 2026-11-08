@@ -1745,8 +1745,12 @@ function onOrient(e) {
   if (typeof e.webkitCompassHeading === 'number') h = e.webkitCompassHeading;
   else if (e.absolute && typeof e.alpha === 'number') h = (360 - e.alpha) % 360;
   if (h === null) return;
-  // Phone compass is magnetic; the boat works in true.
-  lastHeading = (h + C('magVarDeg') + 360) % 360;
+  // Phone compass is magnetic; the boat works in true. Variation is the Pi's
+  // (worked out from the boat's position) while the boat is reporting,
+  // otherwise the setting on the Boat tab.
+  const t = S.tel, age = t ? ageMin(num(t.updatedAt)) : null;
+  const tv = (age !== null && age < 60 && ['model', 'gps'].includes(str(t.variationSource))) ? num(t.variationDeg) : null;
+  lastHeading = (h + (tv !== null ? tv : C('magVarDeg')) + 360) % 360;
   const b = $('btnCompass'); if (b) b.textContent = `📌 Capture ${Math.round(lastHeading)}°T`;
 }
 async function compassTap() {
@@ -3042,7 +3046,7 @@ const BOAT_FIELDS = [
   { k: 'bowOffsetFt', label: 'GPS antenna to bow roller', unit: 'ft', step: 1, note: 'Drag is measured from the bow', sw: 'bowOffsetEnabled' },
   { k: 'bowRollerFt', label: 'Bow roller above water', unit: 'ft', step: .5, note: 'Used for scope' },
   { k: 'transducerOffsetFt', label: 'Depth transducer below water', unit: 'ft', step: .5, note: 'Added to the sounder reading' },
-  { k: 'magVarDeg', label: 'Magnetic variation', unit: '°', step: .5, note: 'West is negative (midcoast Maine ≈ −15.5). Used when the GPS sends none.' }
+  { k: 'magVarDeg', label: 'Magnetic variation', unit: '°', step: .5, note: 'West is negative. Fallback only: the Pi works variation out from the GPS position (World Magnetic Model).' }
 ];
 function paintBoat() {
   const el = $('boatSetup');
@@ -3054,8 +3058,9 @@ function paintBoat() {
       <span class="val" style="width:18px;">${f.unit}</span></div>`).join('');
   const v = C('magVarDeg');
   if (!S.cfg.magVarDeg || v === 0) {
-    const fromGps = S.tel && bool(S.tel.variationFromGps);
-    if (!fromGps) el.insertAdjacentHTML('beforeend', `<div class="row"><div class="txt"><small style="white-space:normal;color:var(--warn)">The GPS isn't sending variation and none is set, so the bow position is being projected along magnetic heading.</small></div></div>`);
+    // Fine without a setting while the Pi gets variation from the GPS or works it out from the position.
+    const known = !!S.tel && (bool(S.tel.variationFromGps) || str(S.tel.variationSource) === 'model');
+    if (!known) el.insertAdjacentHTML('beforeend', `<div class="row"><div class="txt"><small style="white-space:normal;color:var(--warn)">The GPS isn't sending variation and none is set, so the bow position is being projected along magnetic heading.</small></div></div>`);
   }
 }
 async function saveBoat() {
