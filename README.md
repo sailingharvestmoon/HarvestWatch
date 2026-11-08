@@ -114,6 +114,17 @@ open-data buckets, cuts out 5–52°N, 100–40°W, and publishes small PNGs per
 panning is instant. UKMO, ICON and currents aren't in the maps (they're in the forecast table).
 It also builds the **Fronts** view: WPC's surface analyses and day 0–7 forecast charts (`fronts.py`). Run it by hand: GitHub → Actions → Build weather maps → Run workflow.
 
+## Offline weather (`netlify/sw.js`)
+
+**Save for offline** (bottom of the app's Weather tab) keeps the latest weather on the phone for passages with the internet off:
+the app itself, every pre-built map (all models, waves, currents), "Now" and the forecast table, NOAA's fronts charts (with the
+times they had when saved), and the passage router's land and depth data. The card shows the size once saved.
+With no internet, `sw.js` answers those requests from the saved copy, the Weather tab shows a "No internet"
+banner, the maps' time line says "offline copy", and the coastline is drawn from `land.png` because chart tiles can't load.
+Online, everything is live as before. `sw.js` never touches the anchor watch, alarms, telemetry, sign-in or any write.
+This is the one exception (Nov 2026) to "nothing stored on the phone": forecast files only, saved only when asked.
+On iPhone, open the app from its Home Screen icon, or Safari may clear the copy after a week without use.
+
 ## Cloudflare weather worker (`cloudflare-weather/`)
 
 `weather-worker.js` (worker name `harvest-weather`) does all the weather that used to run on the Pi, off the boat:

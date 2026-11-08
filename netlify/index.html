@@ -352,6 +352,11 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-meas b { font-size:17px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .wm-meas small { display:block; font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .wm-stage.measuring .wm-status { top:170px; }
+/* offline weather copy */
+.off-pill { margin:0 auto 10px; width:fit-content; max-width:100%; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; text-align:center; }
+.off-bar { height:6px; border-radius:3px; background:var(--surface2); border:1px solid var(--line); overflow:hidden; margin:10px 0 6px; }
+.off-bar > i { display:block; height:100%; background:var(--accent); transition:width .2s; }
+.off-row { margin-top:12px; }
 .meas-icon { background:none; border:0; }
 .meas-a, .meas-b { width:100%; height:100%; display:grid; place-items:center; touch-action:none; }
 .meas-a::after { content:''; width:22px; height:22px; border-radius:50%; border:3px solid var(--ink); box-shadow:0 0 0 2px #fff, 0 0 6px rgba(0,0,0,.4); }   /* a ring round the boat dot */
@@ -636,6 +641,7 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
     <section class="view scroll" id="view-weather">
       <div class="seg wxmode"><button class="on">Table</button><button onclick="showView('maps')">Maps</button><button onclick="showView('fronts')">Fronts</button><button onclick="showView('passage')">Passage</button></div>
       <div style="text-align:center;margin-bottom:4px;"><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div>
+      <div class="off-pill" id="offPill" style="display:none"></div>
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
       <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="requestForecast()">↻ Refresh</button></div>
@@ -650,6 +656,8 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
       <div class="list" id="wxTides"></div>
       <div class="section-title">Sun &amp; moon</div>
       <div class="card pad" id="wxSun"></div>
+      <div class="section-title">Offline copy</div>
+      <div class="card pad" id="offCard"></div>
       <p class="note" id="wxAge" style="text-align:center;margin-top:14px;"></p>
     </section>
 
@@ -2559,7 +2567,8 @@ function wmStepIndex(g) {
 }
 function wmPaintTime() {
   const t = WM.steps[WM.ti];
-  $('wmTimeLbl').textContent = t ? new Date(t * 1000).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'No map data yet';
+  $('wmTimeLbl').textContent = (t ? new Date(t * 1000).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'No map data yet')
+    + (OFF.active ? ' · offline copy' : '');
 }
 function wmPaintButtons() {
   [['wmBtnA', WMP.a, 0], ['wmBtnB', WMP.b, 1]].forEach(([id, cfg, k]) => {
@@ -2898,6 +2907,7 @@ function wmTogglePlay() {
 }
 function openMaps() {
   initMaps();
+  if (OFF.manifest) offProbe().then(offApplyLand);
   setTimeout(() => {
     wmResize(); wmLayout(); wmRefreshData();
     if (!WM.anim) wmAnimate();
@@ -3030,6 +3040,213 @@ function afterPlaceChange() {
   paintForecast();
 }
 
+// ═══ OFFLINE COPY of the weather (for passages with the internet off) ═══
+// "Save for offline" (bottom of the Weather tab) keeps the latest weather on
+// this phone: the app itself, every pre-built map (all models, waves,
+// currents), "Now" and the forecast table, NOAA's fronts charts, and what the
+// passage router needs (land, depths). Then, with no internet, sw.js answers
+// those requests from the copy. Online, everything is live as before.
+// This is the one exception (Nov 2026) to "nothing stored on the phone":
+// forecast files only, saved only when asked, never anchor-watch data.
+const OFF = { manifest: null, active: false, saving: null, told: false };
+const OFF_PREFIX = 'hw-offline-';
+const OFF_MANIFEST = location.origin + '/__offline.json';
+const offOK = () => !!(window.caches && navigator.serviceWorker);
+async function offCacheName() {
+  if (!window.caches) return null;
+  return (await caches.keys()).filter(n => n.startsWith(OFF_PREFIX)).sort().pop() || null;
+}
+async function offLoadManifest() {
+  try {
+    const n = await offCacheName(), r = n && await (await caches.open(n)).match(OFF_MANIFEST);
+    OFF.manifest = r ? await r.json() : null;
+  } catch (e) { OFF.manifest = null; }
+  offPaint();
+}
+// Is the weather coming from the saved copy right now? (sw.js marks what it serves from it.)
+async function offProbe() {
+  if (!OFF.manifest || !navigator.serviceWorker || !navigator.serviceWorker.controller) return false;
+  try { const r = await fetch(MAPS_BASE + 'index.json', { cache: 'no-store' }); offSetActive(!!r.headers.get('x-hw-offline')); }
+  catch (e) { offSetActive(false); }
+  return OFF.active;
+}
+function offSetActive(on) {
+  if (OFF.active === on) return;
+  OFF.active = on;
+  if (on && !OFF.told && OFF.manifest) { OFF.told = true; toast(`No internet: weather is from the copy saved ${offWhen(OFF.manifest.savedAt)}`, 5000); }
+  offPaint(); offApplyLand();
+  if (WM.ready) wmPaintTime();
+}
+function offWhen(ms) {
+  return new Date(ms).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+function offAge(ms) {
+  const h = (Date.now() - ms) / 3600e3;
+  return h < 1 ? 'less than an hour old' : h < 48 ? `${Math.round(h)} h old` : `${Math.round(h / 24)} days old`;
+}
+const offMB = b => (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + ' MB';
+function offPaint() {
+  const el = $('offCard'), pill = $('offPill'); if (!el) return;
+  const m = OFF.manifest, s = OFF.saving;
+  if (pill) {
+    pill.style.display = OFF.active && m ? '' : 'none';
+    if (OFF.active && m) pill.textContent = `📥 No internet: showing the copy saved ${offWhen(m.savedAt)} (${offAge(m.savedAt)})`;
+  }
+  if (!offOK()) { el.innerHTML = `<div class="note">This browser can't keep an offline copy.</div>`; return; }
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) && !navigator.standalone;
+  const iosNote = ios ? `<div class="note" style="margin-top:8px;">On iPhone, open Harvest Watch from its Home Screen icon, or Safari may clear the copy after a week without use.</div>` : '';
+  if (s) {
+    const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
+    el.innerHTML = `<b>Saving for offline…</b><div class="off-bar"><i style="width:${pct}%"></i></div>
+      <div class="note">${s.done.toLocaleString()} of ${s.total ? s.total.toLocaleString() : '…'} files · ${offMB(s.bytes)}${s.failed ? ` · ${s.failed} missing` : ''}</div>`;
+    return;
+  }
+  if (!m) {
+    el.innerHTML = `<div>Keeps the latest weather on this phone for when there's no internet: the maps (every model, waves, currents), this forecast table, NOAA's fronts charts and the passage router's data. Save it just before you leave, and again whenever you're briefly online.</div>
+      <div class="off-row"><button class="btn primary block" onclick="offSave()">📥 Save for offline</button></div>${iosNote}`;
+    return;
+  }
+  el.innerHTML = `<div><b>Saved ${offWhen(m.savedAt)}</b> <span class="note">· ${offAge(m.savedAt)}</span></div>
+    <div class="note" style="margin-top:4px;">${m.files.toLocaleString()} files · ${offMB(m.bytes)} · models: ${esc(m.models.join(', '))}${m.failed ? ` · ${m.failed} files weren't available` : ''}</div>
+    <div class="note" style="margin-top:4px;">With no internet, the weather screens use this copy. Forecasts age: the maps' time slider and the table show when each run was made.</div>
+    <div class="off-row btn-row"><button class="btn primary" onclick="offSave()">📥 Save again</button><button class="btn danger" onclick="offDelete()">Delete</button></div>${iosNote}`;
+}
+let offPaintQ = false;
+function offPaintSoon() { if (!offPaintQ) { offPaintQ = true; setTimeout(() => { offPaintQ = false; offPaint(); }, 250); } }
+function offTellSW(on) { try { navigator.serviceWorker.controller && navigator.serviceWorker.controller.postMessage({ hw: 'saving', on }); } catch (e) {} }
+
+async function offSave() {
+  if (OFF.saving || !offOK()) return;
+  OFF.saving = { done: 0, total: 0, bytes: 0, failed: 0 }; offPaint();     // set first: a second tap does nothing
+  if (await offProbe()) { OFF.saving = null; offPaint(); toast("No internet right now, so there's nothing new to save"); return; }
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}   // ask the phone to keep it
+  offTellSW(true);
+  const name = OFF_PREFIX + Date.now();
+  let cache = null, ok = false, msg = '';
+  try {
+    cache = await caches.open(name);
+    const get = async (url, mode) => {
+      const r = await fetch(url, { mode: mode || 'cors', cache: 'no-store' });
+      if (r.type !== 'opaque' && (!r.ok || r.headers.get('x-hw-offline'))) throw new Error('HTTP ' + r.status);
+      return r;
+    };
+    const put = async (key, r) => {
+      if (r.type !== 'opaque') {
+        const b = await r.blob(); OFF.saving.bytes += b.size;
+        r = new Response(b, { status: r.status, statusText: r.statusText, headers: r.headers });   // also drops any redirect
+      }
+      await cache.put(key, r);
+    };
+    // The list, with keys exactly as the app asks for each file.
+    const jobs = [], add = (url, mode, key) => jobs.push({ url, mode, key: key || url });
+    const idxR = await get(MAPS_BASE + 'index.json'), idx = await idxR.clone().json();
+    await put(MAPS_BASE + 'index.json', idxR);
+    const models = Object.keys(idx.models || {});
+    if (!models.length) throw new Error('no maps published');
+    for (const nm of models) {
+      const url = `${MAPS_BASE}${nm}/meta.json?t=${idx.generated}`, r = await get(url), meta = await r.clone().json();
+      await put(url, r);
+      for (const k of Object.keys(meta.vars || {}))
+        for (let ti = 0; ti < (meta.times || []).length; ti++) add(`${MAPS_BASE}${nm}/${k}_${ti}.png?r=${meta.run}`);
+    }
+    if (idx.depth) add(`${MAPS_BASE}depth.png?v=${idx.depth.built}`);
+    const here = location.origin + location.pathname;
+    add(here, 'same-origin');
+    if (location.pathname !== '/') add(location.origin + '/', 'same-origin');
+    add(location.origin + '/land.png?v=1', 'same-origin');
+    document.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach(el => add(el.src || el.href));
+    [`${FSB}/weather/${VESSEL}`, FC_URL, PLACES_URL, PX_URL].forEach(u => add(u));
+    const frames = frFrames(), bust = Date.now();
+    frames.forEach(f => add(`${f.url}?v=${bust}`, 'no-cors', f.url));
+    OFF.saving.total = jobs.length + 1 + models.length; OFF.saving.done = 1 + models.length;
+    let next = 0, stop = false;
+    const worker = async () => {
+      while (next < jobs.length && !stop) {
+        const j = jobs[next++];
+        try { await put(j.key, await get(j.url, j.mode)); }
+        catch (e) { OFF.saving.failed++; if (/quota/i.test(String(e && (e.name || e.message)))) { stop = true; throw e; } }
+        OFF.saving.done++; offPaintSoon();
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    // Save the charts' times with them, so offline they're labelled as NOAA drew them.
+    const savedFrames = frames.map(f => ({ t: f.t, kind: f.kind, url: f.url, ndfd: f.ndfd, day: f.day }));
+    const runs = {}; models.forEach(nm => { runs[nm] = idx.models[nm].run; });
+    const manifest = { savedAt: +name.slice(OFF_PREFIX.length), files: OFF.saving.done - OFF.saving.failed, failed: OFF.saving.failed,
+                       bytes: OFF.saving.bytes, models, runs, frames: savedFrames };
+    if (manifest.failed > jobs.length * .2) throw new Error(`${manifest.failed} of ${jobs.length} files didn't download`);
+    await cache.put(OFF_MANIFEST, new Response(JSON.stringify(manifest), { headers: { 'content-type': 'application/json' } }));
+    for (const n of await caches.keys()) if (n.startsWith(OFF_PREFIX) && n !== name) await caches.delete(n);   // the old copy goes only now
+    OFF.manifest = manifest; ok = true;
+  } catch (e) {
+    msg = /quota/i.test(String(e && (e.name || e.message))) ? 'the phone ran out of room for it' : String(e && e.message || e);
+    try { await caches.delete(name); } catch (x) {}
+  }
+  offTellSW(false);
+  OFF.saving = null; offPaint();
+  toast(ok ? `Saved for offline: ${offMB(OFF.manifest.bytes)}` : `Couldn't save the offline copy (${msg}). The previous copy, if any, is unchanged.`, 5000);
+}
+async function offDelete() {
+  if (!confirm('Delete the offline weather copy from this phone?')) return;
+  for (const n of await caches.keys()) if (n.startsWith(OFF_PREFIX)) await caches.delete(n);
+  OFF.manifest = null; offSetActive(false); offPaint(); toast('Offline copy deleted');
+}
+
+// With no internet the chart tiles don't load, so the coastline comes from
+// land.png (Natural Earth, already part of the app), redrawn for the map.
+const OFF_LANDS = new Map();     // Leaflet map -> its land overlay (null while it's being made)
+let offLandP = null;
+function offLandUrl() {
+  if (!offLandP) offLandP = pxLandImg().then(img => {
+    if (!img) return null;
+    // land.png: 60 cells per degree, 100 W to 40 W and 5 N to 52 N, row 0 at the SOUTH edge.
+    // Redrawn at half that in the map's Mercator projection, land filled and sea left clear.
+    const merc = la => Math.log(Math.tan(Math.PI / 4 + la * Math.PI / 360));
+    const unmerc = m => (2 * Math.atan(Math.exp(m)) - Math.PI / 2) * 180 / Math.PI;
+    const m0 = merc(5), m1 = merc(52), W = 1800, H = Math.round(W * (m1 - m0) / (60 * Math.PI / 180));
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.imageSmoothingEnabled = false;
+    for (let y = 0; y < H; y++) {
+      const la = unmerc(m1 - (y + .5) / H * (m1 - m0)), sy = Math.min(img.height - 1, Math.max(0, Math.floor((la - 5) * 60)));
+      x.drawImage(img, 0, sy, img.width, 1, 0, y, W, 1);
+    }
+    const d = x.getImageData(0, 0, W, H), p = d.data;
+    for (let i = 0; i < p.length; i += 4) {
+      const land = p[i] > 127;
+      p[i] = 222; p[i + 1] = 215; p[i + 2] = 198; p[i + 3] = land ? 235 : 0;
+    }
+    x.putImageData(d, 0, 0);
+    return c.toDataURL('image/png');
+  }).catch(() => null);
+  return offLandP;
+}
+function offApplyLand() {
+  const maps = [];
+  if (WM.ready) WM.sides.forEach(s => maps.push(s.map));
+  if (PX.map) maps.push(PX.map);
+  maps.forEach(m => {
+    if (!OFF.active) {
+      const lay = OFF_LANDS.get(m); if (lay) m.removeLayer(lay);
+      OFF_LANDS.delete(m); return;
+    }
+    if (OFF_LANDS.has(m)) return;
+    OFF_LANDS.set(m, null);
+    offLandUrl().then(url => {
+      if (!url || !OFF.active || !OFF_LANDS.has(m)) { if (!url) OFF_LANDS.delete(m); return; }
+      if (!m.getPane('offLand')) { const pn = m.createPane('offLand'); pn.style.zIndex = 355; pn.style.pointerEvents = 'none'; }
+      OFF_LANDS.set(m, L.imageOverlay(url, [[5, -100], [52, -40]], { pane: 'offLand', interactive: false }).addTo(m));
+    });
+  });
+}
+function offInit() {
+  if (!('serviceWorker' in navigator)) { offPaint(); return; }
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.hw === 'offline') offSetActive(!!e.data.on && !!OFF.manifest); });
+  offLoadManifest().then(() => { if (OFF.manifest) navigator.serviceWorker.ready.then(() => offProbe()); });
+}
+setTimeout(offInit, 0);
+
 // ═══ FRONTS: NOAA WPC charts, day 0-7 ═════════════════════════════
 // The same charts as WPC's "sea-level pressures and fronts through day 7" loop
 // (wpc.ncep.noaa.gov/basicwx/day0-7loop.html), shown exactly as NOAA draws
@@ -3079,7 +3296,10 @@ async function openFronts() {
   setTimeout(() => FR.map.invalidateSize(), 60);
   if (FR.frames.length && Date.now() - FR.fetched < 10 * 60000) return;
   $('frLabel').innerHTML = '<b>Loading NOAA charts…</b>';
-  FR.frames = frFrames(); FR.fetched = Date.now(); FR.bust = Math.floor(Date.now() / 600000);
+  // No internet: the charts saved with the offline copy, under the times they had when saved.
+  FR.off = !!(OFF.manifest && OFF.manifest.frames && await offProbe());
+  FR.frames = FR.off ? OFF.manifest.frames.map(f => Object.assign({}, f)) : frFrames();
+  FR.fetched = Date.now(); FR.bust = FR.off ? 'off' : Math.floor(Date.now() / 600000);
   FR.imgs = FR.frames.map(f => { const im = new Image(); im.onload = () => { if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.onerror = () => { f.bad = true; const c = document.querySelector(`.fr-chip[data-i="${FR.frames.indexOf(f)}"]`); if (c) c.classList.add('bad'); if (FR.frames[FR.i] === f) frShow(FR.i); };
     im.src = f.url + '?v=' + FR.bust; return im; });
@@ -3123,7 +3343,8 @@ function frShow(i) {
   const z = new Date(f.t * 1000), zStr = `${String(z.getUTCHours()).padStart(2, '0')}Z ${z.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })}`;
   const lead = f.day ? ` · day ${f.day}` : '';
   const rel = (() => { const h = Math.round((f.t - Date.now() / 1000) / 3600); return h === 0 ? 'now' : h > 0 ? `in ${h < 48 ? h + ' h' : Math.round(h / 24) + ' days'}` : `${-h < 48 ? -h + ' h' : Math.round(-h / 24) + ' days'} ago`; })();
-  const note = f.bad ? ' · not available from NOAA right now' : !im || !im.naturalWidth ? ' · loading…' : '';
+  const note = (f.bad ? (FR.off ? ' · not in the offline copy' : ' · not available from NOAA right now') : !im || !im.naturalWidth ? ' · loading…' : '')
+    + (FR.off ? ' · offline copy' : '');
   $('frLabel').innerHTML = `<span class="k ${f.kind}">${f.kind === 'analysis' ? 'Analysis' : 'Forecast' + lead}</span><b>${frLocal(f.t, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}</b> <small>${zStr} · ${rel}${note}</small>`;
   document.querySelectorAll('.fr-chip').forEach(c => c.classList.toggle('on', +c.dataset.i === FR.i));
   const on = document.querySelector('.fr-chip.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'center' });
@@ -3783,6 +4004,7 @@ const pxCur = () => PX.d.routes.find(r => r.id === PX.d.cur) || null;
 // ─── opening the view ──────────────────────────────────────────────
 async function openPassage() {
   if (!PX.map) pxInitMap();
+  if (OFF.manifest) offProbe().then(offApplyLand);
   setTimeout(() => PX.map.invalidateSize(), 60);
   if (!PX.loaded) { pxPaint(); await pxLoadSaved(); pxDraw(true); }
   pxRefresh();
