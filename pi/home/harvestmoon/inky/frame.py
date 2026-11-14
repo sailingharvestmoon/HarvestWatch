@@ -145,8 +145,86 @@ def draw_state_badge(draw, box, st, font):
 
 # Rolling peak-wind history: list of (epoch, true_wind_kt, true_wind_dir)
 gust_history = []
-GUST_MAX_KT = 70          # readings above this are treated as garbage
-_recent_tws = deque(maxlen=5)   # short buffer to median-filter single-sample spikes
+# ---- Wind filter (same block in sensors.py, guard.py and frame.py) --------
+# Every wind reading passes through here before it can reach true wind, the
+# gust or the gust alarm. Readings that are thrown out or fixed:
+#   - MWV sentences with a bad checksum
+#   - MWV sentences flagged invalid (status V); they still carry a speed, often junk
+#   - MWV units other than knots (K = km/h, M = m/s) are converted, not taken as knots
+#   - apparent wind over WIND_MAX_KT
+#   - paddlewheel speed over BOAT_MAX_KT; and at anchor (GPS speed under
+#     UNDERWAY_SOG) the paddlewheel is ignored for true wind altogether, because
+#     it only reads the current going past and apparent wind IS true wind
+# A gust must also last a few seconds: GustFilter takes the median true wind of
+# the last GUST_HOLD_SEC seconds (never fewer than GUST_KEEP readings), so a
+# short burst of bad readings can't become the gust.
+WIND_MAX_KT   = 70.0    # apparent wind above this is garbage
+BOAT_MAX_KT   = 12.0    # paddlewheel above this is garbage (IP380 hull speed ~7.5 kt)
+UNDERWAY_SOG  = 1.0     # GPS speed below this = anchored or moored
+GUST_HOLD_SEC = 5.0     # gust = median true wind over this many seconds...
+GUST_KEEP     = 5       # ...but always over at least the last 5 readings
+_MWV_TO_KT = {'N': 1.0, 'K': 0.539957, 'M': 1.943844}
+wind_log = {}           # what the filter threw out or converted -> count
+
+def _wf_note(reason):
+    wind_log[reason] = wind_log.get(reason, 0) + 1
+    return None
+
+def _wf_num(s):
+    try: return float(s)
+    except (TypeError, ValueError): return None
+
+def parse_mwv(sentence):
+    """(awa_deg, aws_kt) from an apparent-wind MWV sentence, or None if it
+    can't be trusted. Anything that isn't a relative MWV returns None quietly."""
+    p = sentence.strip().split('*')[0].split(',')
+    if len(p) < 4 or not p[0].endswith('MWV') or p[2] != 'R':
+        return None
+    if not nmea_ok(sentence):
+        return _wf_note('bad checksum')
+    if len(p) > 5 and p[5].strip().upper().startswith('V'):
+        return _wf_note('flagged invalid')
+    unit = (p[4].strip().upper() if len(p) > 4 else '') or 'N'
+    if unit not in _MWV_TO_KT:
+        return _wf_note('unknown units ' + unit)
+    awa, spd = _wf_num(p[1]), _wf_num(p[3])
+    if awa is None or spd is None:
+        return _wf_note('empty')
+    aws = spd * _MWV_TO_KT[unit]
+    if not (-180 <= awa <= 360) or not (0 <= aws <= WIND_MAX_KT):
+        return _wf_note('out of range')
+    if unit != 'N':
+        _wf_note('converted from ' + unit)
+    return awa % 360, aws
+
+def boat_speed_ok(stw):
+    """Paddlewheel speed if believable, else None."""
+    if stw is None: return None
+    if not (0 <= stw <= BOAT_MAX_KT):
+        return _wf_note('paddlewheel out of range')
+    return stw
+
+def true_wind_boat_speed(stw, sog):
+    """Boat speed to use when turning apparent wind into true wind."""
+    if stw is None: return 0.0
+    if sog is not None and sog < UNDERWAY_SOG: return 0.0   # at anchor
+    return stw if 0 <= stw <= BOAT_MAX_KT else 0.0
+
+class GustFilter:
+    """Raw true-wind readings in, gust candidates out. Returns None until
+    there are at least 3 readings."""
+    def __init__(self):
+        self.buf = deque()
+    def add(self, now, tws):
+        self.buf.append((now, tws))
+        while self.buf and (now - self.buf[0][0] > 60 or
+                            (len(self.buf) > GUST_KEEP and now - self.buf[0][0] > GUST_HOLD_SEC)):
+            self.buf.popleft()
+        if len(self.buf) < 3: return None
+        s = sorted(v for _, v in self.buf); n = len(s)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+# ---- end of wind filter ----------------------------------------------------
+_gust_filter = GustFilter()
 
 def compass_point(deg):
     dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE',
@@ -194,8 +272,10 @@ def parse(sentence, d):
     try:
         p = sentence.strip().split('*')[0].split(',')
         t = p[0]
-        if t.endswith('MWV') and p[2] == 'R':
-            d['awa'] = float(p[1]); d['aws'] = float(p[3])
+        if t.endswith('MWV') and len(p) > 3 and p[2] == 'R':
+            w = parse_mwv(sentence)                            # checked, in knots
+            if w is not None:
+                d['awa'], d['aws'] = w
         elif t.endswith('DPT') and p[1]:
             d['depth'] = float(p[1])
         elif t.endswith('MTW') and p[1]:
@@ -255,8 +335,8 @@ def ingest(line, samples, latest, now):
             continue
         # Plausibility bounds: reject values this boat can't actually produce,
         # so a checksum-passing-but-glitchy reading can't poison the data.
-        if k == 'aws' and not (0 <= v <= GUST_MAX_KT): continue
-        if k == 'boatspd' and not (0 <= v <= 30): continue
+        if k == 'aws' and not (0 <= v <= WIND_MAX_KT): continue
+        if k == 'boatspd' and boat_speed_ok(v) is None: continue
         if k == 'sog' and not (0 <= v <= 30): continue
         if k == 'depth' and not (0 < v < 150): continue
         if k == 'temp' and not (-5 < v < 45): continue
@@ -266,20 +346,19 @@ def ingest(line, samples, latest, now):
         latest[k] = v                       # newest value of everything
         if k in AVG_KEYS:
             samples[k].append((now, v))     # timestamped history for averaging
-    # Gust: median-filter the last few true-wind samples so a single spike
-    # (a real anemometer glitch) can't define the hour's peak.
-    if 'awa' in cur and 'aws' in cur and 0 <= cur['aws'] <= GUST_MAX_KT:
-        twa, tws = true_wind(cur['awa'], cur['aws'], latest.get('boatspd', 0.0))
+    # Gust: GustFilter (see the wind filter block) so a short burst of bad
+    # readings can't define the hour's peak.
+    if 'awa' in cur and 'aws' in cur:
+        twa, tws = true_wind(cur['awa'], cur['aws'],
+                             true_wind_boat_speed(latest.get('boatspd'), latest.get('sog')))
         var, var_known = frame_variation(latest)
         if latest.get('hdg_mag') is not None:
             twd = (latest['hdg_mag'] + var + twa) % 360
         else:
             twd, var_known = None, False     # no heading, so no wind direction
-        _recent_tws.append(tws)
-        if len(_recent_tws) >= 3:
-            g = _median(_recent_tws)
-            if 0 <= g <= GUST_MAX_KT:
-                gust_history.append((now, g, twd, var_known))
+        g = _gust_filter.add(now, tws)
+        if g is not None:
+            gust_history.append((now, g, twd, var_known))
 
 def frame_variation(latest):
     # (variation, True) when it's known - from the GPS if it sends one, else
@@ -404,7 +483,7 @@ def render_dashboard(display, d):
     # magnetic and marked M rather than passed off as true.
     tm = 'T' if d.get('var_known') else 'M'
     if 'awa' in d and 'aws' in d:
-        twa, tws = true_wind(d['awa'], d['aws'], d.get('boatspd', 0.0))
+        twa, tws = true_wind(d['awa'], d['aws'], true_wind_boat_speed(d.get('boatspd'), d.get('sog')))
         wind_val = f"{tws:.1f} kt"                            # big: speed
         wind_sub = ''                                         # small: direction
         if d.get('hdg_mag') is not None:

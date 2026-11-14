@@ -143,6 +143,98 @@ def true_wind(awa_deg, aws, boat_speed):
     y = aws * math.sin(awa)
     return math.degrees(math.atan2(y, x)) % 360, math.hypot(x, y)
 
+def nmea_ok(line):
+    # NMEA checksum check, used for wind sentences.
+    line = line.strip()
+    if not line.startswith('$'): return False
+    if '*' not in line: return True
+    body, _, ck = line[1:].partition('*')
+    try: want = int(ck[:2], 16)
+    except ValueError: return False
+    got = 0
+    for ch in body: got ^= ord(ch)
+    return got == want
+
+# ---- Wind filter (same block in sensors.py, guard.py and frame.py) --------
+# Every wind reading passes through here before it can reach true wind, the
+# gust or the gust alarm. Readings that are thrown out or fixed:
+#   - MWV sentences with a bad checksum
+#   - MWV sentences flagged invalid (status V); they still carry a speed, often junk
+#   - MWV units other than knots (K = km/h, M = m/s) are converted, not taken as knots
+#   - apparent wind over WIND_MAX_KT
+#   - paddlewheel speed over BOAT_MAX_KT; and at anchor (GPS speed under
+#     UNDERWAY_SOG) the paddlewheel is ignored for true wind altogether, because
+#     it only reads the current going past and apparent wind IS true wind
+# A gust must also last a few seconds: GustFilter takes the median true wind of
+# the last GUST_HOLD_SEC seconds (never fewer than GUST_KEEP readings), so a
+# short burst of bad readings can't become the gust.
+WIND_MAX_KT   = 70.0    # apparent wind above this is garbage
+BOAT_MAX_KT   = 12.0    # paddlewheel above this is garbage (IP380 hull speed ~7.5 kt)
+UNDERWAY_SOG  = 1.0     # GPS speed below this = anchored or moored
+GUST_HOLD_SEC = 5.0     # gust = median true wind over this many seconds...
+GUST_KEEP     = 5       # ...but always over at least the last 5 readings
+_MWV_TO_KT = {'N': 1.0, 'K': 0.539957, 'M': 1.943844}
+wind_log = {}           # what the filter threw out or converted -> count
+
+def _wf_note(reason):
+    wind_log[reason] = wind_log.get(reason, 0) + 1
+    return None
+
+def _wf_num(s):
+    try: return float(s)
+    except (TypeError, ValueError): return None
+
+def parse_mwv(sentence):
+    """(awa_deg, aws_kt) from an apparent-wind MWV sentence, or None if it
+    can't be trusted. Anything that isn't a relative MWV returns None quietly."""
+    p = sentence.strip().split('*')[0].split(',')
+    if len(p) < 4 or not p[0].endswith('MWV') or p[2] != 'R':
+        return None
+    if not nmea_ok(sentence):
+        return _wf_note('bad checksum')
+    if len(p) > 5 and p[5].strip().upper().startswith('V'):
+        return _wf_note('flagged invalid')
+    unit = (p[4].strip().upper() if len(p) > 4 else '') or 'N'
+    if unit not in _MWV_TO_KT:
+        return _wf_note('unknown units ' + unit)
+    awa, spd = _wf_num(p[1]), _wf_num(p[3])
+    if awa is None or spd is None:
+        return _wf_note('empty')
+    aws = spd * _MWV_TO_KT[unit]
+    if not (-180 <= awa <= 360) or not (0 <= aws <= WIND_MAX_KT):
+        return _wf_note('out of range')
+    if unit != 'N':
+        _wf_note('converted from ' + unit)
+    return awa % 360, aws
+
+def boat_speed_ok(stw):
+    """Paddlewheel speed if believable, else None."""
+    if stw is None: return None
+    if not (0 <= stw <= BOAT_MAX_KT):
+        return _wf_note('paddlewheel out of range')
+    return stw
+
+def true_wind_boat_speed(stw, sog):
+    """Boat speed to use when turning apparent wind into true wind."""
+    if stw is None: return 0.0
+    if sog is not None and sog < UNDERWAY_SOG: return 0.0   # at anchor
+    return stw if 0 <= stw <= BOAT_MAX_KT else 0.0
+
+class GustFilter:
+    """Raw true-wind readings in, gust candidates out. Returns None until
+    there are at least 3 readings."""
+    def __init__(self):
+        self.buf = deque()
+    def add(self, now, tws):
+        self.buf.append((now, tws))
+        while self.buf and (now - self.buf[0][0] > 60 or
+                            (len(self.buf) > GUST_KEEP and now - self.buf[0][0] > GUST_HOLD_SEC)):
+            self.buf.popleft()
+        if len(self.buf) < 3: return None
+        s = sorted(v for _, v in self.buf); n = len(s)
+        return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+# ---- end of wind filter ----------------------------------------------------
+
 # ---------------------------------------------------------------- geometry
 def haversine_m(lat1, lon1, lat2, lon2):
     R = 6371000.0; rad = math.pi / 180
@@ -303,14 +395,15 @@ def parse(sentence):
         p = s.split("*")[0].split(",")
         t = p[0]
         if t.endswith("MWV") and len(p) > 3 and p[2] == "R":
-            awa, aws = fnum(p[1]), fnum(p[3])
-            if awa is not None: remember("awa", awa)
-            if aws is not None: remember("aws", aws)
+            w = parse_mwv(s)                                   # checked, in knots
+            if w is not None:
+                remember("awa", w[0]); remember("aws", w[1])
+                gust_feed(w[0], w[1])
         elif t.endswith("DPT") and len(p) > 1 and p[1]:
             m = fnum(p[1])
             if m is not None: remember("depth_m", m)
         elif t.endswith("VHW") and len(p) > 5 and p[5]:
-            spd = fnum(p[5])
+            spd = boat_speed_ok(fnum(p[5]))
             if spd is not None: remember("boatspd", spd)
         elif t.endswith("HDG") and len(p) > 1 and p[1]:
             h = fnum(p[1])
@@ -405,7 +498,9 @@ last_drag_push = [0.0]
 breach_since = [0.0]
 awa_since = [0.0]
 swing_hist = deque()     # (ts, bearing_from_anchor)
-wind_hist = deque()      # (ts, true wind speed kn)
+wind_hist = deque()      # (ts, true wind speed kn) every 10 s, for the 5-min average
+gust_hist = deque()      # (ts, spike-filtered true wind kn) every wind sentence, 10 min
+_gust_filter = GustFilter()
 ais_alerted = {}         # mmsi -> ts of last alert
 
 def load_config():
@@ -653,11 +748,22 @@ def check_swing(lat, lon):
     elif shift < cfg["swingRateDeg"] * 0.6:
         alerts["swing"] = False
 
+def gust_feed(awa, aws):
+    # Every trusted wind sentence -> spike-filtered true wind for the gust alarm.
+    # Called from parse(), whose try/except keeps any error here from stopping guard.
+    _, tws = true_wind(awa, aws, true_wind_boat_speed(fresh("boatspd"), fresh("sog")))
+    now = time.time()
+    g = _gust_filter.add(now, tws)
+    if g is not None:
+        gust_hist.append((now, g))
+    while gust_hist and now - gust_hist[0][0] > 600:
+        gust_hist.popleft()
+
 def check_wind():
     if not cfg["windEnabled"]: return
     aws, awa = fresh("aws"), fresh("awa")
     if aws is None or awa is None: return
-    boatspd = fresh("boatspd") or 0.0
+    boatspd = true_wind_boat_speed(fresh("boatspd"), fresh("sog"))
     _, tws = true_wind(awa, aws, boatspd)
     now = time.time()
     wind_hist.append((now, tws))
@@ -677,7 +783,11 @@ def check_wind():
         elif avg5 < cfg["windSustainedKn"] * 0.85:
             alerts["wind"] = False
 
-    peak = max((w for _, w in wind_hist), default=0.0)
+    # Gust = highest spike-filtered true wind in the last 10 minutes (the same
+    # filter the dashboard and the cabin frame use), not a single raw reading.
+    while gust_hist and now - gust_hist[0][0] > 600:
+        gust_hist.popleft()
+    peak = max((w for _, w in gust_hist), default=0.0)
     if peak > cfg["gustKn"]:
         if not alerts["gust"]:
             if push("Harvest Moon \u2014 gusting",
