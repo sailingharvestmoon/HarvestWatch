@@ -44,7 +44,7 @@ const NWS_MAX_KM = 60;
 const NOW_EVERY_MIN = 30, FC_EVERY_MIN = 60, FC_MIN_GAP_MIN = 2, FRONTS_EVERY_MIN = 30, WX_EVERY_MIN = 60;
 
 const FC_MODELS = [
-  ['ecmwf', ['ecmwf_ifs025', 'ecmwf_ifs']],
+  ['ecmwf', ['ecmwf_ifs', 'ecmwf_ifs025']],                 // 9 km HRES first (what PredictWind shows); 25 km open data as fallback
   ['gfs',   ['gfs_global', 'gfs_seamless']],                 // pure runs, not the "seamless" blends
   ['ukmo',  ['ukmo_global_deterministic_10km', 'ukmo_seamless']],
   ['icon',  ['icon_global', 'icon_seamless']],
@@ -52,6 +52,9 @@ const FC_MODELS = [
   ['hrrr',  ['ncep_hrrr_conus', 'gfs_hrrr']],
   ['aifs',  ['ecmwf_aifs025_single', 'ecmwf_aifs025']],
 ];
+// cell_selection=sea: Open-Meteo's default ("land") picks a nearby LAND grid cell
+// at the boat's elevation - wrong for a boat at anchor, and a likely reason these
+// numbers differed from PredictWind's. "sea" picks the water cell.
 const FC_VARS = ['weather_code', 'is_day', 'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m',
                  'precipitation', 'cape', 'cloud_cover', 'temperature_2m', 'pressure_msl'];
 const FC_ROUND = { precipitation: 1, pressure_msl: 1, wind_speed_10m: 1, wind_gusts_10m: 1 };
@@ -463,7 +466,7 @@ async function fcModel(apis, lat, lon) {
   for (const name of apis) {
     try {
       const j = await omJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-        + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit`
+        + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit&cell_selection=sea`
         + `&precipitation_unit=mm&timezone=auto&forecast_days=${FC_DAYS}`);
       const h = j.hourly || {};
       const ok = (h.wind_speed_10m || []).some(v => v !== null);
@@ -601,7 +604,7 @@ async function omCurrent(lat, lon) {
   const j = await omJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
     + `&current=temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,pressure_msl`
     + `&daily=weather_code,temperature_2m_max,wind_speed_10m_max,wind_direction_10m_dominant&forecast_days=4`
-    + `&wind_speed_unit=kn&temperature_unit=fahrenheit&timezone=auto`);
+    + `&wind_speed_unit=kn&temperature_unit=fahrenheit&timezone=auto&cell_selection=sea`);
   const c = j.current || {};
   const pt = d => COMPASS[Math.round((((d || 0) % 360) + 360) % 360 / 22.5) % 16];
   const out = { nowTemp: c.temperature_2m !== undefined ? Math.round(c.temperature_2m) : null, nowSky: WMO[c.weather_code] || '',
