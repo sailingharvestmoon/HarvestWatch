@@ -283,28 +283,80 @@ input[type=range]::-moz-range-thumb { width:28px; height:28px; border-radius:50%
 .mchip.sm { font-size:10.5px; padding:3px 7px; opacity:1; border-width:0; cursor:pointer; }
 .mchip.sm.on { box-shadow:0 0 0 2px var(--ink); }
 .fc-wrap { margin:0 -16px; overflow-x:auto; -webkit-overflow-scrolling:touch; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:var(--surface); }
-table.fc { border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:13.5px; }
-table.fc th, table.fc td { min-width:38px; height:32px; text-align:center; padding:0 2px; white-space:nowrap; position:relative; }
+table.fc { border-collapse:collapse; font-variant-numeric:tabular-nums; font-size:var(--fcf,13.5px); }
+table.fc th, table.fc td { min-width:var(--fcw,38px); height:var(--fch,32px); text-align:center; padding:0 var(--fcp,2px); white-space:nowrap; position:relative; }
 table.fc td { color:var(--ink); font-weight:600; }
 table.fc td.e { color:var(--faint); }
-table.fc td small { display:block; font-size:10px; line-height:1.1; font-weight:600; opacity:.9; }
-table.fc tr.tall td { height:52px; line-height:1.15; }
+table.fc td small { display:block; font-size:max(7px, calc(var(--fcf,13.5px) * .74)); line-height:1.1; font-weight:600; opacity:.9; }
+table.fc tr.tall td { height:calc(var(--fch,32px) * 1.62); line-height:1.15; }
 table.fc tr.fc-day th { height:22px; font-size:12px; text-align:left; font-weight:700; color:var(--ink); }
 table.fc tr.fc-day th span { position:absolute; left:4px; top:4px; white-space:nowrap; z-index:1; }
-table.fc tr.fc-hr th { height:22px; font-size:11px; color:var(--muted); font-weight:500; }
+table.fc tr.fc-hr th { height:22px; font-size:max(9px, calc(var(--fcf,13.5px) * .81)); color:var(--muted); font-weight:500; }
 table.fc .dstart { border-left:1.5px solid var(--muted); }
-table.fc .n { box-shadow:inset 0 0 0 999px rgba(10,20,40,.22); }
+table.fc td.n:not([style*="background"]) { box-shadow:inset 0 0 0 999px rgba(10,20,40,.06); }
 table.fc tr.fc-day .n, table.fc tr.fc-hr .n, table.fc td.e.n { box-shadow:inset 0 0 0 999px rgba(10,20,40,.10); }
-table.fc th.fc-lab { position:sticky; left:0; z-index:3; background:var(--surface); min-width:104px; max-width:104px; text-align:left; padding:0 6px 0 10px; border-right:1px solid var(--line); box-shadow:none; }
+table.fc th.fc-lab { position:sticky; left:0; z-index:3; background:var(--surface); min-width:var(--fcl,104px); max-width:var(--fcl,104px); text-align:left; padding:0 6px 0 10px; border-right:1px solid var(--line); box-shadow:none; }
 table.fc tr.cat td, table.fc tr.cat th { border-top:1px solid var(--line); }
 table.fc tr.model th.fc-lab { text-align:right; }
 .fc-cat { display:flex; flex-direction:column; align-items:flex-start; width:100%; position:relative; text-align:left; line-height:1.1; }
-.fc-cat b { font-size:13px; color:var(--accent); font-weight:600; }
+.fc-cat b { font-size:max(11px, calc(var(--fcf,13.5px) * .96)); color:var(--accent); font-weight:600; }
 .fc-cat small { font-size:10px; color:var(--muted); }
 .fc-cat i { position:absolute; right:-2px; top:50%; font-style:normal; color:var(--accent); transform:translateY(-50%) rotate(90deg); font-size:15px; transition:transform .2s; }
 .fc-cat i.up { transform:translateY(-50%) rotate(-90deg); }
 table.fc tr.cat th .mchip.sm { pointer-events:none; position:absolute; right:22px; top:50%; transform:translateY(-50%) scale(.85); }
 tr.cat th.fc-lab .fc-cat { padding-right:52px; }
+/* zoomed out: the coloured edge already marks the main model, so drop its chip */
+.fc-wrap.small tr.cat th .mchip.sm { display:none; }
+.fc-wrap .mchip.sm { font-size:max(8px, calc(var(--fcf,13.5px) * .78)); padding:max(1px, calc(var(--fcf,13.5px) * .22)) max(4px, calc(var(--fcf,13.5px) * .52)); }
+.fc-dirarr { display:inline-block; font-weight:700; }
+.fc-wrap.small tr.cat th.fc-lab .fc-cat { padding-right:14px; }
+.fc-wrap { touch-action:pan-x pan-y; }
+.fc-tools { display:flex; align-items:center; gap:6px; }
+.fc-zbtn { width:28px; height:28px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--accent); font-size:17px; font-weight:600; line-height:1; letter-spacing:0; display:grid; place-items:center; }
+.fc-zbtn:disabled { opacity:.35; }
+
+/* forecast dashboard */
+.dash-head { display:flex; align-items:center; gap:10px; margin:22px 4px 8px; }
+.dash-head .section-title { margin:0; flex:1; }
+.dash-pick { -webkit-appearance:none; appearance:none; background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235f6f80' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 11px center / 10px 6px; border:1px solid var(--line); border-radius:999px; padding:6px 30px 6px 12px; font-size:13.5px; font-weight:600; color:var(--ink); }
+.dash-warn { padding:8px 12px; border-radius:10px; background:color-mix(in srgb, var(--warn) 14%, transparent); font-size:13.5px; margin-bottom:12px; line-height:1.35; }
+.dash-warn div { padding:2px 0 2px 22px; position:relative; }
+.dash-warn div::before { content:'⚠️'; position:absolute; left:0; top:2px; font-size:13px; }
+.dash-warn b { color:var(--warn); font-weight:700; }
+.dash-calm { font-size:12.5px; color:var(--muted); margin-bottom:10px; }
+.dash-note { font-size:12.5px; color:var(--warn); margin-bottom:10px; }
+.dash-periods { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); margin:0 -8px; }
+.dash-p { padding:2px 6px; text-align:center; border-left:1px solid var(--line); }
+.dash-p:first-child { border-left:0; }
+.dash-p h4 { font-size:14px; font-weight:700; line-height:1.15; }
+.dash-p h4 small { display:block; font-size:11.5px; font-weight:500; color:var(--muted); }
+.dash-p .ico { font-size:30px; line-height:1.25; margin:4px 0 2px; }
+.dash-wind { display:inline-block; min-width:84%; padding:6px 6px 5px; border-radius:10px; font-size:21px; font-weight:700; line-height:1; font-variant-numeric:tabular-nums; }
+.dash-wind i { font-style:normal; font-size:11px; font-weight:600; margin-left:2px; }
+.dash-dir { font-size:13px; font-weight:600; margin-top:6px; font-variant-numeric:tabular-nums; }
+.dash-arr { display:inline-block; font-weight:700; color:var(--accent); }
+.dash-sub { font-size:12.5px; color:var(--muted); line-height:1.5; margin-top:4px; font-variant-numeric:tabular-nums; }
+.dash-tide { border-top:1px solid var(--line); margin:12px -16px 0; padding:10px 16px 0; font-size:13px; display:flex; flex-wrap:wrap; gap:4px 16px; font-variant-numeric:tabular-nums; }
+.dash-tide span { color:var(--muted); }
+.dash-tide b { font-weight:600; }
+.dash-tide b.hi { color:var(--accent); }
+.dash-graph { padding:8px 6px 4px; }
+.dash-graph svg { display:block; width:100%; overflow:visible; }
+.dash-graph text { font-size:10.5px; fill:var(--muted); font-family:inherit; }
+.dash-key { display:flex; gap:14px; justify-content:flex-end; font-size:11.5px; color:var(--muted); padding:0 8px 4px; }
+.dash-key i { display:inline-block; width:16px; height:0; border-top:3px solid #56d47a; vertical-align:middle; margin-right:5px; border-radius:2px; }
+.dash-key i.g { border-top:2px dashed var(--ink); opacity:.6; }
+.dash-day { display:grid; grid-template-columns:42px 28px minmax(0,1fr) 64px; align-items:center; gap:2px 10px; padding:10px 14px; border-top:1px solid var(--line); }
+.dash-day:first-child { border-top:0; }
+.dash-day .dn { font-weight:700; font-size:14px; line-height:1.1; }
+.dash-day .dn small { display:block; font-size:11px; color:var(--muted); font-weight:500; }
+.dash-day .ico { font-size:22px; text-align:center; }
+.dash-track { position:relative; height:8px; border-radius:4px; background:var(--surface2); box-shadow:inset 0 0 0 1px var(--line); }
+.dash-track b { position:absolute; top:0; bottom:0; border-radius:4px; min-width:8px; }
+.dash-track i { position:absolute; top:-4px; width:2px; height:16px; margin-left:-1px; border-radius:1px; background:var(--ink); opacity:.5; }
+.dash-day .rng { font-weight:700; font-size:14.5px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dash-day .rng small { font-size:11px; color:var(--muted); font-weight:500; margin-left:1px; }
+.dash-day .det { grid-column:3 / -1; font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
 
 /* weather maps */
 .seg.wxmode { width:310px; margin:0 auto 6px; }
@@ -644,14 +696,20 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
       <div class="off-pill" id="offPill" style="display:none"></div>
       <div class="section-title" id="wxPlace">Now</div>
       <div class="card pad" id="wxNow"></div>
-      <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="requestForecast()">↻ Refresh</button></div>
+      <div class="dash-head"><div class="section-title">Forecast</div><select class="dash-pick" id="dashPick" onchange="pickDash(this.value)" aria-label="Model used for the forecast summary"></select></div>
+      <div class="card pad" id="dashToday"></div>
+      <div class="section-title">Next 48 hours</div>
+      <div class="card dash-graph" id="dashGraph"></div>
+      <div class="section-title">7 days</div>
+      <div class="list" id="dashDays"></div>
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;">Forecast models<span style="flex:1"></span><span class="fc-tools"><button class="fc-zbtn" id="fcZout" onclick="fcZoomStep(-1)" aria-label="Zoom the table out">−</button><button class="fc-zbtn" id="fcZin" onclick="fcZoomStep(1)" aria-label="Zoom the table in">+</button></span><button class="link" id="fcAllBtn" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="fcExpandAll()">Expand all</button><button class="link" style="font-size:12px;letter-spacing:0;text-transform:none;" onclick="requestForecast()">↻ Refresh</button></div>
       <div class="fc-controls">
         <div class="fc-models" id="fcModels"></div>
         <div class="seg" id="fcDays" style="width:120px;flex:none;"><button data-d="3" onclick="setFcDays(3)">3 d</button><button data-d="7" onclick="setFcDays(7)">7 d</button></div>
       </div>
       <div class="fc-wrap" id="fcBox"></div>
       <p class="note" id="fcMeta" style="margin:8px 4px 0;"></p>
-      <p class="note" style="margin:4px 4px 0;">Tap a model to make it the one shown in collapsed rows (marked by the coloured edge). Tap a row name to expand every model. Shaded columns are night.</p>
+      <p class="note" style="margin:4px 4px 0;">Tap a model to make it the one shown in collapsed rows (marked by the coloured edge). Tap a row name to expand every model. Pinch the table, or use − and +, to zoom out and see more at once. Shaded hours are night.</p>
       <div class="section-title" id="wxTideTitle">Tides</div>
       <div class="list" id="wxTides"></div>
       <div class="section-title">Sun &amp; moon</div>
@@ -1054,6 +1112,7 @@ function prefsFromCfg(c) {
   if (c.fcPrimary) FCU.primary = str(c.fcPrimary);
   if (c.fcDays) FCU.days = num(c.fcDays) || 3;
   if (c.fcOpen) { FCU.open = {}; str(c.fcOpen).split(',').filter(Boolean).forEach(x => FCU.open[x] = true); }
+  if (c.fcDash) FCU.dash = str(c.fcDash);
   wmPrefsFromCfg(c);
   return changed;
 }
@@ -2038,6 +2097,7 @@ function paintWeather() {
   const tn = num(w.tideNowFt), rise = num(w.tideRiseToMaxFt);
   $('wxTides').innerHTML = (tn !== null ? `<div class="tide-row"><span>Now</span><b>${tn.toFixed(1)} ft${rise > .05 ? ` · rising ${rise.toFixed(1)} ft more` : ''}</b></div>` : '') +
     tides.map(x => { const hi = /^HIGH/i.test(x); const p = x.split(' '); return `<div class="tide-row ${hi ? 'hi' : ''}"><span>${hi ? 'High' : 'Low'} · ${esc(p[1] || '')}</span><b>${esc(p[2] || '')}</b></div>`; }).join('');
+  if (FC) paintDash();
   $('wxSun').innerHTML = `<div class="kv"><span>Sunrise</span><b>${esc(str(w.sunrise) || '--')}</b><span>Sunset</span><b>${esc(str(w.sunset) || '--')}</b><span>Moon</span><b>${esc(str(w.moon) || '--')}</b></div>`;
   $('wxAge').innerHTML = `Weather updated ${ago(num(w.updatedAt))}${fa && (Date.now() - fa) > 3 * 3600000 ? ` · <span style="color:var(--warn)">forecast ${ago(fa).replace(' ago', '')} old</span>` : ''} · NWS &amp; NOAA`;
 }
@@ -2049,7 +2109,7 @@ function paintWeather() {
 // like PredictWind's table - hours across, a row per variable, and any
 // variable can be expanded to show every model underneath.
 const MODELS = [
-  { id: 'ecmwf', label: 'ECMWF', bg: '#000000', fg: '#fff', api: ['ecmwf_ifs025', 'ecmwf_ifs'], info: 'ECMWF IFS (European Centre) · 25 km · global · usually the most reliable global model' },
+  { id: 'ecmwf', label: 'ECMWF', bg: '#000000', fg: '#fff', api: ['ecmwf_ifs', 'ecmwf_ifs025'], info: 'ECMWF IFS (European Centre) · 9 km · global · usually the most reliable global model' },
   { id: 'gfs',   label: 'GFS',   bg: '#15821f', fg: '#fff', api: ['gfs_seamless', 'gfs_global'], info: 'NOAA GFS (US) · 25 km · global' },
   { id: 'ukmo',  label: 'UKMO',  bg: '#dcb44a', fg: '#fff', api: ['ukmo_seamless', 'ukmo_global_deterministic_10km'], info: 'UK Met Office Unified Model · 10 km · global' },
   { id: 'icon',  label: 'ICON',  bg: '#2f8b9b', fg: '#fff', api: ['icon_seamless', 'icon_global'], info: 'DWD ICON (Germany) · 13 km · global' },
@@ -2058,7 +2118,7 @@ const MODELS = [
   { id: 'aifs',  label: 'AIFS',  bg: '#e886ef', fg: '#fff', api: ['ecmwf_aifs025_single', 'ecmwf_aifs025'], info: 'ECMWF AIFS — the European Centre\'s AI model · 25 km · global' }
 ];
 const FC_VARS = ['weather_code', 'is_day', 'wind_speed_10m', 'wind_gusts_10m', 'wind_direction_10m', 'precipitation', 'cape', 'cloud_cover', 'temperature_2m', 'pressure_msl'];
-const FCU = { primary: 'ecmwf', days: 3, open: { wind: true } };
+const FCU = { primary: 'ecmwf', days: 3, open: { wind: true }, dash: 'ecmwf', zoom: 1 };   // zoom isn't saved: it resets when the app reloads
 function saveFcu() {
   writeAlarms({ fcPrimary: fS(FCU.primary), fcDays: fI(FCU.days),
     fcOpen: fS(Object.keys(FCU.open).filter(k => FCU.open[k]).join(',')) });
@@ -2094,12 +2154,31 @@ async function requestForecast() {
 }
 
 // Colour scales, in the spirit of PredictWind's.
+// Wind: PredictWind's palette, blended smoothly between steps - cyan when
+// light, blue to 10, green to 15, yellow to 20, then orange, red, magenta.
+const WIND_STOPS = [[0, '#c9f1fb'], [3, '#78e2f2'], [6, '#4dbbee'], [9, '#3f9fe6'], [11, '#55d27c'], [14, '#8fe05a'],
+                    [16, '#e1ef40'], [19, '#f9e43c'], [21, '#f9b53a'], [24, '#f5882f'], [27, '#ec4b3a'], [32, '#d4409c'], [40, '#8b3fc0'], [50, '#5a2a8a']];
+const hexRgb = h => [1, 3, 5].map(k => parseInt(h.slice(k, k + 2), 16));
+function windRgb(v) {
+  const st = WIND_STOPS;
+  if (v <= st[0][0]) return hexRgb(st[0][1]);
+  for (let k = 1; k < st.length; k++) {
+    if (v <= st[k][0]) {
+      const [a, ca] = st[k - 1], [b, cb] = st[k], f = (v - a) / (b - a), x = hexRgb(ca), y = hexRgb(cb);
+      return x.map((c, j) => Math.round(c + (y[j] - c) * f));
+    }
+  }
+  return hexRgb(st[st.length - 1][1]);
+}
 function windBg(v) {
   if (v === null || v === undefined) return '';
-  const stops = [[0, '#bfe1f7'], [5, '#6fb5ea'], [10, '#63da6b'], [15, '#f3e53b'], [20, '#f6b73c'], [25, '#ef7a35'], [30, '#dd3f33'], [35, '#b13fa0'], [45, '#6f2d8f']];
-  let c = stops[0][1]; for (const [k, col] of stops) if (v >= k) c = col; return c;
+  return `rgb(${windRgb(v).join(',')})`;
 }
-const darkBg = c => ['#dd3f33', '#b13fa0', '#6f2d8f', '#ef7a35'].includes(c);
+// White text on dark cells, ink on light ones (by perceived brightness).
+function darkBg(c) {
+  const m = /^rgb\((\d+),(\d+),(\d+)\)$/.exec(c || ''), x = m ? [+m[1], +m[2], +m[3]] : /^#[0-9a-f]{6}$/i.test(c || '') ? hexRgb(c) : null;
+  return !!x && (0.299 * x[0] + 0.587 * x[1] + 0.114 * x[2]) < 150;
+}
 function tempBg(v) { if (v === null) return ''; return v < 32 ? '#8ec5f2' : v < 50 ? '#bfe7c9' : v < 65 ? '#8fe08a' : v < 80 ? '#f3e53b' : v < 90 ? '#f6b73c' : '#ef7a35'; }
 function cloudBg(v) { if (v === null) return ''; const g = Math.round(245 - v * 1.1); return `rgb(${g},${g},${g + 3})`; }
 function rainBg(v) { if (!v || v < .1) return ''; return v < 1 ? '#bfe0fb' : v < 4 ? '#72b6f2' : v < 10 ? '#2f7fd6' : '#1b4ea8'; }
@@ -2121,7 +2200,9 @@ const FC_CATS = [
   { id: 'wx', label: 'Weather', sub: '', cell: (h, i) => ({ t: wxEmoji(h.weather_code[i], h.is_day ? h.is_day[i] : 1) }) },
   { id: 'wind', label: 'Speed', sub: 'knots', cell: (h, i) => num2(h.wind_speed_10m[i], windBg) },
   { id: 'gust', label: 'Gusts', sub: 'knots', cell: (h, i) => num2(h.wind_gusts_10m[i], windBg) },
-  { id: 'dir', label: 'Direction', sub: 'true, from', cell: (h, i) => { const v = h.wind_direction_10m[i]; return v === null ? { t: '' } : { t: compass(v), title: Math.round(v) + '°' }; } },
+  { id: 'dir', label: 'Direction', sub: 'true, from', cell: (h, i) => { const v = h.wind_direction_10m[i]; return v === null ? { t: '' }
+      : FCU.zoom < .72 ? { t: `<span class="fc-dirarr" style="transform:rotate(${Math.round(v)}deg)">↓</span>`, title: compass(v) + ' · ' + Math.round(v) + '°' }
+      : { t: compass(v), title: Math.round(v) + '°' }; } },
   { id: 'rain', label: 'Rainfall', sub: 'mm/hr', cell: (h, i) => { const v = h.precipitation[i]; return { t: v && v >= .1 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '', bg: rainBg(v), fg: v >= 4 ? '#fff' : '' }; } },
   { id: 'cape', label: 'CAPE', sub: 'J/kg · storms', cell: (h, i) => { const v = h.cape ? h.cape[i] : null; return { t: v && v >= 100 ? Math.round(v / 10) * 10 : '', bg: capeBg(v) }; } },
   { id: 'cloud', label: 'Cloud', sub: 'cover %', cell: (h, i) => { const v = h.cloud_cover[i]; return { t: v === null ? '' : Math.round(v / 10) * 10, bg: cloudBg(v), fg: '#1b2733' }; } },
@@ -2150,7 +2231,7 @@ function paintForecast() {
     return `<button class="mchip ${FCU.primary === m.id ? 'on' : ''} ${off ? 'off' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pickModel('${m.id}')" title="${esc(m.info)}">${m.label}</button>`;
   }).join('');
   document.querySelectorAll('#fcDays button').forEach(b => b.classList.toggle('on', +b.dataset.d === FCU.days));
-  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet. It updates every hour — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; return; }
+  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet. It updates every hour — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; paintDash(); return; }
 
   // Columns: from the current hour at the boat, local time there.
   const nowLocal = new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00';
@@ -2176,7 +2257,7 @@ function paintForecast() {
     let r = `<tr class="${cls || ''}"><th class="fc-lab">${labelHtml}</th>`;
     cols.forEach((i, k) => {
       const c = cellFn(i) || { t: '' };
-      const st = (c.bg ? `background:${c.bg};color:${c.fg || '#14212d'};` : (c.fg ? `color:${c.fg};` : '')) + (c.small ? 'font-size:11.5px;' : '');
+      const st = (c.bg ? `background:${c.bg};color:${c.fg || '#14212d'};` : (c.fg ? `color:${c.fg};` : '')) + (c.small ? 'font-size:max(7.5px, calc(var(--fcf,13.5px) * .85));' : '');
       r += `<td class="${nightCls[k]}${c.t === '' ? ' e' : ''}"${st ? ` style="${st}"` : ''}${c.title ? ` title="${esc(c.title)}"` : ''}>${c.t}</td>`;
     });
     return r + '</tr>';
@@ -2215,6 +2296,8 @@ function paintForecast() {
   meta.innerHTML = `${fcLoading ? 'Reading… · ' : ''}${moved ? `<b style="color:var(--warn)">Updating for ${esc(tgt.name || 'the boat')} — showing the previous spot</b> · ` : waiting ? '<b>Fresh forecast requested</b> · ' : ''}Updated ${ago(FC.at)} for ${FC.place ? esc(FC.place) + ' · ' : 'the boat · '} ${fmtCoord(FC.lat, true)} ${fmtCoord(FC.lon, false)}`
     + (failed.length ? ` · <span style="color:var(--warn)">not available here: ${failed.join(', ')}</span>` : '')
     + ` · <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Open-Meteo</a>`;
+  const allBtn = $('fcAllBtn'); if (allBtn) allBtn.textContent = FC_CATS.filter(c => !c.marine).every(c => FCU.open[c.id]) ? 'Collapse all' : 'Expand all';
+  paintDash();
 }
 function safeCell(cat, h, i) { try { return cat.cell(h, i); } catch (e) { return { t: '' }; } }
 function toggleCat(id) { if (id === 'wave') return; FCU.open[id] = !FCU.open[id]; saveFcu(); paintForecast(); }
@@ -2222,9 +2305,308 @@ function pickModel(id) {
   const m = MODELS.find(x => x.id === id);
   FCU.primary = id; saveFcu(); paintForecast();
   const r = FC && FC.models[id];
-  toast(m.info + (r && !r.ok ? ' — not available here' : ''), 4000);
+  toast(m.info + (r && !r.ok ? ' — not available here' : '') + (r && r.ok && r.api === 'ecmwf_ifs025' ? ' — the 9 km feed was down, so this run is the 25 km one' : ''), 4000);
 }
 function setFcDays(d) { FCU.days = d; saveFcu(); paintForecast(); }
+
+// ─── Table zoom (pinch or − / +) ──────────────────────────────────
+// Shrinks every column and row together, PredictWind-style, so more hours
+// and more models fit on the screen. The hour under the fingers (or the
+// first hour showing, for the buttons) stays put.
+const FCZ_MIN = .42, FCZ_MAX = 1.25;
+function fcZoomVars(s) {
+  return { '--fcw': Math.max(15, 38 * s).toFixed(1) + 'px', '--fch': Math.max(18, 32 * s).toFixed(1) + 'px',
+           '--fcf': Math.max(8, 13.5 * s).toFixed(1) + 'px', '--fcp': s < .7 ? '0px' : '2px',
+           '--fcl': Math.round(Math.max(84, 104 * Math.min(1, s))) + 'px' };
+}
+function fcApplyZoom(s, ax) {
+  const box = $('fcBox'); if (!box) return;
+  s = Math.max(FCZ_MIN, Math.min(FCZ_MAX, s));
+  const lab = box.querySelector('th.fc-lab'), cell = box.querySelector('tr.fc-hr th:nth-child(2)');
+  const l0 = lab ? lab.offsetWidth : 104, c0 = cell ? cell.offsetWidth : 38;
+  if (ax === undefined) ax = l0;
+  const hour = (box.scrollLeft + ax - l0) / c0;
+  for (const [k, v] of Object.entries(fcZoomVars(s))) box.style.setProperty(k, v);
+  const wasSmall = FCU.zoom < .72;
+  box.classList.toggle('small', s < .72);
+  FCU.zoom = s;
+  if (wasSmall !== (s < .72)) paintForecast();   // direction: letters at normal size, arrows when zoomed out
+  const lab1 = box.querySelector('th.fc-lab'), cell1 = box.querySelector('tr.fc-hr th:nth-child(2)');
+  const l1 = lab1 ? lab1.offsetWidth : l0, c1 = cell1 ? cell1.offsetWidth : c0;
+  box.scrollLeft = Math.max(0, hour * c1 - ax + l1);
+  const zo = $('fcZout'), zi = $('fcZin');
+  if (zo) zo.disabled = s <= FCZ_MIN + .001;
+  if (zi) zi.disabled = s >= FCZ_MAX - .001;
+}
+function fcZoomStep(dir) { fcApplyZoom(FCU.zoom * (dir > 0 ? 1.3 : 1 / 1.3)); }
+(function fcPinch() {
+  const box = $('fcBox'); if (!box) return;
+  let p0 = null, raf = 0, want = null;
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  box.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) { p0 = { d: dist(e.touches) || 1, s: FCU.zoom }; e.preventDefault(); }
+  }, { passive: false });
+  box.addEventListener('touchmove', e => {
+    if (!p0 || e.touches.length !== 2) return;
+    e.preventDefault();
+    const r = box.getBoundingClientRect();
+    want = { s: p0.s * dist(e.touches) / p0.d, ax: (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left };
+    if (!raf) raf = requestAnimationFrame(() => { raf = 0; if (want) fcApplyZoom(want.s, want.ax); });
+  }, { passive: false });
+  const end = e => { if (e.touches.length < 2) p0 = null; };
+  box.addEventListener('touchend', end); box.addEventListener('touchcancel', end);
+  // Safari: keep the page itself from zooming while the table is pinched.
+  ['gesturestart', 'gesturechange'].forEach(t => box.addEventListener(t, e => e.preventDefault(), { passive: false }));
+})();
+// Every row opened to show all the models at once (or all closed again).
+function fcExpandAll() {
+  const ids = FC_CATS.filter(c => !c.marine).map(c => c.id);
+  const all = ids.every(id => FCU.open[id]);
+  FCU.open = {}; if (!all) ids.forEach(id => FCU.open[id] = true);
+  saveFcu(); paintForecast();
+}
+
+// ═══ FORECAST DASHBOARD ════════════════════════════════════════════
+// A PredictWind-style summary over the model table: warnings, the next
+// three parts of the day, tides, a 48-hour wind graph and 7 days. It uses
+// the model picked in its dropdown, or the average of every model that
+// answered. Same data as the table, so it needs nothing new from the cloud.
+function pickDash(v) { FCU.dash = v; writeAlarms({ fcDash: fS(v) }); paintDash(); }
+const okVal = v => v !== null && v !== undefined && !Number.isNaN(v);
+function dashSeries() {
+  const ok = MODELS.filter(m => FC.models[m.id] && FC.models[m.id].ok && FC.models[m.id].h);
+  if (!ok.length) return null;
+  const n = FC.time.length, col = (h, k) => h[k] || new Array(n).fill(null);
+  if (FCU.dash !== 'avg') {
+    const m = ok.find(x => x.id === FCU.dash) || ok[0], h = FC.models[m.id].h;
+    return { id: m.id, label: m.label, missing: m.id !== FCU.dash, ws: col(h, 'wind_speed_10m'), wg: col(h, 'wind_gusts_10m'),
+             wd: col(h, 'wind_direction_10m'), pr: col(h, 'precipitation'), code: col(h, 'weather_code'), day: col(h, 'is_day'),
+             temp: col(h, 'temperature_2m'), press: col(h, 'pressure_msl') };
+  }
+  const hs = ok.map(m => FC.models[m.id].h);
+  const mean = (k, i) => { const v = hs.map(h => h[k] ? h[k][i] : null).filter(okVal); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const S = { id: 'avg', label: `Average of ${ok.length}`, missing: false, ws: [], wg: [], wd: [], pr: [], code: [], day: [], temp: [], press: [] };
+  for (let i = 0; i < n; i++) {
+    S.ws.push(mean('wind_speed_10m', i)); S.wg.push(mean('wind_gusts_10m', i)); S.pr.push(mean('precipitation', i));
+    S.temp.push(mean('temperature_2m', i)); S.press.push(mean('pressure_msl', i));
+    S.wd.push(vecDir(hs.map(h => [h.wind_direction_10m ? h.wind_direction_10m[i] : null, h.wind_speed_10m ? h.wind_speed_10m[i] : null])));
+    const codes = hs.map(h => h.weather_code ? h.weather_code[i] : null).filter(okVal), cnt = {};
+    codes.forEach(v => cnt[v] = (cnt[v] || 0) + 1);
+    S.code.push(codes.length ? +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || b - a)[0] : null);
+    const d = hs.map(h => h.is_day ? h.is_day[i] : null).find(okVal); S.day.push(okVal(d) ? d : 1);
+  }
+  return S;
+}
+// Mean direction of [direction, speed] pairs, weighted by speed (a vector mean).
+function vecDir(pairs) {
+  let x = 0, y = 0, c = 0;
+  for (const [d, s] of pairs) if (okVal(d)) { const w = okVal(s) ? Math.max(s, .1) : 1; x += w * Math.sin(d * Math.PI / 180); y += w * Math.cos(d * Math.PI / 180); c++; }
+  return c && (x || y) ? (Math.atan2(x, y) * 180 / Math.PI + 360) % 360 : null;
+}
+function dashLocalNow() { return new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00'; }
+function dashAddDays(d, k) { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + k); return t.toISOString().slice(0, 10); }
+function dashDayName(d, today) {
+  if (d === today) return 'Today';
+  if (d === dashAddDays(today, 1)) return 'Tomorrow';
+  return new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+}
+function dashHour(t) { const h = +t.slice(11, 13); return `${h % 12 || 12} ${h < 12 ? 'am' : 'pm'}`; }
+function dashWhen(t, today) {
+  const d = t.slice(0, 10), w = d === today ? 'today' : d === dashAddDays(today, 1) ? 'tomorrow' : dashDayName(d, today);
+  return `${w} ${dashHour(t)}`;
+}
+function dashMarine() {
+  const w = FC.marine; if (!w || !w.time) return null;
+  const idx = new Map(w.time.map((t, k) => [t, k]));
+  return i => { const k = idx.get(FC.time[i]); return k === undefined || !okVal(w.wave_height[k]) ? null : { h: w.wave_height[k], d: w.wave_direction[k], p: w.wave_period[k] }; };
+}
+// Summary of a set of hours (indexes into FC.time).
+function dashSum(S, idx, wave) {
+  const pick = k => idx.map(i => S[k][i]).filter(okVal);
+  const ws = pick('ws'), wg = pick('wg'), pr = pick('pr'), tp = pick('temp'), codes = pick('code');
+  const rain = pr.reduce((a, b) => a + b, 0);
+  let code = null;
+  if (codes.some(c => c >= 95)) code = Math.max(...codes);
+  else if (rain >= 1 && codes.some(c => c >= 51)) code = Math.max(...codes.filter(c => c >= 51 && c < 95));
+  else if (codes.length) { const cnt = {}; codes.forEach(c => cnt[c] = (cnt[c] || 0) + 1); code = +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a] || b - a)[0]; }
+  const mid = idx[Math.floor(idx.length / 2)];
+  const wv = wave ? idx.map(wave).filter(Boolean) : [];
+  return {
+    n: idx.length, wMin: ws.length ? Math.min(...ws) : null, wMax: ws.length ? Math.max(...ws) : null, gMax: wg.length ? Math.max(...wg) : null,
+    dir: vecDir(idx.map(i => [S.wd[i], S.ws[i]])), rain, tMin: tp.length ? Math.min(...tp) : null, tMax: tp.length ? Math.max(...tp) : null,
+    code, day: mid !== undefined && okVal(S.day[mid]) ? S.day[mid] : 1,
+    wvMin: wv.length ? Math.min(...wv.map(x => x.h)) : null, wvMax: wv.length ? Math.max(...wv.map(x => x.h)) : null,
+    wvDir: vecDir(wv.map(x => [x.d, x.h])), wvPer: wv.length ? Math.round(wv.map(x => x.p).filter(okVal).reduce((a, b, _, arr) => a + b / arr.length, 0)) : null
+  };
+}
+// Downwind-pointing arrow (as on PredictWind's graphs), rotated by the direction the wind comes from.
+const dashArrow = d => okVal(d) ? `<span class="dash-arr" style="transform:rotate(${Math.round(d)}deg)">↓</span>` : '';
+function windGrad(lo, hi) {
+  const n = 6, st = [];
+  for (let k = 0; k <= n; k++) st.push(windBg(lo + (hi - lo) * k / n));
+  return `linear-gradient(90deg, ${st.join(', ')})`;
+}
+function dashWindPill(lo, hi) {
+  if (!okVal(hi)) return '<span class="dash-wind" style="background:var(--surface2)">--</span>';
+  const a = windBg(lo), b = windBg(hi), dark = darkBg(a) && darkBg(b);
+  const txt = Math.round(lo) === Math.round(hi) ? `${Math.round(hi)}` : `${Math.round(lo)}–${Math.round(hi)}`;
+  return `<span class="dash-wind" style="background:${windGrad(lo, hi)};color:${dark ? '#fff' : '#14212d'}">${txt}<i>kn</i></span>`;
+}
+const dashRain = mm => mm >= .2 ? `Rain ${mm < 10 ? mm.toFixed(1) : Math.round(mm)} mm` : 'Dry';
+function dashWaves(x) {
+  if (!okVal(x.wvMax)) return '';
+  const r = x.wvMax - x.wvMin >= .5 ? `${x.wvMin.toFixed(1)}–${x.wvMax.toFixed(1)}` : x.wvMax.toFixed(1);
+  return `Waves ${r} ft`;
+}
+// Now, then the next two parts of the day: morning 6-12, afternoon 12-18, night 18-6.
+function dashPeriods(now) {
+  const today = now.slice(0, 10), hr = +now.slice(11, 13);
+  let s, k;
+  if (hr < 6) { s = dashAddDays(today, -1) + 'T18:00'; k = 'night'; }
+  else if (hr < 12) { s = today + 'T06:00'; k = 'morning'; }
+  else if (hr < 18) { s = today + 'T12:00'; k = 'afternoon'; }
+  else { s = today + 'T18:00'; k = 'night'; }
+  const out = [];
+  for (let p = 0; p < 3; p++) {
+    const sd = s.slice(0, 10), eh = +s.slice(11, 13) + (k === 'night' ? 12 : 6);
+    const e = eh >= 24 ? dashAddDays(sd, 1) + 'T' + String(eh - 24).padStart(2, '0') + ':00' : sd + 'T' + String(eh).padStart(2, '0') + ':00';
+    const from = p === 0 ? now : s, idx = [];
+    FC.time.forEach((t, i) => { if (t >= from && t < e) idx.push(i); });
+    let name, sub;
+    if (p === 0) { name = 'Now'; sub = 'until ' + dashHour(e); }
+    else { name = k === 'night' ? (sd === today ? 'Tonight' : 'Night') : k[0].toUpperCase() + k.slice(1); sub = sd === today ? 'today' : dashDayName(sd, today).replace('Tomorrow', 'tomorrow'); }
+    if (p > 0 && k === 'night' && sd === today) sub = 'until ' + dashHour(e);
+    out.push({ name, sub, idx });
+    s = e; k = k === 'morning' ? 'afternoon' : k === 'afternoon' ? 'night' : 'morning';
+  }
+  return out;
+}
+function dashWarnings(S, idx, today) {
+  const w = [];
+  // wind 20+ or gusts 25+: one line, at the hour of the strongest wind
+  let wi = -1, gi = -1;
+  idx.forEach(i => { const v = S.ws[i], g = S.wg[i];
+    if (okVal(v) && (wi < 0 || v > S.ws[wi])) wi = i;
+    if (okVal(g) && (gi < 0 || g > S.wg[gi])) gi = i; });
+  const wMax = wi >= 0 ? S.ws[wi] : null, gMax = gi >= 0 ? S.wg[gi] : null;
+  if ((okVal(wMax) && wMax >= 20) || (okVal(gMax) && gMax >= 25)) {
+    const at = okVal(wMax) && wMax >= 20 ? wi : gi;
+    w.push(`<b>Wind to ${Math.round(wMax)} kn${okVal(gMax) ? `, gusts ${Math.round(gMax)}` : ''}</b> ${dashWhen(FC.time[at], today)}`);
+  }
+  const ti = idx.find(i => okVal(S.code[i]) && S.code[i] >= 95);
+  if (ti !== undefined) w.push(`<b>Thunderstorms forecast</b> from ${dashWhen(FC.time[ti], today)}`);
+  const pi = idx.find(i => i >= 3 && okVal(S.press[i]) && okVal(S.press[i - 3]) && S.press[i - 3] - S.press[i] >= 3);
+  if (pi !== undefined) w.push(`<b>Pressure falling fast</b> ${dashWhen(FC.time[pi], today)}, 3+ mb in 3 hours`);
+  return w;
+}
+function dashTides() {
+  const w = S.wx; if (!w) return '';
+  const list = str(w.tides).split(' / ').filter(Boolean).slice(0, 4);
+  if (!list.length) return '';
+  return `<div class="dash-tide"><span>Tides</span>` + list.map(x => {
+    const p = x.split(' '), hi = /^HIGH/i.test(x);
+    return `<b class="${hi ? 'hi' : ''}">${hi ? 'High' : 'Low'} ${esc(p[1] || '')} · ${esc((p[2] || '').replace('ft', ' ft'))}</b>`;
+  }).join('') + '</div>';
+}
+function paintDash() {
+  const pick = $('dashPick'), today0 = $('dashToday'); if (!pick || !today0) return;
+  const g = $('dashGraph'), days = $('dashDays');
+  const opts = MODELS.map(m => { const r = FC && FC.models[m.id], off = FC && (!r || !r.ok);
+    return `<option value="${m.id}"${off ? ' disabled' : ''}>${m.label}${off ? ' (not here)' : ''}</option>`; }).join('')
+    + '<option value="avg">Average of all</option>';
+  if (pick.dataset.opts !== opts) { pick.innerHTML = opts; pick.dataset.opts = opts; }
+  pick.value = FCU.dash;
+  const S = FC ? dashSeries() : null;
+  if (!FC || !S) {
+    today0.innerHTML = `<p class="note">${fcLoading ? 'Loading the forecast…' : 'No forecast yet. It updates every hour, or tap ↻ Refresh below.'}</p>`;
+    g.innerHTML = ''; days.innerHTML = ''; return;
+  }
+  if (S.missing) pick.value = S.id;
+  const now = dashLocalNow(), today = now.slice(0, 10), wave = dashMarine();
+  const next48 = []; FC.time.forEach((t, i) => { if (t >= now && next48.length < 48) next48.push(i); });
+
+  // warnings, then now and the next two parts of the day
+  const warn = dashWarnings(S, next48, today);
+  let html = S.missing ? `<div class="dash-note">${esc((MODELS.find(m => m.id === FCU.dash) || {}).label || FCU.dash)} isn't available here, so this is ${esc(S.label)}.</div>` : '';
+  html += warn.length ? `<div class="dash-warn">${warn.map(x => `<div>${x}</div>`).join('')}</div>` : '<div class="dash-calm">No warnings in the next 48 hours.</div>';
+  html += '<div class="dash-periods">' + dashPeriods(now).map(p => {
+    const x = dashSum(S, p.idx, wave);
+    if (!x.n) return `<div class="dash-p"><h4>${p.name}<small>${p.sub}</small></h4><p class="note">No data</p></div>`;
+    const temp = okVal(x.tMax) ? (Math.round(x.tMin) === Math.round(x.tMax) ? `${Math.round(x.tMax)}°F` : `${Math.round(x.tMin)}–${Math.round(x.tMax)}°F`) : '';
+    return `<div class="dash-p"><h4>${p.name}<small>${esc(p.sub)}</small></h4><div class="ico">${wxEmoji(x.code, x.day)}</div>`
+      + dashWindPill(x.wMin, x.wMax)
+      + `<div class="dash-dir">${dashArrow(x.dir)} ${okVal(x.dir) ? compass(x.dir) : ''}</div>`
+      + (okVal(x.gMax) ? `<div class="dash-sub" style="color:var(--ink);margin-top:1px">Gusts ${Math.round(x.gMax)} kn</div>` : '')
+      + `<div class="dash-sub">${[dashWaves(x), dashRain(x.rain), temp].filter(Boolean).join('<br>')}</div></div>`;
+  }).join('') + '</div>' + dashTides();
+  today0.innerHTML = html;
+
+  g.innerHTML = dashGraph(S, next48, today, g.clientWidth);
+
+  // 7 days: wind range on a shared scale, so windy days stand out
+  const dates = [...new Set(FC.time.map(t => t.slice(0, 10)))].filter(d => d >= today).slice(0, 7);
+  const rows = dates.map(d => { const idx = []; FC.time.forEach((t, i) => { if (t.slice(0, 10) === d && (d !== today || t >= now)) idx.push(i); }); return { d, x: dashSum(S, idx, wave) }; }).filter(r => r.x.n);
+  const top = Math.max(30, ...rows.map(r => okVal(r.x.gMax) ? r.x.gMax : okVal(r.x.wMax) ? r.x.wMax : 0)) * 1.04;
+  days.innerHTML = rows.map(({ d, x }) => {
+    const left = okVal(x.wMin) ? x.wMin / top * 100 : 0, width = okVal(x.wMax) ? (x.wMax - x.wMin) / top * 100 : 0;
+    const bar = okVal(x.wMax) ? `<b style="left:${left.toFixed(1)}%;width:${width.toFixed(1)}%;background:${windGrad(x.wMin, x.wMax)}"></b>` : '';
+    const gust = okVal(x.gMax) ? `<i style="left:${(x.gMax / top * 100).toFixed(1)}%" title="Gusts ${Math.round(x.gMax)} kn"></i>` : '';
+    const rng = okVal(x.wMax) ? `${Math.round(x.wMin)}–${Math.round(x.wMax)}<small>kn</small>` : '--';
+    const det = [okVal(x.dir) ? `${compass(x.dir)}` : '', okVal(x.gMax) ? `gusts ${Math.round(x.gMax)}` : '', dashWaves(x).replace('Waves ', 'waves '), dashRain(x.rain).replace('Rain', 'rain').replace('Dry', 'dry'),
+                 okVal(x.tMax) ? `${Math.round(x.tMax)}°F` : ''].filter(Boolean).join(' · ');
+    const dd = new Date(d + 'T12:00:00Z');
+    return `<div class="dash-day"><div class="dn">${dashDayName(d, today) === 'Tomorrow' ? 'Tmrw' : dashDayName(d, today)}<small>${dd.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' })} ${dd.getUTCDate()}</small></div>`
+      + `<div class="ico">${wxEmoji(x.code, 1)}</div><div class="dash-track">${bar}${gust}</div><div class="rng">${rng}</div><div class="det">${det}</div></div>`;
+  }).join('') + `<div class="dash-day" style="display:block;padding:8px 14px;"><span class="note">${esc(S.label)} · bar shows each day's wind range, the tick its strongest gust.</span></div>`;
+}
+// Wind (coloured by strength) and gusts (dashed) for the next 48 hours, with
+// night shaded and arrows showing which way the wind is blowing.
+function dashGraph(S, idx, today, w) {
+  if (idx.length < 2) return '<p class="note" style="padding:10px;">Not enough hours to draw.</p>';
+  const W = Math.max(280, Math.round(w || 340) - 12), H = 168, L = 26, R = 6, T = 24, B = 20, pw = W - L - R, ph = H - T - B;
+  const vals = idx.flatMap(i => [S.ws[i], S.wg[i]]).filter(okVal);
+  const top = Math.max(15, Math.ceil((Math.max(...vals, 0) + 1) / 5) * 5);
+  const X = k => L + k * pw / (idx.length - 1), Y = v => T + ph - Math.min(v, top) / top * ph;
+  const sun = {}; if (FC.daily && FC.daily.time) FC.daily.time.forEach((d, k) => sun[d] = [FC.daily.sunrise[k], FC.daily.sunset[k]]);
+  const isNight = t => { const s = sun[t.slice(0, 10)]; return s ? (t < s[0].slice(0, 13) + ':00' || t > s[1]) : false; };
+  let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="Wind and gusts for the next 48 hours">`;
+  // the wind colour scale, laid along the height of the graph
+  svg += '<defs><linearGradient id="dashWg" gradientUnits="userSpaceOnUse" x1="0" y1="' + Y(0) + '" x2="0" y2="' + Y(top) + '">'
+    + WIND_STOPS.filter(([v]) => v <= top + 5).map(([v, c]) => `<stop offset="${Math.min(1, v / top).toFixed(3)}" stop-color="${c}"/>`).join('') + '</linearGradient></defs>';
+  const step = pw / (idx.length - 1);
+  let n0 = -1;
+  idx.forEach((i, k) => {
+    const nt = isNight(FC.time[i]);
+    if (nt && n0 < 0) n0 = k;
+    if (n0 >= 0 && (!nt || k === idx.length - 1)) {
+      const k1 = nt ? k : k - 1, x0 = Math.max(L, X(n0) - step / 2), x1 = Math.min(W - R, X(k1) + step / 2);
+      svg += `<rect x="${x0.toFixed(1)}" y="${T}" width="${(x1 - x0).toFixed(1)}" height="${ph}" fill="var(--ink)" opacity=".05"/>`;
+      n0 = -1;
+    }
+  });
+  for (let v = 0; v <= top; v += top > 30 ? 10 : 5) svg += `<line x1="${L}" x2="${W - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)" stroke-width="1"/><text x="${L - 5}" y="${Y(v) + 3.5}" text-anchor="end">${v}</text>`;
+  idx.forEach((i, k) => {
+    const t = FC.time[i], h = +t.slice(11, 13);
+    if (h === 0 && k > 0) svg += `<line x1="${X(k)}" x2="${X(k)}" y1="${T}" y2="${T + ph}" stroke="var(--muted)" stroke-width="1" opacity=".6"/>`;
+    if (h % 6 === 0) svg += `<text x="${X(k)}" y="${H - 5}" text-anchor="middle"${h === 0 ? ' style="font-weight:700;fill:var(--ink)"' : ''}>${h === 0 ? dashDayName(t.slice(0, 10), today).replace('Tomorrow', 'Tmrw') : dashHour(t).replace(' ', '')}</text>`;
+  });
+  const pts = key => idx.map((i, k) => okVal(S[key][i]) ? [X(k), Y(S[key][i])] : null);
+  const path = p => { let d = '', pen = false; p.forEach(q => { if (!q) { pen = false; return; } d += (pen ? 'L' : 'M') + q[0].toFixed(1) + ' ' + q[1].toFixed(1); pen = true; }); return d; };
+  const wp = pts('ws'), first = wp.findIndex(Boolean), last = wp.length - 1 - [...wp].reverse().findIndex(Boolean);
+  if (first >= 0) {
+    const seg = wp.slice(first, last + 1).filter(Boolean);
+    svg += `<path d="${path(seg)}L${seg[seg.length - 1][0].toFixed(1)} ${Y(0)}L${seg[0][0].toFixed(1)} ${Y(0)}Z" fill="url(#dashWg)" opacity=".38"/>`;
+    svg += `<path d="${path(wp)}" fill="none" stroke="url(#dashWg)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  svg += `<path d="${path(pts('wg'))}" fill="none" stroke="var(--ink)" stroke-width="1.5" stroke-dasharray="4 3" opacity=".6"/>`;
+  idx.forEach((i, k) => {
+    const d = S.wd[i];
+    if (k % 3 === 0 && okVal(d)) svg += `<g transform="translate(${X(k).toFixed(1)} ${T - 12}) rotate(${Math.round(d)})"><path d="M0 -6 L0 5 M-3.5 1.5 L0 5.5 L3.5 1.5" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  });
+  return svg + '</svg><div class="dash-key"><span><i></i>Wind</span><span><i class="g"></i>Gusts</span><span>knots · arrows show where it blows</span></div>';
+}
+let dashResizeT;
+window.addEventListener('resize', () => { clearTimeout(dashResizeT); dashResizeT = setTimeout(() => { if ($('view-weather').classList.contains('active')) paintDash(); }, 200); });
 
 
 // ═══ WEATHER MAPS (split-screen model comparison) ══════════════════
