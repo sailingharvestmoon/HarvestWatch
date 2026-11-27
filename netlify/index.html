@@ -440,24 +440,25 @@ body.full-map .alarm-banner { top:env(safe-area-inset-top); }
 .wm-divider span { position:absolute; top:50%; left:-20px; width:40px; height:40px; margin-top:-20px; border-radius:50%; background:#fff; color:#14212d; display:grid; place-items:center; font-weight:800; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:ew-resize; touch-action:none; }
 .wm-divider { touch-action:none; }
 /* legend: a full-width strip of colour blocks along the bottom of each map */
-.wm-leg { position:absolute; left:0; bottom:0; width:100%; height:30px; z-index:800; display:flex; font-size:15px; font-weight:500; color:#fff; font-variant-numeric:tabular-nums; }
+.wm-leg { position:absolute; left:0; bottom:0; width:100%; height:20px; z-index:800; display:flex; font-size:12.5px; font-weight:500; color:#fff; font-variant-numeric:tabular-nums; }
 .wm-leg b { flex:1; display:flex; align-items:center; justify-content:center; font-weight:500; text-shadow:0 0 3px rgba(0,0,0,.35); min-width:0; overflow:hidden; }
 .wm-leg b.dk { color:#14212d; text-shadow:none; }
-.wm-leg em { flex:none; width:11%; min-width:42px; background:#5d6670; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; font-style:normal; }
+.wm-leg em { flex:none; width:11%; min-width:36px; background:#5d6670; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; font-style:normal; }
 .wm-leg .iso { flex:1; background:#4c5866; justify-content:flex-start; padding-left:12px; display:flex; align-items:center; }
 /* time: ▶ and a strip of days dragged under a fixed centre line */
-.wm-timebar { position:absolute; left:0; right:0; bottom:30px; height:62px; z-index:805; border-top:1px solid rgba(255,255,255,.12); }
+.wm-timebar { position:absolute; left:0; right:0; bottom:20px; height:48px; z-index:805; border-top:1px solid rgba(255,255,255,.12); }
 .wm-strip { position:absolute; inset:0; overflow:hidden; touch-action:none; cursor:grab; }
 .wm-track { position:absolute; top:0; bottom:0; left:0; will-change:transform; }
 .wm-track.ease { transition:transform .35s ease; }
-.wm-day { position:absolute; top:0; bottom:0; border-left:1px solid rgba(255,255,255,.16); color:rgba(255,255,255,.9); font-size:19px; padding:16px 0 0 14px; white-space:nowrap; overflow:hidden; }
+.wm-day { position:absolute; top:0; bottom:0; border-left:1px solid rgba(255,255,255,.16); color:rgba(255,255,255,.9); font-size:16px; padding:13px 0 0 0; white-space:nowrap; overflow:hidden; }
+.wm-day span { display:inline-block; padding-left:12px; }
 .wm-day.alt { background:rgba(255,255,255,.07); }
 .wm-day.past { color:rgba(255,255,255,.5); }
 .wm-now { position:absolute; top:4px; bottom:4px; width:0; border-left:2px dashed rgba(255,255,255,.55); }
 .wm-cursor { position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:rgba(255,255,255,.75); pointer-events:none; }
-.wm-play { position:absolute; left:0; top:0; bottom:0; width:66px; display:grid; place-items:center; z-index:2; background:linear-gradient(90deg, rgba(22,32,46,.35) 60%, transparent); }
-.wm-play svg { width:30px; height:30px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
-.wm-bubble { position:absolute; left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); padding:8px 16px; border-radius:20px; font-size:19px; font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap; pointer-events:none; box-shadow:0 2px 10px rgba(0,0,0,.18); }
+.wm-play { position:absolute; left:0; top:0; bottom:0; width:52px; display:grid; place-items:center; z-index:2; background:linear-gradient(90deg, rgba(22,32,46,.35) 60%, transparent); }
+.wm-play svg { width:24px; height:24px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
+.wm-bubble { position:absolute; left:50%; bottom:calc(100% + 7px); transform:translateX(-50%); padding:6px 14px; border-radius:18px; font-size:16px; font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap; pointer-events:none; box-shadow:0 2px 10px rgba(0,0,0,.18); }
 .wm-bubble::after { content:''; position:absolute; left:50%; top:100%; margin-left:-7px; border:7px solid transparent; border-top-color:rgba(22,32,46,.42); }
 .wm-bubble small { font-size:12px; opacity:.8; margin-left:6px; }
 /* Forecast Options: a see-through card over the map it belongs to */
@@ -1954,10 +1955,13 @@ async function endWatch() {
   else toast('Anchor watch ended');
 }
 async function writeAlarms(fields, extraMask) {
-  const now = Date.now();
+  const now = Date.now(), prev = S.lastWrite;
+  // Mark it now, not when the save comes back: a settings read already on its
+  // way (they run every few seconds) would otherwise undo the change just made.
+  S.lastWrite = now;
   fields = Object.assign({}, fields, { updatedAt: fI(now) });
   const ok = await fsPatch('alarms', fields, Object.keys(fields).concat(extraMask || []));
-  if (ok) S.lastWrite = now;
+  if (!ok && S.lastWrite === now) S.lastWrite = prev;
   return ok;
 }
 
@@ -2586,7 +2590,7 @@ function paintFcSet() {
       const r = FC && FC.models[m.id], on = !FCU.hide.includes(m.id), off = FC && (!r || !r.ok);
       return `<div class="row fcs-row">${mBadge(m, FCU.primary === m.id)}<div class="txt"><b>${m.label}${off ? ' <small style="color:var(--warn)">· not available here</small>' : ''}</b><small>${esc(m.info)}</small></div>`
         + `<button class="fcs-main${FCU.primary === m.id ? ' on' : ''}" onclick="fcSetMain('${m.id}')">${FCU.primary === m.id ? 'Main' : 'Make main'}</button>`
-        + `<span class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="fcShowModel('${m.id}', this.checked)"><span></span></span></div>`;
+        + `<label class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="fcShowModel('${m.id}', this.checked)"><span></span></label></div>`;
     }).join('')}</div>
     <p class="note" style="margin:6px 4px 0">The main model fills the rows while they're closed (the coloured edge). Tap a row's name in the table to see every model ticked here.</p>
     <div class="section-title">Days</div>
@@ -2943,7 +2947,9 @@ const WM_STOPS = {
   wind: [[0, '#6b2bc4'], [5, '#4a3fe3'], [8, '#3477e0'], [10, '#3cb46e'], [12, '#69c84a'], [15, '#cde042'], [18, '#f1d33b'],
          [20, '#f6a43a'], [25, '#ee5a2d'], [30, '#d22a26'], [35, '#a3171f'], [40, '#7a1020'], [45, '#561020'], [50, '#707070']],
   cape: [[0, '#ffffff00'], [100, '#fff3a0'], [500, '#f7c948'], [1000, '#f39a2e'], [2000, '#e0392e'], [3500, '#9b2aa0']],
-  wave: [[0, '#3d58b5'], [1, '#3f7fd6'], [2, '#36b7c9'], [4, '#4fd05a'], [6, '#e6e33a'], [9, '#f39a2e'], [13, '#e0392e'], [20, '#9b2aa0']],
+  // waves, feet - PredictWind's scale: violet when flat, blue at 5, green at 10, yellow 15, red 20, then dark
+  wave: [[0, '#5b10b8'], [1.5, '#6a22d8'], [3, '#4f3fe6'], [4.5, '#3c66ee'], [6, '#3a92ec'], [7.5, '#3cbcd6'], [9, '#41cfa4'], [10.5, '#62d46a'],
+         [12.5, '#b6dd4a'], [15, '#f0d63c'], [17.5, '#f3a434'], [20, '#e8502e'], [25, '#a8191f'], [30, '#3d0b12'], [35, '#707070']],
   current: [[0, '#3d58b5'], [.3, '#3f7fd6'], [.6, '#36b7c9'], [1, '#4fd05a'], [1.5, '#e6e33a'], [2.5, '#f39a2e'], [4, '#e0392e']],
   rain: [[0, '#ffffff00'], [.1, '#9fd3ff80'], [.5, '#5fb0f5'], [2, '#2f7fd6'], [5, '#4fd05a'], [10, '#e6e33a'], [20, '#e0392e'], [40, '#9b2aa0']],
   acc: [[0, '#ffffff00'], [1, '#9fd3ff80'], [5, '#5fb0f5'], [15, '#2f7fd6'], [30, '#4fd05a'], [60, '#e6e33a'], [100, '#e0392e'], [200, '#9b2aa0']],
@@ -2954,7 +2960,7 @@ const WM_LAYERS = [
   { id: 'wind', label: 'Wind', ico: '≋', key: 'ws', unit: 'kn', stops: 'wind', flow: 'wind' },
   { id: 'gust', label: 'Gust', ico: '⋙', key: 'wg', unit: 'kn', stops: 'wind', flow: 'wind' },
   { id: 'cape', label: 'CAPE', ico: 'ϟ', key: 'ce', unit: 'J/kg', stops: 'cape' },
-  { id: 'wave', label: 'Wave', ico: '〜', key: 'wh', unit: 'ft', stops: 'wave', marine: true },
+  { id: 'wave', label: 'Wave', ico: '〜', key: 'wh', unit: 'ft', stops: 'wave', marine: true, flow: 'wave' },
   { id: 'current', label: 'Currents', ico: '⇶', key: 'cs', unit: 'kn', stops: 'current', marine: true, grid: 'current', flow: 'current' },
   { id: 'rain', label: 'Rain', ico: '☂', key: 'pr', unit: 'mm/h', stops: 'rain' },
   { id: 'accrain', label: 'Acc Rain', ico: '☔', key: 'pr', unit: 'mm', stops: 'acc', acc: true },
@@ -3081,6 +3087,7 @@ function gridField(g, key, ti, acc) {
     if (!u || u === 'x') { if (!u) preLoadStep(g, kk, ti); return new Float32Array(n).fill(NaN); }
     const [off, step] = g.meta.vars[kk] || [0, 1], out = new Float32Array(n);
     for (let p = 0; p < n; p++) { const x = u[p]; out[p] = x === 255 ? NaN : off + x * step; }
+    if (g.name === 'marine') wmFill(out, g.meta.nx, g.meta.ny, 3);
     return (g.cache[ck] = out);
   }
   const m = g.meta, n = m.nx * m.ny, b = g.bytes[key], [off, step] = m.vars[key] || [0, 1];
@@ -3094,19 +3101,40 @@ function gridField(g, key, ti, acc) {
   }
   return (g.cache[ck] = out);
 }
+// Waves have no value on land, and the grid's cells along the coast come out
+// ragged: carry the nearest sea value a few cells in, so the colours run
+// smoothly up to the coastline drawn over them.
+function wmFill(a, nx, ny, passes) {
+  for (let k = 0; k < passes; k++) {
+    const src = a.slice();
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const i = y * nx + x; if (src[i] === src[i]) continue;
+      if (x > 0 && src[i - 1] === src[i - 1]) a[i] = src[i - 1];
+      else if (x < nx - 1 && src[i + 1] === src[i + 1]) a[i] = src[i + 1];
+      else if (y > 0 && src[i - nx] === src[i - nx]) a[i] = src[i - nx];
+      else if (y < ny - 1 && src[i + nx] === src[i + nx]) a[i] = src[i + nx];
+    }
+  }
+}
 // u/v (knots, towards) for particles.
+// Speed and direction keys of each kind of flow. Wind and waves give the
+// direction they come FROM, currents the way they go.
+const WM_FLOWKEYS = { wind: ['ws', 'wd'], current: ['cs', 'cd'], wave: ['wh', 'wvd'] };
+function wmUV(flow, s, d) {
+  const n = s.length, u = new Float32Array(n), v = new Float32Array(n), sign = flow === 'current' ? 1 : -1;
+  for (let p = 0; p < n; p++) {
+    const r = d[p] * Math.PI / 180;
+    const m = flow === 'wave' ? (s[p] === s[p] ? 5 + 1.6 * s[p] : NaN) : s[p];      // waves: a gentle drift, quicker when bigger
+    u[p] = sign * m * Math.sin(r); v[p] = sign * m * Math.cos(r);
+  }
+  return { u, v };
+}
 function gridFlow(g, flow, ti) {
   const ck = 'uv:' + flow + ':' + ti;
   if (g.cache[ck]) return g.cache[ck];
-  const s = gridField(g, flow === 'current' ? 'cs' : 'ws', ti), d = gridField(g, flow === 'current' ? 'cd' : 'wd', ti);
-  const n = s.length, u = new Float32Array(n), v = new Float32Array(n), sign = flow === 'current' ? 1 : -1;   // wind dir is FROM
-  const ready = !g.pre || (g.steps[(flow === 'current' ? 'cs' : 'ws') + '_' + ti] && g.steps[(flow === 'current' ? 'cd' : 'wd') + '_' + ti]);
-  for (let p = 0; p < n; p++) {
-    const r = d[p] * Math.PI / 180;
-    u[p] = sign * s[p] * Math.sin(r); v[p] = sign * s[p] * Math.cos(r);
-  }
-  const res = { u, v };
-  if (ready) g.cache[ck] = res;
+  const [sk, dk] = WM_FLOWKEYS[flow];
+  const res = wmUV(flow, gridField(g, sk, ti), gridField(g, dk, ti));
+  if (!g.pre || (g.steps[sk + '_' + ti] && g.steps[dk + '_' + ti])) g.cache[ck] = res;
   return res;
 }
 function sampleAt(g, arr, lat, lon) {
@@ -3242,7 +3270,7 @@ function wmLayout() {
   Object.assign(tb, { left: '0px', right: '0px' });
   if (sp && tall) {
     Object.assign(bB, { right: '10px', top: px(WM.divY + 10) });
-    Object.assign(lA, { top: px(WM.divY - 30), bottom: 'auto' });
+    Object.assign(lA, { top: px(WM.divY - 20), bottom: 'auto' });
     Object.assign(lB, { left: '0px', width: '100%', top: '', bottom: '0px' });
   } else if (sp) {
     Object.assign(bA, { right: px(r.width - WM.divX + 10) });
@@ -3272,17 +3300,55 @@ async function wmRefreshData() {
   const set = new Set();
   names.forEach(n => { const g = GRIDS[n]; if (g && g.meta && g.meta.times) g.meta.times.forEach(t => set.add(t)); });
   const prevT = WM.steps[WM.ti];
-  WM.steps = [...set].sort((a, b) => a - b);
+  // Every hour from the first map to the last, as PredictWind lets you pick:
+  // hours between a model's steps are blended from the two either side.
+  const all = [...set].sort((a, b) => a - b);
+  WM.steps = [];
+  if (all.length) for (let t = Math.ceil(all[0] / 3600) * 3600; t <= all[all.length - 1]; t += 3600) WM.steps.push(t);
   const nowS = Date.now() / 1000;
   let ti = prevT ? WM.steps.findIndex(t => t >= prevT) : WM.steps.findIndex(t => t >= nowS - 5400);
   WM.ti = Math.max(0, ti);
   wmBuildTrack(); wmPaintTime(); wmPaintButtons(); wmDrawAll(true); wmDrawBoxes();
   wmMaybeAsk();
 }
-function wmStepIndex(g) {
-  const t = WM.steps[WM.ti]; if (!g || !g.meta || !g.meta.times || t === undefined) return -1;
-  let best = -1, bd = 1e9; g.meta.times.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; best = i; } });
-  return bd <= 3 * 3600 + 60 ? best : -1;              // 6-hourly models (AIFS) show their nearest step
+function wmStepIndex(g) { const P = wmPair(g); return P ? P.i0 : -1; }
+// The model's two steps either side of the hour picked, and how far between
+// them it is (f, 0..1). Null outside the model's run.
+function wmPair(g) {
+  const t = WM.steps[WM.ti], T = g && g.meta && g.meta.times; if (!T || !T.length || t === undefined) return null;
+  const i1 = T.findIndex(x => x >= t), near = 3 * 3600 + 60;
+  if (i1 < 0) return t - T[T.length - 1] <= near ? { i0: T.length - 1, i1: T.length - 1, f: 0 } : null;
+  if (T[i1] === t || i1 === 0) return T[i1] - t <= near ? { i0: i1, i1, f: 0 } : null;
+  const i0 = i1 - 1, gap = T[i1] - T[i0];
+  if (gap > 6 * 3600 + 60) { const k = t - T[i0] <= T[i1] - t ? i0 : i1; return Math.abs(T[k] - t) <= near ? { i0: k, i1: k, f: 0 } : null; }
+  return { i0, i1, f: (t - T[i0]) / gap };
+}
+const WM_ANG = { wd: 1, cd: 1, wvd: 1 };            // directions: blend the short way round
+function wmField(g, key, P, acc) {
+  if (!P.f) return gridField(g, key, P.i0, acc);
+  const ck = `${key}:${P.i0}:${P.f.toFixed(3)}:${acc ? 1 : 0}`;
+  if (g.icache && g.icache[ck]) return g.icache[ck];
+  const a = gridField(g, key, P.i0, acc), b = gridField(g, key, P.i1, acc), f = P.f, ang = WM_ANG[key];
+  const n = a.length, out = new Float32Array(n);
+  for (let p = 0; p < n; p++) {
+    const x = a[p], y = b[p];
+    if (x !== x) { out[p] = y; continue; }
+    if (y !== y) { out[p] = x; continue; }
+    if (ang) { const d = ((y - x + 540) % 360) - 180; out[p] = (x + d * f + 360) % 360; } else out[p] = x + (y - x) * f;
+  }
+  const kk = acc && g.meta.vars.pa ? 'pa' : key;
+  if (!g.pre || (g.steps[kk + '_' + P.i0] && g.steps[kk + '_' + P.i1] && g.steps[kk + '_' + P.i0] !== 'x')) {
+    if (!g.icache || Object.keys(g.icache).length > 12) g.icache = {};
+    g.icache[ck] = out;
+  }
+  return out;
+}
+function wmFlow(g, flow, P) {
+  if (!P.f) return gridFlow(g, flow, P.i0);
+  const ck = `uv:${flow}:${P.i0}:${P.f.toFixed(3)}`;
+  if (g.icache && g.icache[ck]) return g.icache[ck];
+  const [sk, dk] = WM_FLOWKEYS[flow];
+  return wmUV(flow, wmField(g, sk, P), wmField(g, dk, P));
 }
 // ─── time: a strip of days dragged under a fixed centre line ──────
 // As on PredictWind: the days slide under the line, the bubble above says
@@ -3303,7 +3369,7 @@ function wmBuildTrack() {
       const s0 = d.getTime() / 1000, n = new Date(d); n.setDate(n.getDate() + 1);
       const x = (s0 - t0) / 3600 * pph, w = (n.getTime() / 1000 - s0) / 3600 * pph;
       const lbl = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' ' + d.getDate();
-      html += `<div class="wm-day${k % 2 ? ' alt' : ''}${d < today ? ' past' : ''}" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px">${lbl}</div>`;
+      html += `<div class="wm-day${k % 2 ? ' alt' : ''}${d < today ? ' past' : ''}" data-x="${x.toFixed(1)}" data-w="${w.toFixed(1)}" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px"><span>${lbl}</span></div>`;
     }
     const nx = (Date.now() / 1000 - t0) / 3600 * pph;
     html += `<div class="wm-now" style="left:${nx.toFixed(1)}px"></div>`;
@@ -3317,6 +3383,15 @@ function wmTrackTo(ease) {
   WMT.off = st.clientWidth / 2 - (t - WMT.t0) / 3600 * WMT.pph;
   tr.classList.toggle('ease', !!ease);
   tr.style.transform = `translateX(${WMT.off.toFixed(1)}px)`;
+  wmStick();
+}
+// A day whose start has slid off to the left keeps its name just right of ▶.
+function wmStick() {
+  document.querySelectorAll('#wmTrack .wm-day').forEach(el => {
+    const x = +el.dataset.x + WMT.off, w = +el.dataset.w, sp = el.firstChild, lw = sp.offsetWidth || 120;
+    const sh = Math.max(0, Math.min(52 - x, w - lw - 8));
+    sp.style.transform = sh > 0 ? `translateX(${sh.toFixed(1)}px)` : '';
+  });
 }
 function wmNearestStep(t) {
   let best = 0, bd = Infinity;
@@ -3337,7 +3412,7 @@ function wmStripInit() {
     const dx = e.clientX - d.x; if (Math.abs(dx) > 4) d.moved = true;
     const t0 = WM.steps[0], t1 = WM.steps[WM.steps.length - 1], half = st.clientWidth / 2;
     WMT.off = Math.max(half - (t1 - t0) / 3600 * WMT.pph, Math.min(half, d.off + dx));
-    tr.style.transform = `translateX(${WMT.off.toFixed(1)}px)`;
+    tr.style.transform = `translateX(${WMT.off.toFixed(1)}px)`; wmStick();
     const ti = wmNearestStep(timeAt(WMT.off));
     if (ti !== WM.ti) { WM.ti = ti; wmPaintTime(true); if (!q) { q = true; requestAnimationFrame(() => { q = false; wmDrawAll(true); }); } }
   });
@@ -3364,14 +3439,14 @@ function wmPaintTime(dragging) {
 function wmRes(cfg, lay) {
   const g = GRIDS[wmGridName(cfg)], r = g && g.meta && g.meta.res;
   if (lay.grid === 'current') return '9km';
-  if (lay.marine) return '25km';
+  if (lay.marine) return r && r < .2 ? '18km' : '25km';
   if (cfg.model === 'hrrr') return '3km';
   if (cfg.model === 'nam') return '12km';
   if (cfg.model === 'ecmwf') return r && r > .15 ? '25km' : '9km';
   return '25km';
 }
 // Legend ticks per colour scale: blocks along the bottom, PredictWind-style.
-const WM_TICKS = { wind: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], cape: [100, 500, 1000, 2000, 3500], wave: [1, 2, 4, 6, 9, 13, 20],
+const WM_TICKS = { wind: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], cape: [100, 500, 1000, 2000, 3500], wave: [5, 10, 15, 20, 25, 30],
   current: [.3, .6, 1, 1.5, 2.5, 4], rain: [.1, .5, 2, 5, 10, 20, 40], acc: [1, 5, 15, 30, 60, 100, 200], cloud: [20, 40, 60, 80, 100],
   temp: [30, 40, 50, 60, 70, 80, 90, 100] };
 const WM_UNIT = { kn: 'kts', 'J/kg': 'J/kg', ft: 'ft', 'mm/h': 'mm/h', mm: 'mm', '%': '%', '°F': '°F', mb: 'mb' };
@@ -3429,9 +3504,9 @@ function wmDrawAll(resetParticles) {
   // Fetch the next couple of steps ahead of the slider / play button.
   [WMP.a].concat(WMP.split ? [WMP.b] : []).forEach(cfg => {
     const g = GRIDS[wmGridName(cfg)]; if (!g || !g.pre) return;
-    const lay = WM_LAYERS.find(l => l.id === cfg.layer), ti = wmStepIndex(g); if (ti < 0) return;
-    const keys = [lay.acc ? 'pa' : lay.key].concat(lay.flow === 'wind' ? ['ws', 'wd'] : lay.flow === 'current' ? ['cs', 'cd'] : [], WMP.iso && !lay.contours ? ['ps'] : []);
-    for (const d of [1, 2]) keys.forEach(k => g.meta.vars[k] && preLoadStep(g, k, ti + d));
+    const lay = WM_LAYERS.find(l => l.id === cfg.layer), P = wmPair(g); if (!P) return;
+    const keys = [lay.acc ? 'pa' : lay.key].concat(lay.flow ? WM_FLOWKEYS[lay.flow] : [], WMP.iso && !lay.contours ? ['ps'] : []);
+    for (const d of [0, 1, 2]) keys.forEach(k => g.meta.vars[k] && preLoadStep(g, k, P.i1 + d));
   });
 }
 function wmDrawSide(s, cfg, resetParticles) {
@@ -3446,9 +3521,9 @@ function wmDrawSide(s, cfg, resetParticles) {
   s.cur = null;
   if (resetParticles) { s.parts = []; s.pctx.clearRect(0, 0, W_, H_); }
   if (!g || !g.meta || (!g.bytes && !g.pre)) { wmCoast(s, ctx); return; }
-  const ti = wmStepIndex(g); if (ti < 0) { wmCoast(s, ctx); return; }
-  const arr = gridField(g, lay.key, ti, lay.acc);
-  s.cur = { g, lay, ti, arr, flow: lay.flow && WMP.flow ? gridFlow(g, lay.flow, ti) : null };
+  const P = wmPair(g); if (!P) { wmCoast(s, ctx); return; }
+  const ti = P.i0, arr = wmField(g, lay.key, P, lay.acc);
+  s.cur = { g, lay, ti, P, arr, flow: lay.flow && WMP.flow ? wmFlow(g, lay.flow, P) : null };
   // Sample on a coarse screen grid, then let the browser smooth it up.
   const B = 6, cw = Math.ceil(W_ / B), ch = Math.ceil(H_ / B);
   const lats = new Float32Array(ch), lons = new Float32Array(cw);
@@ -3472,7 +3547,7 @@ function wmDrawSide(s, cfg, resetParticles) {
   wmCoast(s, ctx);
   // Isobars over the colours (PredictWind's "Isobars" switch), from the same model's pressure.
   if (WMP.iso && !lay.contours && g.meta.vars.ps) {
-    const pi = gridField(g, 'ps', ti), B2 = 10, cw2 = Math.ceil(W_ / B2), ch2 = Math.ceil(H_ / B2), pv = new Float32Array(cw2 * ch2);
+    const pi = wmField(g, 'ps', P), B2 = 10, cw2 = Math.ceil(W_ / B2), ch2 = Math.ceil(H_ / B2), pv = new Float32Array(cw2 * ch2);
     const la2 = new Float32Array(ch2), lo2 = new Float32Array(cw2);
     for (let y = 0; y < ch2; y++) la2[y] = s.map.containerPointToLatLng([0, y * B2 + B2 / 2]).lat;
     for (let x = 0; x < cw2; x++) lo2[x] = s.map.containerPointToLatLng([x * B2 + B2 / 2, 0]).lng;
@@ -3685,7 +3760,7 @@ function wmAnimate() {
     while (s.parts.length < want) s.parts.push({ x: Math.random() * W_, y: Math.random() * H_, age: Math.random() * 80 | 0 });
     ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.7; ctx.lineCap = 'round'; ctx.beginPath();
     // px per frame per knot; currents are slow so they get a bigger factor.
-    const k0 = (cur.lay.flow === 'current' ? .5 : .07) * WMP.speed;
+    const k0 = (cur.lay.flow === 'current' ? .5 : cur.lay.flow === 'wave' ? .05 : .07) * WMP.speed;
     for (const p of s.parts) {
       const ll = s.map.containerPointToLatLng([p.x, p.y]);
       const u = sampleAt(cur.g, cur.flow.u, ll.lat, ll.lng), v = sampleAt(cur.g, cur.flow.v, ll.lat, ll.lng);
@@ -3703,9 +3778,9 @@ function wmValueAt(s, ll) {
   const v = sampleAt(cur.g, cur.arr, ll.lat, ll.lng);
   const cfg = s.k ? WMP.b : WMP.a, m = MODELS.find(x => x.id === cfg.model);
   let txt = v !== v ? 'No data here' : `${cur.lay.contours ? v.toFixed(0) : v < 10 && cur.lay.unit !== '%' ? v.toFixed(1) : Math.round(v)} ${cur.lay.unit}`;
-  if (v === v && cur.lay.flow === 'wind') { const d = sampleAt(cur.g, gridField(cur.g, 'wd', cur.ti), ll.lat, ll.lng); if (d === d) txt += ` from ${compass(d)}`; }
-  if (v === v && cur.lay.flow === 'current') { const d = sampleAt(cur.g, gridField(cur.g, 'cd', cur.ti), ll.lat, ll.lng); if (d === d && v >= .1) txt += ` toward ${compass(d)}`; }
-  if (v === v && cur.lay.id === 'wave') { const p = sampleAt(cur.g, gridField(cur.g, 'wp', cur.ti), ll.lat, ll.lng); if (p === p) txt += ` · ${Math.round(p)} s`; }
+  if (v === v && cur.lay.flow === 'wind') { const d = sampleAt(cur.g, wmField(cur.g, 'wd', cur.P), ll.lat, ll.lng); if (d === d) txt += ` from ${compass(d)}`; }
+  if (v === v && cur.lay.flow === 'current') { const d = sampleAt(cur.g, wmField(cur.g, 'cd', cur.P), ll.lat, ll.lng); if (d === d && v >= .1) txt += ` toward ${compass(d)}`; }
+  if (v === v && cur.lay.id === 'wave') { const p = sampleAt(cur.g, wmField(cur.g, 'wp', cur.P), ll.lat, ll.lng); if (p === p) txt += ` · ${Math.round(p)} s`; }
   return { title: `${cur.lay.grid === 'current' ? 'RTOFS' : cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}`, txt };
 }
 // Tap: a cross-hair and a card beside it, as on PredictWind - wind, its
@@ -3720,7 +3795,7 @@ function wmReadout(s, ll) {
   const had = WM.sides.some(x => x.tap); wmTapClose();
   if (had || $('wmOpt').classList.contains('open') || $('wxMenu').classList.contains('open')) return;   // a tap away just closes things
   const cur = s.cur; if (!cur) return;
-  const at = (key) => { if (!cur.g.meta.vars[key]) return NaN; return sampleAt(cur.g, gridField(cur.g, key, cur.ti), ll.lat, ll.lng); };
+  const at = (key) => { if (!cur.g.meta.vars[key]) return NaN; return sampleAt(cur.g, wmField(cur.g, key, cur.P), ll.lat, ll.lng); };
   const v = sampleAt(cur.g, cur.arr, ll.lat, ll.lng), rows = [];
   const W = '<svg viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
   const P = '<svg viewBox="0 0 24 24"><path d="M5 5a10 10 0 0 1 0 14M10 8a6 6 0 0 1 0 8M15 4a12 12 0 0 1 0 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
@@ -3897,7 +3972,7 @@ let wmEditing = 0;
 function wmOpenOptions(k) {
   wmEditing = k; $('wxMenu').classList.remove('open');
   const cfg = wmSideCfg(k), lay = WM_LAYERS.find(l => l.id === cfg.layer);
-  const sw = (on, js) => `<span class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="${js}"><span></span></span>`;
+  const sw = (on, js) => `<label class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="${js}"><span></span></label>`;
   $('wmOptBody').innerHTML = `
     <h3>Forecast Options</h3>
     <div class="wm-h" style="margin-top:0">Map Layer</div>
@@ -3922,8 +3997,8 @@ function wmOpenOptions(k) {
 // The card sits over the right-hand side of the map it belongs to.
 function wmPlacePanel() {
   const r = $('wmStage').getBoundingClientRect(), p = $('wmOpt').style, sp = WMP.split, tall = wmStacked(), k = wmEditing;
-  let x0 = 0, y0 = 0, w = r.width, h = r.height - 92;                 // above the time bar and legend
-  if (sp && tall) { if (k) { y0 = WM.divY; h = r.height - WM.divY - 92; } else h = WM.divY - 30; }
+  let x0 = 0, y0 = 0, w = r.width, h = r.height - 68;                 // above the time bar and legend
+  if (sp && tall) { if (k) { y0 = WM.divY; h = r.height - WM.divY - 68; } else h = WM.divY - 20; }
   else if (sp) { if (k) { x0 = WM.divX; w = r.width - WM.divX; } else w = WM.divX; }
   const top = y0 + (y0 ? 10 : 64), pw = Math.min(360, Math.max(272, w * .72), w - 20);
   Object.assign(p, { left: (x0 + w - pw - 10) + 'px', top: top + 'px', width: pw + 'px', maxHeight: Math.max(200, y0 + h - top - 8) + 'px' });
@@ -3955,7 +4030,7 @@ function wmTogglePlay() {
   $('wmPlay').innerHTML = WM_PAUSE;
   WM.playing = setInterval(() => {
     WM.ti = (WM.ti + 1) % Math.max(1, WM.steps.length); wmPaintTime(); wmDrawAll(true);
-  }, 900);
+  }, 650);
 }
 function openMaps() {
   initMaps();
@@ -5714,6 +5789,17 @@ function pxOpenRoute(id) {
 // ═══ NAV ═══════════════════════════════════════════════════════════
 const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', dash: 'Dashboard', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of table / maps / fronts / passage you left it on
+// iPhone Home Screen app: some iOS versions give the page a viewport shorter
+// than the screen, leaving an empty band under the tab bar. Stretch to the screen.
+function fixBottomGap() {
+  const app = document.querySelector('.app'); if (!app) return;
+  const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (!standalone || !window.screen) { app.style.bottom = ''; return; }
+  const land = innerWidth > innerHeight, full = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+  const gap = full - innerHeight;
+  app.style.bottom = gap > 2 && gap < 140 ? -gap + 'px' : '';
+}
+fixBottomGap(); window.addEventListener('resize', fixBottomGap); window.addEventListener('orientationchange', () => setTimeout(fixBottomGap, 300));
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
   const tab = (v === 'maps' || v === 'fronts' || v === 'passage' || v === 'dash') ? 'weather' : v;

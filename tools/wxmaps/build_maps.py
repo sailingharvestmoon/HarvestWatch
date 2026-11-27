@@ -92,8 +92,11 @@ MODELS = {
     "aifs": dict(src="ecmwf", cycle=6, lag=5.0, res=0.25, steps=list(range(0, EXT + 1, 6)),
                  url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/aifs-single/0p25/oper/{d}{h:02d}0000-{f}h-oper-fc.grib2",
                  params={"u": "10u", "v": "10v", "tp": "tp", "tcc": "tcc", "msl": "msl", "t2": "2t"}),
-    "marine": dict(src="noaa", cycle=6, lag=4.0, res=0.25, steps=LONG,
+    # Waves: NOAA's Atlantic grid (1/6 deg, ~18 km; 0-55 N, 100-50 W) where it
+    # has a value, the global 0.25 deg grid elsewhere (east of 50 W, holes).
+    "marine": dict(src="noaa", cycle=6, lag=4.0, res=1 / 6, steps=LONG,
                    url=lambda d, h, f: f"{S3_GFS}/gfs.{d}/{h:02d}/wave/gridded/gfswave.t{h:02d}z.global.0p25.f{f:03d}.grib2",
+                   fine=lambda d, h, f: f"{S3_GFS}/gfs.{d}/{h:02d}/wave/gridded/gfswave.t{h:02d}z.atlocn.0p16.f{f:03d}.grib2",
                    fields={"hs": ("HTSGW", "surface"), "dir": ("DIRPW", "surface"), "per": ("PERPW", "surface")}),
 }
 
@@ -468,6 +471,10 @@ def _build_model(name, cfg, out_dir):
     sampler, times, written = None, [], set()
     acc, prev_tp, first_tp, prev_f = None, None, None, None
     gfs_sst = {}
+    fine, fsampler = {}, None
+    if cfg.get("fine"):
+        for f, msgs in fetch_steps(dict(cfg, url=cfg["fine"]), d, hh, cfg["steps"], name + " (fine grid)"):
+            fine[f] = msgs or {}
     if name == "marine":
         # Sea temperature comes from GFS surface temperature over water.
         gcfg = MODELS["gfs"]
@@ -492,6 +499,12 @@ def _build_model(name, cfg, out_dir):
         if sampler is None:
             sampler = Sampler(next(iter(H.values())), lats, lons)
         S = {k: sampler.sample(h) for k, h in H.items()}
+        for k, b in (fine.get(f) or {}).items():         # the finer grid wins wherever it has a value
+            if not b or k not in S: continue
+            hf = grib_handle(b)
+            if hf is None: continue
+            if fsampler is None: fsampler = Sampler(hf, lats, lons)
+            a = fsampler.sample(hf); S[k] = np.where(np.isfinite(a), a, S[k]); ec.codes_release(hf)
         ti = len(times); times.append(int(vt.replace(tzinfo=dt.timezone.utc).timestamp()))
         o = {}
         if name == "marine":
@@ -542,15 +555,16 @@ def _build_model(name, cfg, out_dir):
     if not times:
         print(f"{name}: nothing usable", flush=True); return None
     meta = {
-        "model": name, "run": f"{d}{hh:02d}", "at": int(time.time() * 1000), "res": cfg["res"],
+        "model": name, "run": f"{d}{hh:02d}", "at": int(time.time() * 1000), "res": round(cfg["res"], 4),
         "bbox": [round(float(v), 6) for v in (lats[0], lons[0], lats[-1], lons[-1])],
         "nx": int(len(lons)), "ny": int(len(lats)), "times": times,
         "vars": {k: list(PACK[k]) for k in sorted(written)}, "ok": True, "pre": True,
     }
     with open(os.path.join(mdir, "meta.json"), "w") as fh: json.dump(meta, fh, separators=(",", ":"))
-    print(f"{name}: {len(times)} steps, vars {sorted(written)}, grid {meta['nx']}x{meta['ny']} at {cfg['res']} deg", flush=True)
+    print(f"{name}: {len(times)} steps, vars {sorted(written)}, grid {meta['nx']}x{meta['ny']} at {meta['res']} deg"
+          + (f", fine grid for {sum(1 for x in fine.values() if x)} steps" if cfg.get("fine") else ""), flush=True)
     return {"run": meta["run"], "steps": len(times), "vars": sorted(written), "at": meta["at"], "bbox": meta["bbox"],
-            "res": cfg["res"]}
+            "res": meta["res"]}
 
 # ---------------------------------------------------------------- ocean currents
 # NOAA Global RTOFS surface currents, from its Western Atlantic regional GRIB2
