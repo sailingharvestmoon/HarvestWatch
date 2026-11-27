@@ -2751,10 +2751,10 @@ function fcExpandAll() {
 // hour (as forecast then, or a day ahead: weather/<vessel>-fchist) against
 // the wind Harvest Moon measured that hour (weather/<vessel>-obs), both
 // recorded by the weather worker. Masthead wind is scaled to the 10 m the
-// models forecast for. An hour counts when the boat reported for 15+ min
+// models forecast for (masthead 56 ft). An hour counts when the boat reported for 15+ min
 // and the forecast spot was within 5 nm of the boat.
 const VA = { win: 72, lead: 'h0', obs: null, fc: null, at: 0 };
-const ANEMO_M = 17, ANEMO_TO_10M = Math.pow(10 / ANEMO_M, 0.11);   // ~17 m masthead -> 10 m: x0.94
+const ANEMO_M = 56 * 0.3048, ANEMO_TO_10M = Math.pow(10 / ANEMO_M, 0.11);   // Harvest Moon's masthead, 56 ft -> 10 m: x0.94
 async function loadValid(force) {
   paintValid();
   if (!force && VA.at && Date.now() - VA.at < 5 * 60000) return;
