@@ -485,10 +485,14 @@ async function fcModel(apis, lat, lon) {
 }
 async function jobForecast(e, st) {
   const p = await forecastPosition(e);
-  const [res, marine] = await Promise.all([
+  const [res, marine, uvj] = await Promise.all([
     Promise.all(FC_MODELS.map(([, apis]) => fcModel(apis, p.lat, p.lon))),
     omJson(`https://marine-api.open-meteo.com/v1/marine?latitude=${p.lat.toFixed(4)}&longitude=${p.lon.toFixed(4)}`
-      + `&hourly=wave_height,wave_direction,wave_period&length_unit=imperial&timezone=auto&forecast_days=${FC_DAYS}`).catch(() => null)
+      + `&hourly=wave_height,wave_direction,wave_period&length_unit=imperial&timezone=auto&forecast_days=${FC_DAYS}`).catch(() => null),
+    // UV index for the table's UV row: one request, Open-Meteo's own best model
+    // (asked separately so a model without UV can't fail the wind request).
+    omJson(`https://api.open-meteo.com/v1/forecast?latitude=${p.lat.toFixed(4)}&longitude=${p.lon.toFixed(4)}`
+      + `&hourly=uv_index&timezone=auto&forecast_days=${FC_DAYS}`).catch(() => null)
   ]);
   const base = res.find(r => r.j && r.j.hourly && r.j.hourly.time);
   if (!base) { await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastFc: Date.now() - (FC_EVERY_MIN - 10) * 60000 }, true); return { ok: false, note: 'no model answered' }; }
@@ -507,8 +511,13 @@ async function jobForecast(e, st) {
     const m = marine.hourly;
     mar = { time: m.time, wave_height: round(m.wave_height, 1), wave_direction: round(m.wave_direction, 0), wave_period: round(m.wave_period, 0) };
   }
+  let uv = null;
+  if (uvj && uvj.hourly && uvj.hourly.time) {
+    const ix = new Map(uvj.hourly.time.map((t, k) => [t, k]));
+    uv = round(T.map(t => { const k = ix.get(t); return k === undefined ? null : uvj.hourly.uv_index[k]; }), 0);
+  }
   const at = Date.now();
-  const data = { at, lat: +p.lat.toFixed(4), lon: +p.lon.toFixed(4), place: p.place,
+  const data = { at, lat: +p.lat.toFixed(4), lon: +p.lon.toFixed(4), place: p.place, uv,
     off: base.j.utc_offset_seconds || 0, tz: base.j.timezone_abbreviation || '', tzName: base.j.timezone || '',
     time: T, daily: base.j.daily, models, marine: mar };
   // Whole-document write on purpose: it also clears the app's requestAt.
@@ -691,12 +700,17 @@ async function tides(lat, lon, station, tz) {
   out.tideStationNm = Math.round(havKm(lat, lon, station.lat, station.lng) / 1.852 * 10) / 10;
   const y = new Date(Date.now() - 86400000), begin = y.toISOString().slice(0, 10).replace(/-/g, '');
   const j = await getJson(`https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?product=predictions&datum=MLLW&interval=hilo`
-    + `&units=english&time_zone=gmt&format=json&begin_date=${begin}&range=72&station=${station.id}`, null, 1);
+    + `&units=english&time_zone=gmt&format=json&begin_date=${begin}&range=216&station=${station.id}`, null, 1);
   const rows = (j.predictions || []).map(p => ({ t: Date.parse(p.t.replace(' ', 'T') + ':00Z'), v: parseFloat(p.v), k: p.type }))
     .filter(r => isFinite(r.t) && isFinite(r.v)).sort((a, b) => a.t - b.t);
   const now = Date.now();
   out.tides = rows.filter(r => r.t >= now - 30 * 60000).slice(0, 4)
     .map(r => `${r.k === 'H' ? 'HIGH' : 'low'} ${hm(r.t, tz, true)} ${Math.round(r.v * 10) / 10}ft`).join(' / ');
+  // A week of highs and lows (from the one before now) for the forecast table's tide curve:
+  // [[time ms, height ft, "H"|"L"], ...]
+  const from = rows.findIndex(r => r.t >= now);
+  out.tideEvents = JSON.stringify(rows.slice(Math.max(0, from - 1)).filter(r => r.t <= now + 8 * 86400000)
+    .map(r => [r.t, Math.round(r.v * 100) / 100, r.k === 'H' ? 'H' : 'L']));
   const cur = tideHeightAt(rows, now);
   if (cur !== null && rows.length >= 2) {
     const ahead = rows.filter(r => r.t >= now && r.t <= now + 12 * 3600000).concat([{ t: now, v: cur }]);
