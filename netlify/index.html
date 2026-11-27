@@ -996,6 +996,7 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
       </div>
       <p class="note" style="margin:8px 4px 0;">Sends this phone's position as the boat's. Leave it off whenever the Pi is running, or the two will fight.</p>
       <p class="note" style="text-align:center;margin-top:24px;">Harvest Watch · DataHub · harvest-moon-watch</p>
+      <p class="note num" id="scrDiag" style="text-align:center;margin-top:6px;font-size:11px;"></p>
     </section>
   </main>
 
@@ -5789,17 +5790,23 @@ function pxOpenRoute(id) {
 // ═══ NAV ═══════════════════════════════════════════════════════════
 const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', dash: 'Dashboard', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of table / maps / fronts / passage you left it on
-// iPhone Home Screen app: some iOS versions give the page a viewport shorter
-// than the screen, leaving an empty band under the tab bar. Stretch to the screen.
-function fixBottomGap() {
-  const app = document.querySelector('.app'); if (!app) return;
+// Screen sizes as iOS reports them (Boat tab, bottom): for sorting out the
+// empty band under the tab bar on the Home Screen app.
+function paintScreenDiag() {
+  const el = $('scrDiag'); if (!el) return;
+  const pr = document.createElement('div');
+  pr.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
+  document.body.appendChild(pr); const c = getComputedStyle(pr);
+  const sa = [c.paddingTop, c.paddingBottom, c.paddingLeft, c.paddingRight].map(x => parseFloat(x) || 0);
+  pr.remove();
+  const app = document.querySelector('.app').getBoundingClientRect(), vv = window.visualViewport;
   const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
-  if (!standalone || !window.screen) { app.style.bottom = ''; return; }
-  const land = innerWidth > innerHeight, full = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
-  const gap = full - innerHeight;
-  app.style.bottom = gap > 2 && gap < 140 ? -gap + 'px' : '';
+  const ios = (/OS (\d+[_\d]*)/.exec(navigator.userAgent) || [])[1];
+  el.textContent = `Screen ${screen.width}×${screen.height} · window ${innerWidth}×${innerHeight}`
+    + ` · page ${document.documentElement.clientHeight}${vv ? ` · visual ${Math.round(vv.height)}` : ''} · app ${Math.round(app.top)}–${Math.round(app.bottom)}`
+    + ` · safe areas top ${sa[0]} bottom ${sa[1]} · ${standalone ? 'Home Screen app' : 'browser'}${ios ? ' · iOS ' + ios.replace(/_/g, '.') : ''}`;
 }
-fixBottomGap(); window.addEventListener('resize', fixBottomGap); window.addEventListener('orientationchange', () => setTimeout(fixBottomGap, 300));
+window.addEventListener('resize', () => { if ($('view-boat').classList.contains('active')) paintScreenDiag(); });
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
   const tab = (v === 'maps' || v === 'fronts' || v === 'passage' || v === 'dash') ? 'weather' : v;
@@ -5813,7 +5820,7 @@ function showView(v) {
   $('viewName').textContent = VIEW_NAMES[v];
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
-  if (v === 'boat') { paintBoat(); loadFrameMode(); loadCam(); }
+  if (v === 'boat') { paintBoat(); loadFrameMode(); loadCam(); setTimeout(paintScreenDiag, 50); }
   else clearTimeout(CAM.timer);
   if (v === 'weather' || v === 'dash') { loadForecast(false); setTimeout(() => { fcPinSync(); if (v === 'dash' && FC) paintDash(); }, 30); }
   if (v === 'maps') openMaps();
