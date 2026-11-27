@@ -311,6 +311,17 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .fc-dirarr { display:inline-block; font-weight:700; }
 .fc-wrap.small tr.cat th.fc-lab .fc-cat { padding-right:14px; }
 .fc-wrap { touch-action:pan-x pan-y; }
+/* Date, hour and weather rows stay at the top of the screen while the table
+   scrolls under them. A copy of those rows, laid over the table; touches
+   pass through it to the table, except on the row names. */
+.fc-outer { position:relative; }
+.fc-pin { position:sticky; top:-16px; height:0;   /* -16px: the Weather page's own top padding */ z-index:6; margin:0 -16px; pointer-events:none; }
+.fc-pin-in { overflow:hidden; background:var(--surface); border-top:1px solid transparent; border-bottom:1px solid var(--line); box-shadow:0 4px 8px -6px rgba(20,33,45,.35); visibility:hidden; }
+.fc-pin.on .fc-pin-in { visibility:visible; }
+.fc-pin th.fc-lab { pointer-events:auto; }
+.fc-pinlab { display:flex; flex-direction:column; line-height:1.1; }
+.fc-pinlab b { font-size:max(11px, calc(var(--fcf,13.5px) * .96)); color:var(--accent); font-weight:600; }
+.fc-pinlab small { font-size:10px; color:var(--muted); }
 .fc-tools { display:flex; align-items:center; gap:6px; }
 .fc-zbtn { width:28px; height:28px; border-radius:50%; border:1px solid var(--line); background:var(--surface); color:var(--accent); font-size:17px; font-weight:600; line-height:1; letter-spacing:0; display:grid; place-items:center; }
 .fc-zbtn:disabled { opacity:.35; }
@@ -707,7 +718,10 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
         <div class="fc-models" id="fcModels"></div>
         <div class="seg" id="fcDays" style="width:120px;flex:none;"><button data-d="3" onclick="setFcDays(3)">3 d</button><button data-d="7" onclick="setFcDays(7)">7 d</button></div>
       </div>
-      <div class="fc-wrap" id="fcBox"></div>
+      <div class="fc-outer">
+        <div class="fc-pin" id="fcPin" aria-hidden="true"><div class="fc-pin-in" id="fcPinIn"></div></div>
+        <div class="fc-wrap" id="fcBox"></div>
+      </div>
       <p class="note" id="fcMeta" style="margin:8px 4px 0;"></p>
       <p class="note" style="margin:4px 4px 0;">Tap a model to make it the one shown in collapsed rows (marked by the coloured edge). Tap a row name to expand every model. Pinch the table, or use − and +, to zoom out and see more at once. Shaded hours are night.</p>
       <div class="section-title" id="wxTideTitle">Tides</div>
@@ -2204,7 +2218,7 @@ const FC_CATS = [
       : FCU.zoom < .72 ? { t: `<span class="fc-dirarr" style="transform:rotate(${Math.round(v)}deg)">↓</span>`, title: compass(v) + ' · ' + Math.round(v) + '°' }
       : { t: compass(v), title: Math.round(v) + '°' }; } },
   { id: 'rain', label: 'Rainfall', sub: 'mm/hr', cell: (h, i) => { const v = h.precipitation[i]; return { t: v && v >= .1 ? (v < 10 ? v.toFixed(1) : Math.round(v)) : '', bg: rainBg(v), fg: v >= 4 ? '#fff' : '' }; } },
-  { id: 'cape', label: 'CAPE', sub: 'J/kg · storms', cell: (h, i) => { const v = h.cape ? h.cape[i] : null; return { t: v && v >= 100 ? Math.round(v / 10) * 10 : '', bg: capeBg(v) }; } },
+  { id: 'cape', label: 'CAPE', sub: 'kJ/kg · storms', cell: (h, i) => { const v = h.cape ? h.cape[i] : null; return { t: v && v >= 100 ? (v / 1000).toFixed(1) : '', bg: capeBg(v), title: v ? Math.round(v) + ' J/kg' : '' }; } },
   { id: 'cloud', label: 'Cloud', sub: 'cover %', cell: (h, i) => { const v = h.cloud_cover[i]; return { t: v === null ? '' : Math.round(v / 10) * 10, bg: cloudBg(v), fg: '#1b2733' }; } },
   { id: 'temp', label: 'Temp', sub: '°F', cell: (h, i) => { const v = h.temperature_2m[i]; return { t: v === null ? '' : Math.round(v), bg: tempBg(v), fg: '#1b2733' }; } },
   { id: 'press', label: 'Pressure', sub: 'mb · 3h trend', cell: (h, i) => {
@@ -2231,7 +2245,7 @@ function paintForecast() {
     return `<button class="mchip ${FCU.primary === m.id ? 'on' : ''} ${off ? 'off' : ''}" style="--mbg:${m.bg};--mfg:${m.fg}" onclick="pickModel('${m.id}')" title="${esc(m.info)}">${m.label}</button>`;
   }).join('');
   document.querySelectorAll('#fcDays button').forEach(b => b.classList.toggle('on', +b.dataset.d === FCU.days));
-  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet. It updates every hour — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; paintDash(); return; }
+  if (!FC) { box.innerHTML = `<div class="note" style="padding:20px;text-align:center;">${fcLoading ? 'Loading forecasts…' : 'No forecast yet. It updates every hour — or tap ↻ Refresh.'}</div>`; meta.textContent = ''; if ($('fcPinIn')) $('fcPinIn').innerHTML = ''; fcPinCheck(); paintDash(); return; }
 
   // Columns: from the current hour at the boat, local time there.
   const nowLocal = new Date(Date.now() + (FC.off || 0) * 1000).toISOString().slice(0, 13) + ':00';
@@ -2289,6 +2303,12 @@ function paintForecast() {
     }
   }
   box.innerHTML = `<table class="fc">${head1}</tr>${head2}</tr>${body}</table>`;
+  // the frozen rows: date, hour, and the main model's weather
+  const pr = FC.models[primary], wxCat = FC_CATS.find(c => c.id === 'wx');
+  const pinWx = rowHtml(`<span class="fc-pinlab"><b>Weather</b><small>${pm ? esc(pm.label) : ''}</small></span>`,
+    i => pr && pr.ok && pr.h ? safeCell(wxCat, pr.h, i) : { t: '' }, 'cat');
+  const pinIn = $('fcPinIn'); if (pinIn) pinIn.innerHTML = `<table class="fc">${head1}</tr>${head2}</tr>${pinWx}</table>`;
+  fcPinSync();
   const failed = MODELS.filter(m => !FC.models[m.id] || !FC.models[m.id].ok).map(m => m.label);
   const tgt = forecastTarget();
   const moved = PL.loaded && haversine(tgt.lat, tgt.lon, FC.lat, FC.lon) > 5 * 1852;
@@ -2316,7 +2336,7 @@ function setFcDays(d) { FCU.days = d; saveFcu(); paintForecast(); }
 const FCZ_MIN = .42, FCZ_MAX = 1.25;
 function fcZoomVars(s) {
   return { '--fcw': Math.max(15, 38 * s).toFixed(1) + 'px', '--fch': Math.max(18, 32 * s).toFixed(1) + 'px',
-           '--fcf': Math.max(8, 13.5 * s).toFixed(1) + 'px', '--fcp': s < .7 ? '0px' : '2px',
+           '--fcf': Math.max(8, 13.5 * s).toFixed(1) + 'px', '--fcp': s < .7 ? '1px' : '2px',
            '--fcl': Math.round(Math.max(84, 104 * Math.min(1, s))) + 'px' };
 }
 function fcApplyZoom(s, ax) {
@@ -2337,7 +2357,38 @@ function fcApplyZoom(s, ax) {
   const zo = $('fcZout'), zi = $('fcZin');
   if (zo) zo.disabled = s <= FCZ_MIN + .001;
   if (zi) zi.disabled = s >= FCZ_MAX - .001;
+  fcPinSync();
 }
+// Give the frozen rows the table's exact column widths and scroll position.
+function fcPinSync() {
+  const box = $('fcBox'), inn = $('fcPinIn'); if (!box || !inn) return;
+  const src = box.querySelector('table.fc'), dst = inn.querySelector('table'), hr = src && src.querySelector('tr.fc-hr');
+  if (!src || !dst || !hr) return;
+  const ws = [...hr.children].map(c => c.getBoundingClientRect().width);
+  if (!ws.length || !ws[0]) return;                       // the Weather tab isn't showing
+  let cg = dst.querySelector('colgroup');
+  if (!cg) { cg = document.createElement('colgroup'); dst.prepend(cg); }
+  cg.innerHTML = ws.map(w => `<col style="width:${w.toFixed(2)}px">`).join('');
+  dst.style.tableLayout = 'fixed';
+  dst.style.width = src.getBoundingClientRect().width.toFixed(2) + 'px';
+  inn.scrollLeft = box.scrollLeft;
+  fcPinCheck();
+}
+// Show the frozen rows once the table's own header has scrolled off the
+// top, and hide them again as the end of the table goes by.
+function fcPinCheck() {
+  const pin = $('fcPin'), box = $('fcBox'), view = $('view-weather'), inn = $('fcPinIn');
+  if (!pin || !box || !view || !inn) return;
+  if (!view.classList.contains('active') || !inn.firstChild) { pin.classList.remove('on'); return; }
+  const vt = view.getBoundingClientRect().top, b = box.getBoundingClientRect();
+  pin.classList.toggle('on', b.top < vt - 1 && b.bottom > vt + inn.offsetHeight + 24);
+}
+(function fcPinWatch() {
+  const box = $('fcBox'), view = $('view-weather'); if (!box || !view) return;
+  let raf = 0;
+  box.addEventListener('scroll', () => { const inn = $('fcPinIn'); if (inn) inn.scrollLeft = box.scrollLeft; }, { passive: true });
+  view.addEventListener('scroll', () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; fcPinCheck(); }); }, { passive: true });
+})();
 function fcZoomStep(dir) { fcApplyZoom(FCU.zoom * (dir > 0 ? 1.3 : 1 / 1.3)); }
 (function fcPinch() {
   const box = $('fcBox'); if (!box) return;
@@ -2606,7 +2657,7 @@ function dashGraph(S, idx, today, w) {
   return svg + '</svg><div class="dash-key"><span><i></i>Wind</span><span><i class="g"></i>Gusts</span><span>knots · arrows show where it blows</span></div>';
 }
 let dashResizeT;
-window.addEventListener('resize', () => { clearTimeout(dashResizeT); dashResizeT = setTimeout(() => { if ($('view-weather').classList.contains('active')) paintDash(); }, 200); });
+window.addEventListener('resize', () => { clearTimeout(dashResizeT); dashResizeT = setTimeout(() => { if ($('view-weather').classList.contains('active')) { paintDash(); fcPinSync(); } }, 200); });
 
 
 // ═══ WEATHER MAPS (split-screen model comparison) ══════════════════
@@ -2615,7 +2666,10 @@ window.addEventListener('resize', () => { clearTimeout(dashResizeT); dashResizeT
 // are stacked and kept in step; the right one is clipped to the right of a
 // draggable divider, so each side can show its own model and layer.
 const WM_STOPS = {
-  wind: [[0, '#5b4ea8'], [5, '#3f7fd6'], [10, '#36b7c9'], [14, '#4fd05a'], [18, '#e6e33a'], [22, '#f39a2e'], [27, '#e0392e'], [33, '#b3246e'], [42, '#6b1a5e']],
+  // PredictWind's map scale: violet-blue when light, green at 10, yellow at 15,
+  // orange at 20, then reds to maroon, grey at 50
+  wind: [[0, '#6b2bc4'], [5, '#4a3fe3'], [8, '#3477e0'], [10, '#3cb46e'], [12, '#69c84a'], [15, '#cde042'], [18, '#f1d33b'],
+         [20, '#f6a43a'], [25, '#ee5a2d'], [30, '#d22a26'], [35, '#a3171f'], [40, '#7a1020'], [45, '#561020'], [50, '#707070']],
   cape: [[0, '#ffffff00'], [100, '#fff3a0'], [500, '#f7c948'], [1000, '#f39a2e'], [2000, '#e0392e'], [3500, '#9b2aa0']],
   wave: [[0, '#3d58b5'], [1, '#3f7fd6'], [2, '#36b7c9'], [4, '#4fd05a'], [6, '#e6e33a'], [9, '#f39a2e'], [13, '#e0392e'], [20, '#9b2aa0']],
   current: [[0, '#3d58b5'], [.3, '#3f7fd6'], [.6, '#36b7c9'], [1, '#4fd05a'], [1.5, '#e6e33a'], [2.5, '#f39a2e'], [4, '#e0392e']],
@@ -2637,7 +2691,7 @@ const WM_LAYERS = [
   { id: 'temp', label: 'Air Temp', ico: '🌡', key: 'ta', unit: '°F', stops: 'temp' },
   { id: 'sst', label: 'Sea Temp', ico: '🌊', key: 'st', unit: '°F', stops: 'temp', marine: true }
 ];
-const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5, opacity: .6 };
+const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5, opacity: .85 };
 function wmPrefsFromCfg(c) {
   const side = (v, d) => { const [m, l] = str(v).split('|'); if (MODELS.some(x => x.id === m)) d.model = m; if (WM_LAYERS.some(x => x.id === l)) d.layer = l; };
   if (c.wmA) side(c.wmA, WMP.a);
@@ -2645,10 +2699,10 @@ function wmPrefsFromCfg(c) {
   if (c.wmSplit !== undefined) WMP.split = bool(c.wmSplit);
   if (c.wmFlow !== undefined) WMP.flow = bool(c.wmFlow);
   if (c.wmSpeed !== undefined) WMP.speed = num(c.wmSpeed) || .5;
-  if (c.wmOpacity !== undefined) WMP.opacity = num(c.wmOpacity) || .6;
+  if (c.wmAlpha !== undefined) WMP.opacity = num(c.wmAlpha) || .85;   // (wmOpacity, the old 60% default, is no longer read)
 }
 function wmSavePrefs() {
-  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed), wmOpacity: fD(WMP.opacity) });
+  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed), wmAlpha: fD(WMP.opacity) });
 }
 
 // ─── colour helpers ─────────────────────────────────────────────
