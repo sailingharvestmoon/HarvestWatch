@@ -2885,6 +2885,11 @@ function initMaps() {
     field.className = 'wm-cv'; flow.className = 'wm-cv';
     const fp = map.createPane('wmField'); fp.style.zIndex = 350; fp.style.pointerEvents = 'none'; fp.appendChild(field);
     const pp = map.createPane('wmFlow'); pp.style.zIndex = 360; pp.style.pointerEvents = 'none'; pp.appendChild(flow);
+    // Town and place names over the colours, as PredictWind shows them:
+    // CARTO's labels-only tiles (dark text, white halo; more names as you zoom in).
+    const lp = map.createPane('wmLabels'); lp.style.zIndex = 370; lp.style.pointerEvents = 'none';
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
+      { pane: 'wmLabels', subdomains: 'abcd', maxZoom: 19 }).addTo(map);
     const side = { k, map, field, flow, fctx: field.getContext('2d'), pctx: flow.getContext('2d'), parts: [], boat: null, box: null };
     WM.sides.push(side);
     map.on('move', () => { wmSync(side); wmQueueDraw(); });
@@ -3093,7 +3098,8 @@ function wmDrawSide(s, cfg, resetParticles) {
 // ─── Coastlines over the map colours, as PredictWind draws them ────
 // From land.png (Natural Earth, 1 nm cells, already part of the app):
 // marching squares on the land/sea grid for the area on screen, thinned
-// out when zoomed out so it stays quick. Thin dark lines, no land fill.
+// out when zoomed out so it stays quick, rounded off when zoomed in so the
+// 1 nm cells don't show as steps. Thin dark lines, no land fill.
 const WMC = { bits: null, w: 0, h: 0, p: null };
 function wmCoastLoad() {
   if (!WMC.p) WMC.p = pxLandImg().then(img => {
@@ -3131,14 +3137,26 @@ function wmCoast(s, ctx) {
   for (let i = i0; i <= i1; i += st) X.push(xOf(-100 + (i + .5) / 60));
   for (let j = j0; j <= j1; j += st) Y.push(yOf(5 + (j + .5) / 60));
   ctx.save();
-  ctx.strokeStyle = 'rgba(14,22,30,.78)'; ctx.lineWidth = 1.1; ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(14,22,30,.78)'; ctx.lineWidth = 1.1; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   ctx.beginPath();
+  // Zoomed in, the 1 nm cells would show as steps: join the pieces into
+  // lines and round them off. Zoomed out, the pieces are drawn as they are.
+  const smooth = ppc * st >= 3;
+  // Each piece joins two cell-edge crossings. A crossing's id: 2*(r*NX+q),
+  // +1 for an edge along a row (S/N), +0 for one along a column (W/E).
+  const NX = X.length + 1, links = smooth ? new Map() : null;
+  const link = (a, b) => { const la = links.get(a); la ? la.push(b) : links.set(a, [b]); const lb = links.get(b); lb ? lb.push(a) : links.set(b, [a]); };
   for (let r = 0; r < Y.length - 1; r++) {
     const j = j0 + r * st, ja = j * w, jb = Math.min(h - 1, j + st) * w, ya = Y[r], yb = Y[r + 1], ym = (ya + yb) / 2;
     for (let q = 0; q < X.length - 1; q++) {
       const i = i0 + q * st, i2 = Math.min(w - 1, i + st);
       const code = (B[ja + i] << 3) | (B[ja + i2] << 2) | (B[jb + i2] << 1) | B[jb + i];
       const sg = WMC_SEG[code]; if (!sg) continue;
+      if (smooth) {
+        const id = e => e === 'W' ? 2 * (r * NX + q) : e === 'E' ? 2 * (r * NX + q + 1) : e === 'S' ? 2 * (r * NX + q) + 1 : 2 * ((r + 1) * NX + q) + 1;
+        for (let k = 0; k < sg.length; k += 2) link(id(sg[k]), id(sg[k + 1]));
+        continue;
+      }
       const xa = X[q], xb = X[q + 1], xm = (xa + xb) / 2;
       for (let k = 0; k < sg.length; k += 2) {
         const pt = e => e === 'W' ? [xa, ym] : e === 'E' ? [xb, ym] : e === 'S' ? [xm, ya] : [xm, yb];
@@ -3147,7 +3165,52 @@ function wmCoast(s, ctx) {
       }
     }
   }
+  if (smooth) wmCoastLines(ctx, links, NX, X, Y, ppc * st >= 12 ? 3 : 2);
   ctx.stroke(); ctx.restore();
+}
+// Walks the joined pieces into lines (open ones from their ends first, then
+// closed loops: islands) and draws each rounded off by Chaikin's corner
+// cutting, which turns the staircase of whole cells into smooth curves.
+function wmCoastLines(ctx, links, NX, X, Y, passes) {
+  const xy = id => {
+    const n = id >> 1, r = Math.floor(n / NX), q = n % NX;
+    return id & 1 ? [(X[q] + X[q + 1]) / 2, Y[r]] : [X[q], (Y[r] + Y[r + 1]) / 2];
+  };
+  const seen = new Set();
+  const walk = (start, closed) => {
+    const pts = [xy(start)]; seen.add(start);
+    let prev = -1, cur = start;
+    for (;;) {
+      const nb = links.get(cur), next = nb.find(v => v !== prev && !seen.has(v));
+      if (next === undefined) break;
+      seen.add(next); pts.push(xy(next)); prev = cur; cur = next;
+    }
+    let P = pts;
+    // First even out the one-cell jogs (each point moved toward its
+    // neighbours), on lines long enough that islands keep their size.
+    if (P.length >= 10) for (let k = 0; k < 2; k++) {
+      const n = P.length, Q = P.slice();
+      for (let i = closed ? 0 : 1; i < (closed ? n : n - 1); i++) {
+        const a = P[(i - 1 + n) % n], b = P[i], c = P[(i + 1) % n];
+        Q[i] = [(a[0] + 2 * b[0] + c[0]) / 4, (a[1] + 2 * b[1] + c[1]) / 4];
+      }
+      P = Q;
+    }
+    for (let k = 0; k < passes && P.length > 2; k++) {
+      const Q = closed ? [] : [P[0]], n = P.length;
+      for (let i = 0; i < (closed ? n : n - 1); i++) {
+        const a = P[i], b = P[(i + 1) % n];
+        Q.push([a[0] * .75 + b[0] * .25, a[1] * .75 + b[1] * .25], [a[0] * .25 + b[0] * .75, a[1] * .25 + b[1] * .75]);
+      }
+      if (!closed) Q.push(P[n - 1]);
+      P = Q;
+    }
+    ctx.moveTo(P[0][0], P[0][1]);
+    for (let i = 1; i < P.length; i++) ctx.lineTo(P[i][0], P[i][1]);
+    if (closed) ctx.closePath();
+  };
+  for (const [id, nb] of links) if (nb.length === 1 && !seen.has(id)) walk(id, false);   // lines running off the screen
+  for (const id of links.keys()) if (!seen.has(id)) walk(id, true);                      // islands and lakes
 }
 // Isobars: marching squares over the screen-sampled pressure field.
 function wmContours(ctx, vals, cw, ch, B) {
