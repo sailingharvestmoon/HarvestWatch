@@ -377,12 +377,26 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-wrap { position:absolute; left:0; top:0; width:100%; height:100%; overflow:hidden; }
 .wm-map { position:absolute; inset:0; background:#9fb7c9; }
 .wm-cv { position:absolute; left:0; top:0; }
-.wm-top { position:absolute; top:10px; left:0; right:0; z-index:800; pointer-events:none; }
-.wm-top .seg { pointer-events:auto; box-shadow:var(--shadow); background:var(--surface); }
-.wm-side { position:absolute; top:58px; left:10px; z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:999px; padding:6px 12px 6px 6px; font-size:13px; font-weight:600; box-shadow:var(--shadow); display:flex; align-items:center; gap:6px; max-width:46%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.wm-side.r { left:auto; right:10px; }
-.wm-split { position:absolute; right:10px; bottom:54px; z-index:800; }
-.wm-zoom { position:absolute; right:10px; bottom:108px; z-index:800; display:flex; flex-direction:column; gap:8px; }
+/* ─── Maps view, laid out like PredictWind: full-screen map, see-through
+   controls floating on it (tinted by the map under them) ─── */
+body.full-map .appbar { position:absolute; left:0; right:0; top:0; height:0; padding:0; border:0; background:none; overflow:visible; }
+body.full-map .appbar > :not(.alarm-banner) { display:none; }
+body.full-map .alarm-banner { top:env(safe-area-inset-top); }
+.glass { background:rgba(22,32,46,.42); -webkit-backdrop-filter:blur(18px) saturate(160%); backdrop-filter:blur(18px) saturate(160%); color:#fff; }
+.wm-tl { position:absolute; left:12px; top:calc(env(safe-area-inset-top) + 8px); z-index:810; display:flex; flex-direction:column; gap:12px; }
+.wm-round { width:52px; height:52px; border-radius:50%; display:grid; place-items:center; box-shadow:0 2px 10px rgba(0,0,0,.18); }
+.wm-round svg { width:24px; height:24px; }
+.wm-round.on { background:rgba(255,255,255,.92); color:#14212d; }
+.wm-title { position:absolute; left:50%; top:calc(env(safe-area-inset-top) + 18px); transform:translateX(-50%); z-index:805; color:#fff; font-size:20px; font-weight:600; text-shadow:0 1px 4px rgba(0,0,0,.45); display:flex; align-items:center; gap:8px; white-space:nowrap; max-width:calc(100% - 170px); }
+.wm-title span { overflow:hidden; text-overflow:ellipsis; }
+.wm-title svg { width:14px; height:14px; flex:none; }
+.wm-side { position:absolute; top:calc(env(safe-area-inset-top) + 8px); right:10px; z-index:810; width:54px; padding:12px 0 12px; border-radius:27px; display:flex; flex-direction:column; align-items:center; gap:6px; font-size:11px; font-weight:600; line-height:1.15; text-align:center; box-shadow:0 2px 10px rgba(0,0,0,.18); }
+.wm-side svg { width:26px; height:26px; }
+.wm-side .ly { font-size:20px; line-height:1; opacity:.9; }
+.wm-side .nt { font-size:9.5px; font-weight:500; opacity:.85; padding:0 3px; }
+.wm-tools { position:absolute; right:12px; top:calc(env(safe-area-inset-top) + 190px); z-index:800; display:flex; flex-direction:column; gap:10px; }
+#view-maps .wm-tools .fab { width:44px; height:44px; border-radius:50%; border:0; box-shadow:0 2px 10px rgba(0,0,0,.18); color:#fff; background:rgba(22,32,46,.42); -webkit-backdrop-filter:blur(18px); backdrop-filter:blur(18px); }
+#view-maps .wm-tools .fab.on { background:rgba(255,255,255,.92); color:#14212d; }
 .wm-divider { position:absolute; top:0; bottom:0; width:0; z-index:790; }
 .wm-divider::before { content:''; position:absolute; top:0; bottom:0; left:-1.5px; width:3px; background:#fff; box-shadow:0 0 6px rgba(0,0,0,.5); }
 .wm-divider.h { left:0; right:0; width:auto; height:0; }
@@ -390,12 +404,66 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-divider.h span { top:-20px; left:50%; margin:0 0 0 -20px; cursor:ns-resize; transform:rotate(90deg); }
 .wm-divider span { position:absolute; top:50%; left:-20px; width:40px; height:40px; margin-top:-20px; border-radius:50%; background:#fff; color:#14212d; display:grid; place-items:center; font-weight:800; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.4); cursor:ew-resize; touch-action:none; }
 .wm-divider { touch-action:none; }
-.wm-leg { position:absolute; left:10px; bottom:10px; z-index:800; background:color-mix(in srgb, var(--surface) 90%, transparent); border-radius:8px; padding:5px 8px 4px; font-size:10.5px; color:var(--ink); display:grid; grid-template-columns:auto auto auto; gap:0 14px; box-shadow:var(--shadow); max-width:44%; }
-.wm-leg i { grid-column:1/-1; height:7px; border-radius:4px; margin-bottom:3px; min-width:120px; }
-.wm-leg span:nth-of-type(2) { text-align:center; } .wm-leg span:nth-of-type(3) { text-align:right; }
-.wm-leg.r { left:auto; right:64px; }
-.wm-timebar { display:flex; gap:10px; align-items:center; padding:8px 12px 10px; background:var(--surface); border-top:1px solid var(--line); }
-.wm-timebar .fab { box-shadow:none; flex:none; font-size:15px; }
+/* legend: a full-width strip of colour blocks along the bottom of each map */
+.wm-leg { position:absolute; left:0; bottom:0; width:100%; height:30px; z-index:800; display:flex; font-size:15px; font-weight:500; color:#fff; font-variant-numeric:tabular-nums; }
+.wm-leg b { flex:1; display:flex; align-items:center; justify-content:center; font-weight:500; text-shadow:0 0 3px rgba(0,0,0,.35); min-width:0; overflow:hidden; }
+.wm-leg b.dk { color:#14212d; text-shadow:none; }
+.wm-leg em { flex:none; width:11%; min-width:42px; background:#5d6670; display:flex; align-items:center; justify-content:flex-end; padding-right:10px; font-style:normal; }
+.wm-leg .iso { flex:1; background:#4c5866; justify-content:flex-start; padding-left:12px; display:flex; align-items:center; }
+/* time: ▶ and a strip of days dragged under a fixed centre line */
+.wm-timebar { position:absolute; left:0; right:0; bottom:30px; height:62px; z-index:805; border-top:1px solid rgba(255,255,255,.12); }
+.wm-strip { position:absolute; inset:0; overflow:hidden; touch-action:none; cursor:grab; }
+.wm-track { position:absolute; top:0; bottom:0; left:0; will-change:transform; }
+.wm-track.ease { transition:transform .35s ease; }
+.wm-day { position:absolute; top:0; bottom:0; border-left:1px solid rgba(255,255,255,.16); color:rgba(255,255,255,.9); font-size:19px; padding:16px 0 0 14px; white-space:nowrap; overflow:hidden; }
+.wm-day.alt { background:rgba(255,255,255,.07); }
+.wm-day.past { color:rgba(255,255,255,.5); }
+.wm-now { position:absolute; top:4px; bottom:4px; width:0; border-left:2px dashed rgba(255,255,255,.55); }
+.wm-cursor { position:absolute; left:50%; top:0; bottom:0; width:2px; margin-left:-1px; background:rgba(255,255,255,.75); pointer-events:none; }
+.wm-play { position:absolute; left:0; top:0; bottom:0; width:66px; display:grid; place-items:center; z-index:2; background:linear-gradient(90deg, rgba(22,32,46,.35) 60%, transparent); }
+.wm-play svg { width:30px; height:30px; filter:drop-shadow(0 1px 2px rgba(0,0,0,.3)); }
+.wm-bubble { position:absolute; left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); padding:8px 16px; border-radius:20px; font-size:19px; font-weight:500; font-variant-numeric:tabular-nums; white-space:nowrap; pointer-events:none; box-shadow:0 2px 10px rgba(0,0,0,.18); }
+.wm-bubble::after { content:''; position:absolute; left:50%; top:100%; margin-left:-7px; border:7px solid transparent; border-top-color:rgba(22,32,46,.42); }
+.wm-bubble small { font-size:12px; opacity:.8; margin-left:6px; }
+/* Forecast Options: a see-through card over the map it belongs to */
+.wm-panel { position:absolute; z-index:900; border-radius:30px; padding:22px 16px 18px; overflow-y:auto; -webkit-overflow-scrolling:touch; display:none; box-shadow:0 6px 30px rgba(0,0,0,.25); background:rgba(22,32,46,.62); }
+.wm-panel.open { display:block; }
+.wm-panel h3 { font-size:24px; font-weight:700; margin:2px 44px 14px 0; letter-spacing:-.01em; white-space:nowrap; }
+.wm-panel .x { position:absolute; right:16px; top:18px; width:40px; height:40px; border-radius:50%; background:rgba(255,255,255,.14); display:grid; place-items:center; }
+.wm-panel .x svg { width:18px; height:18px; }
+.wm-panel .wm-h { color:rgba(255,255,255,.68); font-size:17px; letter-spacing:0; text-transform:none; margin:16px 0 12px; font-weight:500; }
+.wm-panel .wm-h small { font-size:12px; display:block; margin-top:3px; }
+.wm-panel .wm-grid { gap:12px 14px; margin-bottom:6px; }
+.wm-panel .wm-opt { background:rgba(255,255,255,.12); border:0; color:#fff; font-weight:500; font-size:15px; padding:11px 6px; min-height:46px; white-space:nowrap; overflow:hidden; gap:6px; }
+.wm-panel .wm-opt span { opacity:.85; font-size:17px; }
+.wm-panel .wm-opt.on { background:#fff; color:#14212d; }
+.wm-panel .wm-opt:disabled { opacity:.3; }
+.wm-panel .tg { display:flex; align-items:center; justify-content:space-between; padding:12px 0; font-size:17px; color:rgba(255,255,255,.85); }
+.wm-panel .tg small { display:block; font-size:12px; color:rgba(255,255,255,.6); }
+.wm-panel input[type=range] { width:100%; accent-color:#4a8ff0; }
+.wm-panel .seg { background:rgba(255,255,255,.1); border:0; }
+.wm-panel .seg button { color:rgba(255,255,255,.75); }
+.wm-panel .seg button.on { background:#fff; color:#14212d; }
+.wm-panel .switch input:checked + span { background:#3b82f6; }
+/* the weather menu (☰) */
+.wm-menu { position:absolute; left:12px; top:calc(env(safe-area-inset-top) + 68px); z-index:910; border-radius:22px; padding:8px 0; min-width:230px; display:none; box-shadow:0 6px 30px rgba(0,0,0,.25); background:rgba(22,32,46,.66); }
+.wm-menu.open { display:block; }
+.wm-menu button { display:flex; align-items:center; gap:14px; width:100%; padding:13px 20px; font-size:17px; text-align:left; }
+.wm-menu button.on { font-weight:700; }
+.wm-menu button svg { width:22px; height:22px; flex:none; opacity:.9; }
+/* tap read-out: a cross-hair and a dark card beside it */
+.wm-tap { position:relative; }
+.wm-tap .xh { position:absolute; left:-13px; top:-13px; width:26px; height:26px; }
+.wm-tap .card { position:absolute; left:26px; top:-56px; min-width:178px; padding:12px 50px 12px 16px; border-radius:22px; font-size:17px; line-height:1.55; white-space:nowrap; box-shadow:0 4px 18px rgba(0,0,0,.25); background:rgba(22,32,46,.66); }
+.wm-tap.left .card { left:auto; right:26px; }
+.wm-tap .card .r { display:flex; align-items:center; gap:10px; font-weight:600; }
+.wm-tap .card .r i { width:22px; display:grid; place-items:center; font-style:normal; }
+.wm-tap .card .r svg { width:20px; height:20px; }
+.wm-tap .card .ll { color:rgba(255,255,255,.72); font-size:15.5px; margin-top:4px; line-height:1.45; font-variant-numeric:tabular-nums; }
+.wm-tap .card .m { color:rgba(255,255,255,.65); font-size:12.5px; font-weight:500; margin-bottom:2px; }
+.wm-tap .card .x { position:absolute; right:10px; top:10px; width:34px; height:34px; border-radius:50%; background:rgba(255,255,255,.14); display:grid; place-items:center; }
+.wm-tap .card .x svg { width:15px; height:15px; }
+.leaflet-marker-icon.wm-tap-icon { background:none; border:0; }
 .wm-h { font-size:12px; color:var(--muted); letter-spacing:.06em; text-transform:uppercase; margin:6px 2px 8px; }
 .wm-h small { text-transform:none; letter-spacing:0; }
 .wm-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }
@@ -403,18 +471,16 @@ tr.cat th.fc-lab .fc-cat { padding-right:52px; }
 .wm-opt span { opacity:.7; }
 .wm-opt.on { background:var(--ink); color:var(--bg); border-color:var(--ink); }
 .wm-opt:disabled { opacity:.35; }
-#wmOpt { max-height:80%; z-index:900; }
 .wm-pop .leaflet-popup-content { margin:8px 10px; font-size:13px; }
 
-.wm-status { position:absolute; left:50%; top:112px; transform:translateX(-50%); z-index:800; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; display:none; white-space:nowrap; box-shadow:var(--shadow); }
+.wm-status { position:absolute; left:50%; top:calc(env(safe-area-inset-top) + 76px); transform:translateX(-50%); z-index:800; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; display:none; white-space:nowrap; box-shadow:var(--shadow); }
 .wm-status.show { display:block; }
 /* distance & bearing ruler on the Maps view */
-.wm-meas-btn { position:absolute; right:10px; bottom:212px; z-index:800; }
-.wm-meas { position:absolute; left:50%; top:104px; transform:translateX(-50%); z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:7px 14px; box-shadow:var(--shadow); text-align:center; display:none; pointer-events:none; max-width:calc(100% - 24px); }
+.wm-meas { position:absolute; left:50%; top:calc(env(safe-area-inset-top) + 70px); transform:translateX(-50%); z-index:800; background:var(--surface); color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:7px 14px; box-shadow:var(--shadow); text-align:center; display:none; pointer-events:none; max-width:calc(100% - 24px); }
 .wm-meas.show { display:block; }
 .wm-meas b { font-size:17px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .wm-meas small { display:block; font-size:12px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.wm-stage.measuring .wm-status { top:170px; }
+.wm-stage.measuring .wm-status { top:calc(env(safe-area-inset-top) + 136px); }
 /* offline weather copy */
 .off-pill { margin:0 auto 10px; width:fit-content; max-width:100%; background:var(--ink); color:var(--bg); font-size:12.5px; font-weight:600; padding:6px 12px; border-radius:999px; text-align:center; }
 .off-bar { height:6px; border-radius:3px; background:var(--surface2); border:1px solid var(--line); overflow:hidden; margin:10px 0 6px; }
@@ -740,25 +806,33 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
         <div class="wm-wrap" id="wmWrapB"><div class="wm-map" id="wmMapB"></div></div>
         <div class="wm-divider" id="wmDivider" style="display:none"><span>‹ ›</span></div>
         <div class="wm-status" id="wmStatus"></div>
-        <div class="wm-top"><div class="wm-toprow"><div class="seg wxmode"><button onclick="showView('weather')">Table</button><button class="on">Maps</button><button onclick="showView('fronts')">Fronts</button><button onclick="showView('passage')">Passage</button></div><button class="loc-chip" onclick="openLoc()">📍 Boat position ▾</button></div></div>
-        <button class="wm-side" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
-        <button class="wm-side r" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
-        <div class="wm-zoom"><button class="fab" onclick="WM.sides[0].map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="fab" onclick="WM.sides[0].map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></div>
-        <button class="fab wm-split" id="wmSplitBtn" onclick="wmSetSplit(!WMP.split)" title="Split screen" aria-label="Split screen">
-          <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
-        <button class="fab wm-meas-btn" id="wmMeasBtn" onclick="measToggle()" title="Distance and bearing" aria-label="Distance and bearing">
-          <svg viewBox="0 0 24 24"><path d="M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2.5 3"/><circle cx="5" cy="19" r="2.4" fill="currentColor"/><circle cx="19" cy="5" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        <div class="wm-tl">
+          <button class="wm-round glass" onclick="wmMenu()" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="wm-round glass" id="wmSplitBtn" onclick="wmSetSplit(!WMP.split)" aria-label="Split screen"><svg viewBox="0 0 24 24"><rect x="6" y="3.5" width="12" height="17" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 12h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+        <button class="wm-title loc-title" onclick="openLoc()"><span>Boat position</span><svg viewBox="0 0 14 14"><path d="M2 4.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <div class="wm-menu glass" id="wmMenu">
+          <button onclick="wmMenuGo('weather')"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M3.5 14.5h17M9 4.5v15" stroke="currentColor" stroke-width="1.8"/></svg>Forecast &amp; tables</button>
+          <button class="on" onclick="wmMenuGo('maps')"><svg viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Weather maps</button>
+          <button onclick="wmMenuGo('fronts')"><svg viewBox="0 0 24 24"><path d="M4 18a9 9 0 0 1 9-9M8 18a5 5 0 0 1 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15 6l3 3-3 3M17 13l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Fronts</button>
+          <button onclick="wmMenuGo('passage')"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 17c5-1 2-8 8-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.5 2.5"/></svg>Passage</button>
+        </div>
+        <button class="wm-side glass" id="wmBtnA" onclick="wmOpenOptions(0)"></button>
+        <button class="wm-side glass" id="wmBtnB" onclick="wmOpenOptions(1)" style="display:none"></button>
+        <div class="wm-tools">
+          <button class="fab" onclick="WM.sides[0].map.zoomIn()" aria-label="Zoom in"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="fab" onclick="WM.sides[0].map.zoomOut()" aria-label="Zoom out"><svg viewBox="0 0 24 24"><path d="M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+          <button class="fab" id="wmMeasBtn" onclick="measToggle()" title="Distance and bearing" aria-label="Distance and bearing">
+            <svg viewBox="0 0 24 24"><path d="M6 18L18 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="2.5 3"/><circle cx="5" cy="19" r="2.4" fill="currentColor"/><circle cx="19" cy="5" r="2.8" fill="none" stroke="currentColor" stroke-width="2"/></svg></button>
+        </div>
         <div class="wm-meas" id="wmMeas"></div>
-        <div class="wm-leg" id="wmLegA"></div><div class="wm-leg r" id="wmLegB" style="display:none"></div>
-      </div>
-      <div class="wm-timebar">
-        <button class="fab" id="wmPlay" onclick="wmTogglePlay()" aria-label="Play">▶</button>
-        <div style="flex:1;min-width:0;"><input type="range" id="wmTime" min="0" max="0" value="0"><div class="note num" id="wmTimeLbl" style="margin-top:4px;"></div></div>
-      </div>
-      <div class="sheet" id="wmOpt">
-        <div class="grab"></div>
-        <div class="sheet-head"><b id="wmOptTitle">Map</b><button class="x-btn" onclick="$('wmOpt').classList.remove('open')" aria-label="Close">✕</button></div>
-        <div class="sheet-body" id="wmOptBody"></div>
+        <div class="wm-leg" id="wmLegA"></div><div class="wm-leg" id="wmLegB" style="display:none"></div>
+        <div class="wm-timebar glass" id="wmTimeBar">
+          <div class="wm-strip" id="wmStrip"><div class="wm-track" id="wmTrack"></div><div class="wm-cursor"></div></div>
+          <button class="wm-play" id="wmPlay" onclick="wmTogglePlay()" aria-label="Play"><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z" fill="#fff"/></svg></button>
+          <div class="wm-bubble glass" id="wmBubble"></div>
+        </div>
+        <div class="wm-panel glass" id="wmOpt"><button class="x" onclick="wmCloseOptions()" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button><div id="wmOptBody"></div></div>
       </div>
     </section>
 
@@ -2691,18 +2765,19 @@ const WM_LAYERS = [
   { id: 'temp', label: 'Air Temp', ico: '🌡', key: 'ta', unit: '°F', stops: 'temp' },
   { id: 'sst', label: 'Sea Temp', ico: '🌊', key: 'st', unit: '°F', stops: 'temp', marine: true }
 ];
-const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5, opacity: .85 };
+const WMP = { a: { model: 'gfs', layer: 'wind' }, b: { model: 'ecmwf', layer: 'wind' }, split: false, flow: true, speed: .5, opacity: .85, iso: true };
 function wmPrefsFromCfg(c) {
   const side = (v, d) => { const [m, l] = str(v).split('|'); if (MODELS.some(x => x.id === m)) d.model = m; if (WM_LAYERS.some(x => x.id === l)) d.layer = l; };
   if (c.wmA) side(c.wmA, WMP.a);
   if (c.wmB) side(c.wmB, WMP.b);
   if (c.wmSplit !== undefined) WMP.split = bool(c.wmSplit);
   if (c.wmFlow !== undefined) WMP.flow = bool(c.wmFlow);
+  if (c.wmIso !== undefined) WMP.iso = bool(c.wmIso);
   if (c.wmSpeed !== undefined) WMP.speed = num(c.wmSpeed) || .5;
   if (c.wmAlpha !== undefined) WMP.opacity = num(c.wmAlpha) || .85;   // (wmOpacity, the old 60% default, is no longer read)
 }
 function wmSavePrefs() {
-  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmSpeed: fD(WMP.speed), wmAlpha: fD(WMP.opacity) });
+  writeAlarms({ wmA: fS(WMP.a.model + '|' + WMP.a.layer), wmB: fS(WMP.b.model + '|' + WMP.b.layer), wmSplit: fB(WMP.split), wmFlow: fB(WMP.flow), wmIso: fB(WMP.iso), wmSpeed: fD(WMP.speed), wmAlpha: fD(WMP.opacity) });
 }
 
 // ─── colour helpers ─────────────────────────────────────────────
@@ -2917,7 +2992,8 @@ function initMaps() {
     if (!dq) { dq = true; requestAnimationFrame(() => { dq = false; wmLayout(); }); }
   });
   div.addEventListener('pointerup', () => { dragging = false; });
-  $('wmTime').addEventListener('input', e => { WM.ti = +e.target.value; wmPaintTime(); wmDrawAll(true); });
+  wmStripInit();
+  WM.sides.forEach(s => s.map.on('click', () => { wmCloseOptions(); $('wmMenu').classList.remove('open'); }));
 
 }
 function wmSync(src) {
@@ -2960,20 +3036,24 @@ function wmLayout() {
   B.clipPath = 'none';
   B.display = sp ? '' : 'none';
   D.style.display = sp ? '' : 'none';
-  const bB = $('wmBtnB').style, lA = $('wmLegA').style, lB = $('wmLegB').style;
+  // Each map gets its own layer pill (top right) and legend strip (bottom);
+  // the time bar sits above the bottom legend.
+  const bA = $('wmBtnA').style, bB = $('wmBtnB').style, lA = $('wmLegA').style, lB = $('wmLegB').style, tb = $('wmTimeBar').style;
   bB.display = sp ? '' : 'none'; lB.display = sp ? '' : 'none';
-  $('wmBtnB').classList.remove('r'); $('wmLegB').classList.remove('r');
+  Object.assign(bA, { right: '10px', top: '' }); Object.assign(lA, { left: '0px', width: '100%', top: '', bottom: '0px' });
+  Object.assign(tb, { left: '0px', right: '0px' });
   if (sp && tall) {
-    Object.assign(bB, { top: px(WM.divY + 10), left: '10px', right: 'auto' });
-    Object.assign(lA, { top: px(WM.divY - 46), bottom: 'auto' });
-    Object.assign(lB, { left: '10px', right: 'auto', bottom: '10px', top: 'auto' });
+    Object.assign(bB, { right: '10px', top: px(WM.divY + 10) });
+    Object.assign(lA, { top: px(WM.divY - 30), bottom: 'auto' });
+    Object.assign(lB, { left: '0px', width: '100%', top: '', bottom: '0px' });
   } else if (sp) {
-    Object.assign(bB, { top: '', left: px(WM.divX + 10), right: 'auto' });
-    Object.assign(lA, { top: '', bottom: '' });
-    Object.assign(lB, { left: px(WM.divX + 10), right: 'auto', bottom: '10px', top: 'auto' });
-  } else {
-    Object.assign(lA, { top: '', bottom: '' });
+    Object.assign(bA, { right: px(r.width - WM.divX + 10) });
+    Object.assign(bB, { right: '10px', top: '' });
+    Object.assign(lA, { width: px(WM.divX) });
+    Object.assign(lB, { left: px(WM.divX), width: px(r.width - WM.divX), top: '', bottom: '0px' });
   }
+  if ($('wmOpt').classList.contains('open')) wmPlacePanel();
+  wmBuildTrack();
   $('wmSplitBtn').classList.toggle('on', WMP.split);
   WM.sides.forEach(s => {
     const c = s.map.getContainer(), w = c.clientWidth, hh = c.clientHeight;
@@ -2998,36 +3078,132 @@ async function wmRefreshData() {
   const nowS = Date.now() / 1000;
   let ti = prevT ? WM.steps.findIndex(t => t >= prevT) : WM.steps.findIndex(t => t >= nowS - 5400);
   WM.ti = Math.max(0, ti);
-  $('wmTime').max = Math.max(0, WM.steps.length - 1); $('wmTime').value = WM.ti;
-  wmPaintTime(); wmPaintButtons(); wmDrawAll(true); wmDrawBoxes();
+  wmBuildTrack(); wmPaintTime(); wmPaintButtons(); wmDrawAll(true); wmDrawBoxes();
   wmMaybeAsk();
 }
 function wmStepIndex(g) {
   const t = WM.steps[WM.ti]; if (!g || !g.meta || !g.meta.times || t === undefined) return -1;
   let best = -1, bd = 1e9; g.meta.times.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; best = i; } });
-  return bd <= 5400 ? best : -1;
+  return bd <= 3 * 3600 + 60 ? best : -1;              // 6-hourly models (AIFS) show their nearest step
 }
-function wmPaintTime() {
-  const t = WM.steps[WM.ti];
-  $('wmTimeLbl').textContent = (t ? new Date(t * 1000).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'No map data yet')
-    + (OFF.active ? ' · offline copy' : '');
+// ─── time: a strip of days dragged under a fixed centre line ──────
+// As on PredictWind: the days slide under the line, the bubble above says
+// the time picked, a dashed line marks now. Snaps to the model's steps.
+const WMT = { pph: 14, off: 0, t0: 0, drag: null };      // pixels per hour, track offset, first time
+function wmBuildTrack() {
+  const tr = $('wmTrack'), st = $('wmStrip'); if (!tr || !st) return;
+  if (!WM.steps.length) { tr.innerHTML = ''; return; }
+  const t0 = WM.steps[0], t1 = WM.steps[WM.steps.length - 1], pph = WMT.pph;
+  const d0 = new Date(t0 * 1000); d0.setHours(0, 0, 0, 0);
+  const key = `${t0}|${t1}|${st.clientWidth}`;
+  WMT.t0 = t0;
+  if (tr.dataset.key !== key) {
+    tr.dataset.key = key;
+    let html = '', k = 0;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    for (let d = new Date(d0); d.getTime() / 1000 <= t1; d.setDate(d.getDate() + 1), k++) {
+      const s0 = d.getTime() / 1000, n = new Date(d); n.setDate(n.getDate() + 1);
+      const x = (s0 - t0) / 3600 * pph, w = (n.getTime() / 1000 - s0) / 3600 * pph;
+      const lbl = d.toLocaleDateString('en-US', { weekday: 'long' }) + ' ' + d.getDate();
+      html += `<div class="wm-day${k % 2 ? ' alt' : ''}${d < today ? ' past' : ''}" style="left:${x.toFixed(1)}px;width:${w.toFixed(1)}px">${lbl}</div>`;
+    }
+    const nx = (Date.now() / 1000 - t0) / 3600 * pph;
+    html += `<div class="wm-now" style="left:${nx.toFixed(1)}px"></div>`;
+    tr.innerHTML = html;
+    tr.style.width = ((t1 - t0) / 3600 * pph + 2000) + 'px';
+  }
+  wmTrackTo(false);
+}
+function wmTrackTo(ease) {
+  const tr = $('wmTrack'), st = $('wmStrip'), t = WM.steps[WM.ti]; if (!tr || !st || t === undefined) return;
+  WMT.off = st.clientWidth / 2 - (t - WMT.t0) / 3600 * WMT.pph;
+  tr.classList.toggle('ease', !!ease);
+  tr.style.transform = `translateX(${WMT.off.toFixed(1)}px)`;
+}
+function wmNearestStep(t) {
+  let best = 0, bd = Infinity;
+  WM.steps.forEach((x, i) => { const d = Math.abs(x - t); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+function wmStripInit() {
+  const st = $('wmStrip'), tr = $('wmTrack');
+  let q = false;
+  const timeAt = off => WMT.t0 + (st.clientWidth / 2 - off) / WMT.pph * 3600;
+  st.addEventListener('pointerdown', e => {
+    if (!WM.steps.length) return;
+    if (WM.playing) wmTogglePlay();
+    WMT.drag = { x: e.clientX, off: WMT.off, moved: false }; st.setPointerCapture(e.pointerId); tr.classList.remove('ease');
+  });
+  st.addEventListener('pointermove', e => {
+    const d = WMT.drag; if (!d) return;
+    const dx = e.clientX - d.x; if (Math.abs(dx) > 4) d.moved = true;
+    const t0 = WM.steps[0], t1 = WM.steps[WM.steps.length - 1], half = st.clientWidth / 2;
+    WMT.off = Math.max(half - (t1 - t0) / 3600 * WMT.pph, Math.min(half, d.off + dx));
+    tr.style.transform = `translateX(${WMT.off.toFixed(1)}px)`;
+    const ti = wmNearestStep(timeAt(WMT.off));
+    if (ti !== WM.ti) { WM.ti = ti; wmPaintTime(true); if (!q) { q = true; requestAnimationFrame(() => { q = false; wmDrawAll(true); }); } }
+  });
+  const end = e => {
+    const d = WMT.drag; if (!d) return; WMT.drag = null;
+    if (!d.moved) {                                   // a tap: go to the time tapped
+      const r = st.getBoundingClientRect();
+      WM.ti = wmNearestStep(WMT.t0 + (e.clientX - r.left - d.off) / WMT.pph * 3600); wmDrawAll(true);
+    }
+    wmPaintTime(); wmTrackTo(true);
+  };
+  st.addEventListener('pointerup', end); st.addEventListener('pointercancel', end);
+}
+function wmPaintTime(dragging) {
+  const t = WM.steps[WM.ti], b = $('wmBubble'); if (!b) return;
+  if (!t) { b.textContent = 'No map data yet'; return; }
+  const d = new Date(t * 1000), hm = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((new Date(d).setHours(0, 0, 0, 0) - today) / 86400000);
+  b.innerHTML = hm + (days !== 0 ? `<small>${d.toLocaleDateString('en-US', { weekday: 'short' })}</small>` : '') + (OFF.active ? '<small>offline copy</small>' : '');
+  if (!dragging) wmTrackTo(true);
+}
+// Map resolution shown under the model name, as PredictWind does ("ECMWF 8km").
+function wmRes(cfg, lay) {
+  const g = GRIDS[wmGridName(cfg)], r = g && g.meta && g.meta.res;
+  if (lay.grid === 'current') return '9km';
+  if (lay.marine) return '25km';
+  if (cfg.model === 'hrrr') return '3km';
+  if (cfg.model === 'nam') return '12km';
+  if (cfg.model === 'ecmwf') return r && r > .15 ? '25km' : '9km';
+  return '25km';
+}
+// Legend ticks per colour scale: blocks along the bottom, PredictWind-style.
+const WM_TICKS = { wind: [5, 10, 15, 20, 25, 30, 35, 40, 45, 50], cape: [100, 500, 1000, 2000, 3500], wave: [1, 2, 4, 6, 9, 13, 20],
+  current: [.3, .6, 1, 1.5, 2.5, 4], rain: [.1, .5, 2, 5, 10, 20, 40], acc: [1, 5, 15, 30, 60, 100, 200], cloud: [20, 40, 60, 80, 100],
+  temp: [30, 40, 50, 60, 70, 80, 90, 100] };
+const WM_UNIT = { kn: 'kts', 'J/kg': 'J/kg', ft: 'ft', 'mm/h': 'mm/h', mm: 'mm', '%': '%', '°F': '°F', mb: 'mb' };
+function wmLegendHtml(lay) {
+  if (lay.contours) return '<div class="iso">Isobars · every 2 mb</div>';
+  const st = WM_RGBA[lay.stops], ticks = WM_TICKS[lay.stops] || [], c = [0, 0, 0, 0], c2 = [0, 0, 0, 0];
+  const css = q => `rgb(${Math.round(q[0])},${Math.round(q[1])},${Math.round(q[2])})`;
+  // over a see-through colour the map shows through: blend it on the strip's dark grey
+  const solid = q => { const a = q[3] / 255; return [q[0] * a + 60 * (1 - a), q[1] * a + 68 * (1 - a), q[2] * a + 78 * (1 - a), 255]; };
+  return ticks.map((v, k) => {
+    rampColor(st, v, c); const a = solid(c);
+    const nv = k + 1 < ticks.length ? ticks[k + 1] : v; rampColor(st, nv, c2); const b = solid(c2);
+    const dark = 0.299 * a[0] + 0.587 * a[1] + 0.114 * a[2] > 175;
+    return `<b class="${dark ? 'dk' : ''}" style="background:linear-gradient(90deg,${css(a)},${css(b)})">${v}</b>`;
+  }).join('') + `<em>${WM_UNIT[lay.unit] || lay.unit}</em>`;
 }
 function wmPaintButtons() {
+  const LY = '<svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M3 12l9 5 9-5M3 16l9 5 9-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
   [['wmBtnA', WMP.a, 0], ['wmBtnB', WMP.b, 1]].forEach(([id, cfg, k]) => {
     const lay = WM_LAYERS.find(l => l.id === cfg.layer), m = MODELS.find(x => x.id === cfg.model);
     const g = GRIDS[wmGridName(cfg)];
     let note = '';
-    if (!g || g.loading) note = ' · loading';
-    else if (g.unavailable) note = ' · not in maps';
-    else if (g.missing) note = ' · not pulled yet';
-    else if (g.error) note = ' · error';
-    else if (g.meta && !g.meta.ok) note = ' · no data here';
-    $(id).innerHTML = `${lay.grid === 'current' ? '<span class="mchip sm" style="--mbg:#0d6e6e;--mfg:#fff">RTOFS</span>' : lay.marine ? '<span class="mchip sm" style="--mbg:#1f64b8;--mfg:#fff">MARINE</span>' : `<span class="mchip sm" style="--mbg:${m.bg};--mfg:${m.fg}">${m.label}</span>`} ${lay.label}${note} ▾`;
-    const leg = $(k ? 'wmLegB' : 'wmLegA');
-    if (lay.contours) { leg.innerHTML = `<span>Isobars · 2 mb</span>`; return; }
-    const st = WM_STOPS[lay.stops], lo = st[0][0], hi = st[st.length - 1][0];
-    const grad = st.map(([v, c]) => `${c.length > 7 ? c.slice(0, 7) : c} ${((v - lo) / (hi - lo) * 100).toFixed(0)}%`).join(',');
-    leg.innerHTML = `<i style="background:linear-gradient(90deg,${grad})"></i><span>${lo}</span><span>${Math.round((lo + hi) / 2)}</span><span>${hi}+ ${lay.unit}</span>`;
+    if (!g || g.loading) note = 'loading';
+    else if (g.unavailable) note = 'not in maps';
+    else if (g.missing) note = 'not pulled yet';
+    else if (g.error) note = 'error';
+    else if (g.meta && !g.meta.ok) note = 'no data here';
+    const name = lay.grid === 'current' ? 'RTOFS' : lay.marine ? 'Marine' : m.label;
+    $(id).innerHTML = `${LY}<span>${name}<br>${wmRes(cfg, lay)}</span><span class="ly">${lay.ico}</span>${note ? `<span class="nt">${note}</span>` : ''}`;
+    $(k ? 'wmLegB' : 'wmLegA').innerHTML = wmLegendHtml(lay);
   });
 }
 function wmDrawBoxes() {
@@ -3056,7 +3232,7 @@ function wmDrawAll(resetParticles) {
   [WMP.a].concat(WMP.split ? [WMP.b] : []).forEach(cfg => {
     const g = GRIDS[wmGridName(cfg)]; if (!g || !g.pre) return;
     const lay = WM_LAYERS.find(l => l.id === cfg.layer), ti = wmStepIndex(g); if (ti < 0) return;
-    const keys = [lay.acc ? 'pa' : lay.key].concat(lay.flow === 'wind' ? ['ws', 'wd'] : lay.flow === 'current' ? ['cs', 'cd'] : []);
+    const keys = [lay.acc ? 'pa' : lay.key].concat(lay.flow === 'wind' ? ['ws', 'wd'] : lay.flow === 'current' ? ['cs', 'cd'] : [], WMP.iso && !lay.contours ? ['ps'] : []);
     for (const d of [1, 2]) keys.forEach(k => g.meta.vars[k] && preLoadStep(g, k, ti + d));
   });
 }
@@ -3071,8 +3247,8 @@ function wmDrawSide(s, cfg, resetParticles) {
   ctx.clearRect(0, 0, W_, H_);
   s.cur = null;
   if (resetParticles) { s.parts = []; s.pctx.clearRect(0, 0, W_, H_); }
-  if (!g || !g.meta || (!g.bytes && !g.pre)) return;
-  const ti = wmStepIndex(g); if (ti < 0) return;
+  if (!g || !g.meta || (!g.bytes && !g.pre)) { wmCoast(s, ctx); return; }
+  const ti = wmStepIndex(g); if (ti < 0) { wmCoast(s, ctx); return; }
   const arr = gridField(g, lay.key, ti, lay.acc);
   s.cur = { g, lay, ti, arr, flow: lay.flow && WMP.flow ? gridFlow(g, lay.flow, ti) : null };
   // Sample on a coarse screen grid, then let the browser smooth it up.
@@ -3096,6 +3272,15 @@ function wmDrawSide(s, cfg, resetParticles) {
     wmContours(ctx, vals, cw, ch, B);
   }
   wmCoast(s, ctx);
+  // Isobars over the colours (PredictWind's "Isobars" switch), from the same model's pressure.
+  if (WMP.iso && !lay.contours && g.meta.vars.ps) {
+    const pi = gridField(g, 'ps', ti), B2 = 10, cw2 = Math.ceil(W_ / B2), ch2 = Math.ceil(H_ / B2), pv = new Float32Array(cw2 * ch2);
+    const la2 = new Float32Array(ch2), lo2 = new Float32Array(cw2);
+    for (let y = 0; y < ch2; y++) la2[y] = s.map.containerPointToLatLng([0, y * B2 + B2 / 2]).lat;
+    for (let x = 0; x < cw2; x++) lo2[x] = s.map.containerPointToLatLng([x * B2 + B2 / 2, 0]).lng;
+    for (let y = 0; y < ch2; y++) for (let x = 0; x < cw2; x++) pv[y * cw2 + x] = sampleAt(g, pi, la2[y], lo2[x]);
+    wmContours(ctx, pv, cw2, ch2, B2, true);
+  }
 }
 // ─── Coastlines over the map colours, as PredictWind draws them ────
 // From land.png (Natural Earth, 1 nm cells, already part of the app):
@@ -3258,12 +3443,14 @@ function wmPlaces(s, o) {
   }
 }
 // Isobars: marching squares over the screen-sampled pressure field.
-function wmContours(ctx, vals, cw, ch, B) {
+function wmContours(ctx, vals, cw, ch, B, over) {
   let lo = Infinity, hi = -Infinity; for (const v of vals) if (v === v) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
   if (lo === Infinity) return;
   const dark = document.documentElement.getAttribute('data-theme') === 'dark' || (!document.documentElement.getAttribute('data-theme') && matchMedia('(prefers-color-scheme: dark)').matches);
   ctx.lineWidth = 1.6; ctx.strokeStyle = dark ? 'rgba(255,255,255,.85)' : 'rgba(20,33,45,.85)';
   ctx.fillStyle = ctx.strokeStyle; ctx.font = '600 11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+  if (over) { ctx.lineWidth = 1.3; ctx.strokeStyle = 'rgba(255,255,255,.5)'; }
+  const pills = [];
   for (let lev = Math.ceil(lo / 2) * 2; lev <= hi; lev += 2) {
     ctx.beginPath(); let labelled = 0;
     for (let y = 0; y < ch - 1; y++) for (let x = 0; x < cw - 1; x++) {
@@ -3273,10 +3460,18 @@ function wmContours(ctx, vals, cw, ch, B) {
       const edge = (v1, v2, x1, y1, x2, y2) => { if ((v1 < lev) !== (v2 < lev)) { const f = (lev - v1) / (v2 - v1); pts.push([(x1 + (x2 - x1) * f) * B, (y1 + (y2 - y1) * f) * B]); } };
       edge(a, b, x, y, x + 1, y); edge(b, c, x + 1, y, x + 1, y + 1); edge(d, c, x, y + 1, x + 1, y + 1); edge(a, d, x, y, x, y + 1);
       for (let i = 0; i + 1 < pts.length; i += 2) { ctx.moveTo(pts[i][0], pts[i][1]); ctx.lineTo(pts[i + 1][0], pts[i + 1][1]); }
-      if (pts.length && !labelled && (x * 7 + y * 13 + lev) % 97 === 0) { labelled = 1; ctx.fillText(Math.round(lev), pts[0][0], pts[0][1] - 3); }
+      if (pts.length && !labelled && (x * 7 + y * 13 + lev) % 97 === 0) { labelled = 1; if (over) pills.push([Math.round(lev), pts[0][0], pts[0][1]]); else ctx.fillText(Math.round(lev), pts[0][0], pts[0][1] - 3); }
     }
     ctx.stroke();
   }
+  // PredictWind labels its isobars in small grey pills on the line.
+  ctx.textBaseline = 'middle'; ctx.font = '600 10.5px -apple-system, sans-serif';
+  for (const [t, x, y] of pills) {
+    const w = ctx.measureText(t).width + 12;
+    ctx.fillStyle = 'rgba(150,158,168,.85)'; ctx.beginPath(); ctx.roundRect(x - w / 2, y - 8, w, 16, 8); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(t, x, y + .5);
+  }
+  ctx.textBaseline = 'alphabetic';
 }
 // Particles drift with the flow; the fading canvas leaves the trails.
 function wmAnimate() {
@@ -3288,9 +3483,9 @@ function wmAnimate() {
     ctx.globalCompositeOperation = 'destination-in'; ctx.fillStyle = 'rgba(0,0,0,.93)'; ctx.fillRect(0, 0, W_, H_);
     ctx.globalCompositeOperation = 'source-over';
     const cur = s.cur; if (!cur || !cur.flow) { if (s.parts.length) { s.parts = []; ctx.clearRect(0, 0, W_, H_); } return; }
-    const want = Math.round(W_ * H_ / 1100);
+    const want = Math.round(W_ * H_ / 800);
     while (s.parts.length < want) s.parts.push({ x: Math.random() * W_, y: Math.random() * H_, age: Math.random() * 80 | 0 });
-    ctx.strokeStyle = 'rgba(255,255,255,.75)'; ctx.lineWidth = 1.1; ctx.beginPath();
+    ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.lineWidth = 1.7; ctx.lineCap = 'round'; ctx.beginPath();
     // px per frame per knot; currents are slow so they get a bigger factor.
     const k0 = (cur.lay.flow === 'current' ? .5 : .07) * WMP.speed;
     for (const p of s.parts) {
@@ -3315,11 +3510,43 @@ function wmValueAt(s, ll) {
   if (v === v && cur.lay.id === 'wave') { const p = sampleAt(cur.g, gridField(cur.g, 'wp', cur.ti), ll.lat, ll.lng); if (p === p) txt += ` · ${Math.round(p)} s`; }
   return { title: `${cur.lay.grid === 'current' ? 'RTOFS' : cur.lay.marine ? 'Marine' : m.label} · ${cur.lay.label}`, txt };
 }
+// Tap: a cross-hair and a card beside it, as on PredictWind - wind, its
+// direction, pressure, then the spot in degrees and decimal minutes.
+function wmDmm(v, lat) {
+  const h = lat ? (v >= 0 ? 'N' : 'S') : (v >= 0 ? 'E' : 'W'), a = Math.abs(v), d = Math.floor(a);
+  return `${d}° ${((a - d) * 60).toFixed(3).padStart(6, '0')} ${h}`;
+}
+function wmTapClose() { WM.sides.forEach(s => { if (s.tap) { s.map.removeLayer(s.tap); s.tap = null; } }); }
 function wmReadout(s, ll) {
   if (MEAS.on) { MEAS.b = ll; measPaint(); return; }       // ruler on: a tap moves the far pin
-  const r = wmValueAt(s, ll); if (!r) return;
-  L.popup({ closeButton: false, autoClose: true, className: 'wm-pop' }).setLatLng(ll)
-    .setContent(`<b>${r.title}</b><br>${r.txt}`).openOn(s.map);
+  const had = WM.sides.some(x => x.tap); wmTapClose();
+  if (had || $('wmOpt').classList.contains('open') || $('wmMenu').classList.contains('open')) return;   // a tap away just closes things
+  const cur = s.cur; if (!cur) return;
+  const at = (key) => { if (!cur.g.meta.vars[key]) return NaN; return sampleAt(cur.g, gridField(cur.g, key, cur.ti), ll.lat, ll.lng); };
+  const v = sampleAt(cur.g, cur.arr, ll.lat, ll.lng), rows = [];
+  const W = '<svg viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const P = '<svg viewBox="0 0 24 24"><path d="M5 5a10 10 0 0 1 0 14M10 8a6 6 0 0 1 0 8M15 4a12 12 0 0 1 0 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+  const arrow = d => `<svg viewBox="0 0 24 24" style="transform:rotate(${Math.round(d + 180)}deg)"><path d="M12 20V5M6 10l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const fmt = x => cur.lay.contours ? x.toFixed(0) : x < 10 && cur.lay.unit !== '%' ? x.toFixed(1) : Math.round(x);
+  if (cur.lay.flow === 'wind') {
+    if (v === v) rows.push([W, `${Math.round(v)} knots${cur.lay.id === 'gust' ? ' gusts' : ''}`]);
+    const d = at('wd'); if (d === d) rows.push([arrow(d), `${Math.round(d)}° true`]);
+  } else if (!cur.lay.contours) {
+    rows.push([`<span style="font-size:18px">${cur.lay.ico}</span>`, v === v ? `${fmt(v)} ${cur.lay.unit}` : 'No data here']);
+    if (v === v && cur.lay.flow === 'current') { const d = at('cd'); if (d === d && v >= .1) rows.push([arrow(d + 180), `toward ${Math.round(d)}° true`]); }
+    if (v === v && cur.lay.id === 'wave') { const d = at('wvd'), p = at('wp'); if (d === d) rows.push([arrow(d), `from ${Math.round(d)}°${p === p ? ` · ${Math.round(p)} s` : ''}`]); }
+    const ws = at('ws'), wd = at('wd'); if (ws === ws) rows.push([W, `${Math.round(ws)} knots${wd === wd ? ` · ${Math.round(wd)}°` : ''}`]);
+  }
+  const ps = cur.lay.contours ? v : at('ps'); if (ps === ps) rows.push([P, `${Math.round(ps)} hPa`]);
+  const cfg = s.k ? WMP.b : WMP.a, m = MODELS.find(x => x.id === cfg.model);
+  const src = cur.lay.grid === 'current' ? 'RTOFS' : cur.lay.marine ? 'Marine' : m.label;
+  const pt = s.map.latLngToContainerPoint(ll), left = pt.x > s.map.getSize().x - 230;
+  const html = `<div class="wm-tap${left ? ' left' : ''}"><svg class="xh" viewBox="0 0 26 26"><path d="M13 1v8M13 17v8M1 13h8M17 13h8" stroke="rgba(0,0,0,.35)" stroke-width="4" stroke-linecap="round"/><path d="M13 1v8M13 17v8M1 13h8M17 13h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>`
+    + `<div class="card glass"><div class="m">${esc(src)} · ${esc(cur.lay.label)}</div>${rows.map(([i, t]) => `<div class="r"><i>${i}</i>${t}</div>`).join('')}`
+    + `<div class="ll">${wmDmm(ll.lat, true)}<br>${wmDmm(ll.lng, false)}</div>`
+    + `<button class="x" onclick="event.stopPropagation();wmTapClose()" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></button></div></div>`;
+  s.tap = L.marker(ll, { icon: L.divIcon({ className: 'wm-tap-icon', html, iconSize: [0, 0], iconAnchor: [0, 0] }), interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(s.map);
+  const el = s.tap.getElement(); if (el) { el.style.pointerEvents = 'none'; const x = el.querySelector('.x'); if (x) { x.style.pointerEvents = 'auto'; L.DomEvent.disableClickPropagation(x); } }
 }
 
 // ─── distance & bearing ruler ──────────────────────────────────
@@ -3470,26 +3697,42 @@ async function wmPollPending() {
 // ─── controls ───────────────────────────────────────────────────
 let wmEditing = 0;
 function wmOpenOptions(k) {
-  wmEditing = k;
+  wmEditing = k; $('wmMenu').classList.remove('open');
   const cfg = wmSideCfg(k), lay = WM_LAYERS.find(l => l.id === cfg.layer);
-  $('wmOptTitle').textContent = WMP.split ? (k ? 'Right map' : 'Left map') : 'Map';
+  const sw = (on, js) => `<span class="switch"><input type="checkbox" ${on ? 'checked' : ''} onchange="${js}"><span></span></span>`;
   $('wmOptBody').innerHTML = `
-    <div class="wm-h">Map layer</div>
+    <h3>Forecast Options</h3>
+    <div class="wm-h" style="margin-top:0">Map Layer</div>
     <div class="wm-grid">${WM_LAYERS.map(l => `<button class="wm-opt ${l.id === cfg.layer ? 'on' : ''}" ${PRE.index && !(l.marine ? wmAvail(cfg.model, l.id) : MODELS.some(m => wmAvail(m.id, l.id))) ? 'disabled' : ''} onclick="wmPick('layer','${l.id}')"><span>${l.ico}</span>${l.label}</button>`).join('')}</div>
-    <div class="wm-h">Forecast model${lay.grid === 'current' ? ' <small>(currents come from NOAA’s RTOFS ocean model: daily, then held after its last day)</small>' : lay.marine ? ' <small>(waves and sea temperature come from one marine model)</small>' : ''}</div>
+    <div class="wm-h">Forecast Model${lay.grid === 'current' ? '<small>Currents come from NOAA’s RTOFS ocean model</small>' : lay.marine ? '<small>Waves and sea temperature come from one marine model</small>' : ''}</div>
     <div class="wm-grid">${MODELS.map(m => `<button class="wm-opt ${m.id === cfg.model ? 'on' : ''}" ${lay.marine || (PRE.index && !wmAvail(m.id, cfg.layer)) ? 'disabled' : ''} onclick="wmPick('model','${m.id}')">${m.label}</button>`).join('')}</div>
-    ${lay.marine ? '' : '<p class="note" style="margin:-4px 2px 12px;">Greyed out = not in the maps for this layer (UKMO and ICON are in the forecast table only).</p>'}
-    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Split screen</b><small>Two maps, drag the divider to compare</small></div><span class="switch"><input type="checkbox" ${WMP.split ? 'checked' : ''} onchange="wmSetSplit(this.checked)"><span></span></span></label>
-    <label class="row" style="padding:12px 2px;border:0;"><div class="txt"><b>Animated flow</b><small>Moving streaks on wind, gust and currents</small></div><span class="switch"><input type="checkbox" ${WMP.flow ? 'checked' : ''} onchange="WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)"><span></span></span></label>
-    <div class="wm-h">Layer opacity <small id="wmOpVal">${Math.round(WMP.opacity * 100)}%</small></div>
-    <input type="range" min="15" max="100" step="5" value="${Math.round(WMP.opacity * 100)}" style="margin:4px 0 16px;"
+    ${lay.marine ? '' : '<p style="font-size:12.5px;color:rgba(255,255,255,.6);margin:6px 2px 4px;">Dimmed = not in the maps for this layer. UKMO and ICON are in the forecast table only.</p>'}
+    <div class="wm-h">Resolution</div>
+    <div class="wm-grid"><button class="wm-opt on" disabled style="opacity:1">${wmRes(cfg, lay)}</button></div>
+    <div class="tg"><span>Isobars<small>Pressure lines over the colours</small></span>${sw(WMP.iso, 'WMP.iso=this.checked;wmSavePrefs();wmDrawAll(false)')}</div>
+    <div class="tg"><span>Animated flow<small>Moving streaks on wind, gust and currents</small></span>${sw(WMP.flow, 'WMP.flow=this.checked;wmSavePrefs();wmDrawAll(true)')}</div>
+    <div class="wm-h">Display</div>
+    <div class="tg" style="padding-top:0"><span>Colour strength</span><span id="wmOpVal">${Math.round(WMP.opacity * 100)}%</span></div>
+    <input type="range" min="15" max="100" step="5" value="${Math.round(WMP.opacity * 100)}"
       oninput="WMP.opacity=this.value/100;$('wmOpVal').textContent=this.value+'%';WM.sides.forEach(s=>s.field.style.opacity=WMP.opacity)"
       onchange="wmSavePrefs()">
-    <div class="wm-h">Animation speed</div>
-    <div class="seg" id="wmSpeedSeg">${[.25, .5, 1, 2].map(v => `<button class="${WMP.speed === v ? 'on' : ''}" onclick="WMP.speed=${v};wmSavePrefs();wmOpenOptions(wmEditing)">${v}×</button>`).join('')}</div>
-    <div style="height:10px"></div>`;
+    <div class="tg"><span>Animation speed</span></div>
+    <div class="seg" id="wmSpeedSeg">${[.25, .5, 1, 2].map(v => `<button class="${WMP.speed === v ? 'on' : ''}" onclick="WMP.speed=${v};wmSavePrefs();wmOpenOptions(wmEditing)">${v}×</button>`).join('')}</div>`;
   $('wmOpt').classList.add('open');
+  wmPlacePanel();
 }
+// The card sits over the right-hand side of the map it belongs to.
+function wmPlacePanel() {
+  const r = $('wmStage').getBoundingClientRect(), p = $('wmOpt').style, sp = WMP.split, tall = wmStacked(), k = wmEditing;
+  let x0 = 0, y0 = 0, w = r.width, h = r.height - 92;                 // above the time bar and legend
+  if (sp && tall) { if (k) { y0 = WM.divY; h = r.height - WM.divY - 92; } else h = WM.divY - 30; }
+  else if (sp) { if (k) { x0 = WM.divX; w = r.width - WM.divX; } else w = WM.divX; }
+  const top = y0 + (y0 ? 10 : 64), pw = Math.min(360, Math.max(272, w * .72), w - 20);
+  Object.assign(p, { left: (x0 + w - pw - 10) + 'px', top: top + 'px', width: pw + 'px', maxHeight: Math.max(200, y0 + h - top - 8) + 'px' });
+}
+function wmCloseOptions() { $('wmOpt').classList.remove('open'); }
+function wmMenu() { wmCloseOptions(); $('wmMenu').classList.toggle('open'); }
+function wmMenuGo(v) { $('wmMenu').classList.remove('open'); if (v !== 'maps') showView(v); }
 function wmPick(what, id) {
   const c = wmSideCfg(wmEditing); c[what] = id;
   // Picked a layer this model doesn't have in the maps: switch to one that does.
@@ -3502,11 +3745,13 @@ function wmSetSplit(on) {
   WMP.split = on; wmSavePrefs(); wmLayout(); wmRefreshData();
   if (on) toast('Both maps show the same area — drag the divider to resize');
 }
+const WM_PLAY = '<svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z" fill="#fff"/></svg>';
+const WM_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z" fill="#fff"/></svg>';
 function wmTogglePlay() {
-  if (WM.playing) { clearInterval(WM.playing); WM.playing = null; $('wmPlay').textContent = '▶'; return; }
-  $('wmPlay').textContent = '❚❚';
+  if (WM.playing) { clearInterval(WM.playing); WM.playing = null; $('wmPlay').innerHTML = WM_PLAY; return; }
+  $('wmPlay').innerHTML = WM_PAUSE;
   WM.playing = setInterval(() => {
-    WM.ti = (WM.ti + 1) % Math.max(1, WM.steps.length); $('wmTime').value = WM.ti; wmPaintTime(); wmDrawAll(true);
+    WM.ti = (WM.ti + 1) % Math.max(1, WM.steps.length); wmPaintTime(); wmDrawAll(true);
   }, 900);
 }
 function openMaps() {
@@ -3542,6 +3787,7 @@ async function savePlaces(mask) {
 function paintPlaceChips() {
   const t = PL.active ? PL.active.name : 'Boat position';
   document.querySelectorAll('.loc-chip').forEach(b => b.textContent = `📍 ${t} ▾`);
+  document.querySelectorAll('.loc-title span').forEach(b => b.textContent = t);
 }
 function forecastTarget() {
   if (PL.active) return PL.active;
@@ -5270,6 +5516,7 @@ function showView(v) {
   const tab = (v === 'maps' || v === 'fronts' || v === 'passage') ? 'weather' : v;
   if (tab === 'weather') lastWx = v;
   document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
+  document.body.classList.toggle('full-map', v === 'maps');
   document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === tab));
   $('viewName').textContent = VIEW_NAMES[v];
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
