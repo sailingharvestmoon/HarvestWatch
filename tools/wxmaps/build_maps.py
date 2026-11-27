@@ -76,8 +76,17 @@ MODELS = {
     "nam": dict(src="noaa", cycle=6, lag=2.0, res=0.1, steps=list(range(0, 85, 3)),
                 url=lambda d, h, f: f"https://noaa-nam-pds.s3.amazonaws.com/nam.{d}/nam.t{h:02d}z.awphys{f:02d}.tm00.grib2",
                 fields=NOAA_FIELDS),
-    "ecmwf": dict(src="ecmwf", cycle=12, lag=7.0, res=0.25, steps=LONG,
-                  url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/ifs/0p25/oper/{d}{h:02d}0000-{f}h-oper-fc.grib2",
+    # ECMWF at 0.1 deg (~9 km, as PredictWind's map), published since Oct 2026
+    # beside the 0.25 deg files, split into -sfc and -pl files; all the fields
+    # used here are in -sfc. It comes out ~2 h after the 0.25 deg run (12z:
+    # 0.25 at 19:34 UTC, 0.1 at 21:34 on 26 Nov 2026), so the 0.25 deg run is
+    # used instead when it is newer or the 0.1 deg one can't be found ("alt").
+    # Only 00z and 12z: their runs go to 15 days; 06z and 18z stop at 6.
+    # Each 0.1 deg field is ~2-4 MB worldwide, ~1.2 GB per build in all.
+    "ecmwf": dict(src="ecmwf", cycle=12, lag=8.0, res=0.1, steps=LONG,
+                  url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/ifs/0p1/oper/{d}{h:02d}0000-{f}h-oper-fc-sfc.grib2",
+                  alt=dict(lag=7.0, res=0.25,
+                           url=lambda d, h, f: f"{S3_ECMWF}/{d}/{h:02d}z/ifs/0p25/oper/{d}{h:02d}0000-{f}h-oper-fc.grib2"),
                   params={"u": "10u", "v": "10v", "gust": "10fg|10fg3|10fg6", "tp": "tp", "tcc": "tcc",
                           "msl": "msl", "t2": "2t", "cape": "mucape"}),
     "aifs": dict(src="ecmwf", cycle=6, lag=5.0, res=0.25, steps=list(range(0, EXT + 1, 6)),
@@ -440,6 +449,12 @@ def build_model(name, out_dir):
 def _build_model(name, cfg, out_dir):
     import eccodes as ec
     run = pick_run(cfg)
+    if cfg.get("alt"):
+        acfg = dict(cfg, **cfg["alt"]); arun = pick_run(acfg)
+        if arun is not None and (run is None or arun > run):
+            print(f"{name}: {cfg['res']} deg run {'not found' if run is None else run.strftime('%Y%m%d %Hz')}"
+                  f", using the newer {acfg['res']} deg one", flush=True)
+            cfg, run = acfg, arun
     if run is None:
         print(f"{name}: no complete run found", flush=True); return None
     d, hh = run.strftime("%Y%m%d"), run.hour
@@ -527,14 +542,15 @@ def _build_model(name, cfg, out_dir):
     if not times:
         print(f"{name}: nothing usable", flush=True); return None
     meta = {
-        "model": name, "run": f"{d}{hh:02d}", "at": int(time.time() * 1000),
-        "bbox": [float(lats[0]), float(lons[0]), float(lats[-1]), float(lons[-1])],
+        "model": name, "run": f"{d}{hh:02d}", "at": int(time.time() * 1000), "res": cfg["res"],
+        "bbox": [round(float(v), 6) for v in (lats[0], lons[0], lats[-1], lons[-1])],
         "nx": int(len(lons)), "ny": int(len(lats)), "times": times,
         "vars": {k: list(PACK[k]) for k in sorted(written)}, "ok": True, "pre": True,
     }
     with open(os.path.join(mdir, "meta.json"), "w") as fh: json.dump(meta, fh, separators=(",", ":"))
-    print(f"{name}: {len(times)} steps, vars {sorted(written)}, grid {meta['nx']}x{meta['ny']}", flush=True)
-    return {"run": meta["run"], "steps": len(times), "vars": sorted(written), "at": meta["at"], "bbox": meta["bbox"]}
+    print(f"{name}: {len(times)} steps, vars {sorted(written)}, grid {meta['nx']}x{meta['ny']} at {cfg['res']} deg", flush=True)
+    return {"run": meta["run"], "steps": len(times), "vars": sorted(written), "at": meta["at"], "bbox": meta["bbox"],
+            "res": cfg["res"]}
 
 # ---------------------------------------------------------------- ocean currents
 # NOAA Global RTOFS surface currents, from its Western Atlantic regional GRIB2
