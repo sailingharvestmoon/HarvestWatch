@@ -2886,10 +2886,12 @@ function initMaps() {
     const fp = map.createPane('wmField'); fp.style.zIndex = 350; fp.style.pointerEvents = 'none'; fp.appendChild(field);
     const pp = map.createPane('wmFlow'); pp.style.zIndex = 360; pp.style.pointerEvents = 'none'; pp.appendChild(flow);
     // Town and place names over the colours, as PredictWind shows them:
-    // CARTO's labels-only tiles (dark text, white halo; more names as you zoom in).
+    // Esri's labels-only reference tiles (dark grey text, white halo; more
+    // names as you zoom in). No key needed. (CARTO's labels now want an API
+    // key and draw "API key required" in each tile instead of the names.)
     const lp = map.createPane('wmLabels'); lp.style.zIndex = 370; lp.style.pointerEvents = 'none';
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png',
-      { pane: 'wmLabels', subdomains: 'abcd', maxZoom: 19 }).addTo(map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+      { pane: 'wmLabels', maxNativeZoom: 16, maxZoom: 19 }).addTo(map);
     const side = { k, map, field, flow, fctx: field.getContext('2d'), pctx: flow.getContext('2d'), parts: [], boat: null, box: null };
     WM.sides.push(side);
     map.on('move', () => { wmSync(side); wmQueueDraw(); });
