@@ -14,6 +14,7 @@ Sources (all free, no keys, no per-point limits):
   HRRR           NOAA on AWS  noaa-hrrr-bdp-pds   (US waters, ~2 days)
   NAM            NOAA on AWS  noaa-nam-pds        (North America, 3.5 days)
   ECMWF, AIFS    ECMWF open data on AWS  ecmwf-forecasts
+                 (else its Google Cloud copy, else data.ecmwf.int - see ecmwf_get)
 Only the fields needed are fetched, using each file's index and HTTP byte
 ranges, so a full build downloads roughly 1 GB rather than tens of GB.
 
@@ -30,7 +31,7 @@ open data); the app falls back to the Pi's on-demand grids for those.
   python build_maps.py site gfs hrrr     build only these models
   (isobars/highs/lows for the Fronts view are added every run - see isobars.py)
 """
-import sys, os, re, json, math, time, random, datetime as dt, urllib.request, urllib.error, urllib.parse
+import sys, os, re, json, math, time, random, threading, datetime as dt, urllib.request, urllib.error, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
@@ -59,6 +60,11 @@ NOAA_FIELDS = {
 }
 S3_GFS = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
 S3_ECMWF = "https://ecmwf-forecasts.s3.eu-central-1.amazonaws.com"
+# The same files, byte for byte, in the places ECMWF publishes them. Tried in
+# this order; the URLs in MODELS name the first and are moved to the others.
+ECMWF_MIRRORS = [S3_ECMWF,
+                 "https://storage.googleapis.com/ecmwf-open-data",
+                 "https://data.ecmwf.int/forecasts"]
 
 MODELS = {
     "gfs": dict(src="noaa", cycle=6, lag=3.5, res=0.25, steps=LONG,
@@ -83,17 +89,21 @@ MODELS = {
 }
 
 # ---------------------------------------------------------------- HTTP
+def get_once(url, rng=None, timeout=90):
+    """One GET, optionally a byte range. Raises on any failure."""
+    hdr = dict(UA)
+    if rng: hdr["Range"] = f"bytes={rng[0]}-{rng[1] if rng[1] is not None else ''}"
+    with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=timeout) as r:
+        return r.read()
+
 def http(url, rng=None, tries=6):
     """GET, optionally a byte range. None if not published (403/404). A busy
-    server (429 or 5xx - ECMWF's says "503 Slow Down") gets longer and longer
-    waits, about a minute in all, before this gives up."""
+    server (429 or 5xx) gets longer and longer waits, about a minute in all,
+    before this gives up. (ECMWF files go through ecmwf_get instead.)"""
     last = None
     for k in range(tries):
         try:
-            hdr = dict(UA)
-            if rng: hdr["Range"] = f"bytes={rng[0]}-{rng[1] if rng[1] is not None else ''}"
-            with urllib.request.urlopen(urllib.request.Request(url, headers=hdr), timeout=90) as r:
-                return r.read()
+            return get_once(url, rng)
         except urllib.error.HTTPError as e:
             if e.code in (403, 404): return None
             last = e
@@ -102,6 +112,79 @@ def http(url, rng=None, tries=6):
         if k + 1 < tries:
             time.sleep(min(30, 2 ** (k + 1)) * (0.75 + 0.5 * random.random()))
     raise RuntimeError(f"{url}: {last}")
+
+# ---------------------------------------------------------------- ECMWF mirrors
+# ECMWF's AWS bucket answers "503 Slow Down" when too many requests come from
+# one place, and GitHub's runners share their addresses with everyone else's
+# builds. On 26 Nov 2026 it refused every ECMWF and almost every AIFS request
+# of a build for 35 minutes, and each step retried on its own the whole time.
+# Now when a mirror says slow down, ALL requests leave it alone for a while
+# (5 s, then 10, 20, 40, 60) and go to the next mirror meanwhile; a request is
+# only held back when every mirror is waiting. After BUSY_LIMIT slow-downs in
+# a row a mirror is dropped for the rest of that model. When every mirror has
+# been dropped, the remaining steps fail at once instead of waiting.
+BUSY_LIMIT = 6
+
+class Mirror:
+    def __init__(self, base):
+        self.base, self.host = base, urllib.parse.urlsplit(base).netloc
+        self.lock = threading.Lock()
+        self.wait_until, self.busy, self.down, self.used, self.why = 0.0, 0, False, 0, ""
+
+    def note_ok(self):
+        with self.lock:
+            self.busy, self.used = 0, self.used + 1
+
+    def note_busy(self, why):
+        with self.lock:
+            if self.down or time.time() < self.wait_until:
+                return                     # another request already reported this slow-down
+            self.busy += 1; self.why = why
+            if self.busy >= BUSY_LIMIT:
+                self.down = True
+                print(f"ecmwf mirrors: giving up on {self.host} for now ({why})", flush=True)
+            else:
+                self.wait_until = time.time() + min(60, 5 * 2 ** (self.busy - 1)) * (0.8 + 0.4 * random.random())
+
+_mirrors = []
+
+def ecmwf_reset():
+    """Fresh mirror state for each model: a mirror that refused one may have recovered."""
+    _mirrors[:] = [Mirror(b) for b in ECMWF_MIRRORS]
+
+def ecmwf_summary(name):
+    used = [f"{m.host} {m.used}" for m in _mirrors if m.used]
+    down = [f"{m.host} ({m.why})" for m in _mirrors if m.down]
+    print(f"{name}: requests answered by " + (", ".join(used) or "no mirror")
+          + ("; refused by " + ", ".join(down) if down else ""), flush=True)
+
+class AllMirrorsRefused(RuntimeError):
+    pass
+
+def ecmwf_get(url, rng=None):
+    """Like http() for an ECMWF open-data URL (written with S3_ECMWF), trying
+    each mirror in turn. None if the first mirror that answers says the file
+    is not published (403/404)."""
+    if not _mirrors: ecmwf_reset()
+    path = url[len(S3_ECMWF):]
+    while True:
+        live = [m for m in _mirrors if not m.down]
+        if not live: raise AllMirrorsRefused("every ECMWF mirror refused")
+        now = time.time()
+        ready = [m for m in live if m.wait_until <= now]
+        if not ready:                      # all of them asked to slow down: wait for the first
+            time.sleep(min(m.wait_until for m in live) - now); continue
+        m = ready[0]                       # the first in the list that isn't backing off
+        try:
+            b = get_once(m.base + path, rng, timeout=60)
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404):
+                m.note_ok(); return None
+            m.note_busy(f"HTTP {e.code}")
+        except Exception as e:
+            m.note_busy(type(e).__name__)
+        else:
+            m.note_ok(); return b
 
 def exists(url):
     try:
@@ -259,14 +342,15 @@ def fetch_step(cfg, d, hh, f):
         if not idx: return {}
         ranges = noaa_ranges(idx.decode("ascii", "ignore"), cfg["fields"])
     else:
-        idx = http(url[:-len(".grib2")] + ".index")
+        idx = ecmwf_get(url[:-len(".grib2")] + ".index")
         if not idx: return {}
         ranges = ecmwf_ranges(idx.decode("ascii", "ignore"), cfg["params"])
+    get = ecmwf_get if cfg["src"] == "ecmwf" else http
     got, out = {}, {}
     for k, r in ranges.items():
         rng = (r[0], r[1])
         if rng[1] is not None and rng[1] < rng[0]: continue      # never ask for an impossible range
-        if rng not in got: got[rng] = http(url, rng)             # U and V share one message: fetch it once
+        if rng not in got: got[rng] = get(url, rng)              # U and V share one message: fetch it once
         b = got[rng]
         if b and len(r) > 2 and r[2]:
             b = GribPart(b); b.sub = r[2]
@@ -277,14 +361,21 @@ def fetch_steps(cfg, d, hh, steps, name):
     """fetch_step for every step, in parallel. A step that still fails after
     the retries is reported and comes back as None, rather than sinking the
     whole model (as one throttled AIFS file once did)."""
+    refused = []
     def one(f):
         try:
             return f, fetch_step(cfg, d, hh, f)
+        except AllMirrorsRefused:
+            refused.append(f)
+            return f, None
         except Exception as e:
             print(f"{name}: {f} h step failed: {e}", flush=True)
             return f, None
-    with ThreadPoolExecutor(4 if cfg["src"] == "ecmwf" else 8) as pool:   # ECMWF's server throttles sooner
-        return list(pool.map(one, steps))
+    with ThreadPoolExecutor(2 if cfg["src"] == "ecmwf" else 8) as pool:   # ECMWF's servers throttle sooner
+        res = list(pool.map(one, steps))
+    if refused:
+        print(f"{name}: {len(refused)} steps not fetched, every mirror refused (from {min(refused)} h)", flush=True)
+    return res
 
 def pick_run(cfg):
     """Newest cycle whose first 5 days are already published. Steps past that
@@ -297,8 +388,13 @@ def pick_run(cfg):
     for _ in range(6):
         d, hh = t.strftime("%Y%m%d"), t.hour
         u = cfg["url"](d, hh, last)
-        probe = u + ".idx" if cfg["src"] == "noaa" else u[:-len(".grib2")] + ".index"
-        if exists(probe): return t
+        if cfg["src"] == "noaa":
+            if exists(u + ".idx"): return t
+        else:
+            try:
+                if ecmwf_get(u[:-len(".grib2")] + ".index", (0, 0)) is not None: return t
+            except AllMirrorsRefused:
+                return None
         t -= dt.timedelta(hours=cfg["cycle"])
     return None
 
@@ -335,6 +431,14 @@ def write_png(path, arr):
 def build_model(name, out_dir):
     import eccodes as ec
     cfg = MODELS[name]
+    if cfg["src"] == "ecmwf":
+        ecmwf_reset()
+        try: return _build_model(name, cfg, out_dir)
+        finally: ecmwf_summary(name)
+    return _build_model(name, cfg, out_dir)
+
+def _build_model(name, cfg, out_dir):
+    import eccodes as ec
     run = pick_run(cfg)
     if run is None:
         print(f"{name}: no complete run found", flush=True); return None
