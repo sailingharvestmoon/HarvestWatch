@@ -3088,6 +3088,66 @@ function wmDrawSide(s, cfg, resetParticles) {
   } else {
     wmContours(ctx, vals, cw, ch, B);
   }
+  wmCoast(s, ctx);
+}
+// ─── Coastlines over the map colours, as PredictWind draws them ────
+// From land.png (Natural Earth, 1 nm cells, already part of the app):
+// marching squares on the land/sea grid for the area on screen, thinned
+// out when zoomed out so it stays quick. Thin dark lines, no land fill.
+const WMC = { bits: null, w: 0, h: 0, p: null };
+function wmCoastLoad() {
+  if (!WMC.p) WMC.p = pxLandImg().then(img => {
+    if (!img) return;
+    const w = img.width, h = img.height, b = new Uint8Array(w * h), SH = 256;
+    const c = document.createElement('canvas'); c.width = w; c.height = SH;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    for (let y0 = 0; y0 < h; y0 += SH) {              // in strips, to keep memory down on the phone
+      const sh = Math.min(SH, h - y0);
+      x.clearRect(0, 0, w, SH); x.drawImage(img, 0, y0, w, sh, 0, 0, w, sh);
+      const d = x.getImageData(0, 0, w, sh).data;
+      for (let i = 0, n = w * sh; i < n; i++) b[y0 * w + i] = d[i * 4] > 127 ? 1 : 0;
+    }
+    WMC.bits = b; WMC.w = w; WMC.h = h;
+    wmQueueDraw();
+  }).catch(() => {});
+  return WMC.p;
+}
+// Marching-squares segments by corner case (SW=8, SE=4, NE=2, NW=1).
+const WMC_SEG = [null, 'WN', 'NE', 'WE', 'ES', 'WNES', 'NS', 'WS', 'WS', 'NS', 'WSNE', 'SE', 'WE', 'NE', 'WN', null];
+function wmCoast(s, ctx) {
+  if (!WMC.bits) { wmCoastLoad(); return; }
+  const m = s.map, W_ = s.field.width, H_ = s.field.height, B = WMC.bits, w = WMC.w, h = WMC.h;
+  const nw = m.containerPointToLatLng([0, 0]), se = m.containerPointToLatLng([W_, H_]), mid = m.getCenter();
+  // Leaflet's container points are whole pixels; work unrounded so the spacing is right when zoomed out.
+  const z = m.getZoom(), tl = m.project(nw, z);
+  const xOf = lon => m.project([mid.lat, lon], z).x - tl.x, yOf = lat => m.project([lat, mid.lng], z).y - tl.y;
+  const ppc = Math.abs(xOf(mid.lng + 1 / 60) - xOf(mid.lng));          // screen pixels per land cell
+  const st = Math.max(1, Math.ceil(1.6 / ppc));
+  const clampI = v => Math.max(0, Math.min(w - 1, v)), clampJ = v => Math.max(0, Math.min(h - 1, v));
+  const i0 = Math.floor(clampI(Math.floor((nw.lng + 100) * 60) - st) / st) * st, i1 = clampI(Math.ceil((se.lng + 100) * 60) + st);
+  const j0 = Math.floor(clampJ(Math.floor((se.lat - 5) * 60) - st) / st) * st, j1 = clampJ(Math.ceil((nw.lat - 5) * 60) + st);
+  if (i1 <= i0 || j1 <= j0) return;
+  const X = [], Y = [];
+  for (let i = i0; i <= i1; i += st) X.push(xOf(-100 + (i + .5) / 60));
+  for (let j = j0; j <= j1; j += st) Y.push(yOf(5 + (j + .5) / 60));
+  ctx.save();
+  ctx.strokeStyle = 'rgba(14,22,30,.78)'; ctx.lineWidth = 1.1; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let r = 0; r < Y.length - 1; r++) {
+    const j = j0 + r * st, ja = j * w, jb = Math.min(h - 1, j + st) * w, ya = Y[r], yb = Y[r + 1], ym = (ya + yb) / 2;
+    for (let q = 0; q < X.length - 1; q++) {
+      const i = i0 + q * st, i2 = Math.min(w - 1, i + st);
+      const code = (B[ja + i] << 3) | (B[ja + i2] << 2) | (B[jb + i2] << 1) | B[jb + i];
+      const sg = WMC_SEG[code]; if (!sg) continue;
+      const xa = X[q], xb = X[q + 1], xm = (xa + xb) / 2;
+      for (let k = 0; k < sg.length; k += 2) {
+        const pt = e => e === 'W' ? [xa, ym] : e === 'E' ? [xb, ym] : e === 'S' ? [xm, ya] : [xm, yb];
+        const a = pt(sg[k]), b = pt(sg[k + 1]);
+        ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]);
+      }
+    }
+  }
+  ctx.stroke(); ctx.restore();
 }
 // Isobars: marching squares over the screen-sampled pressure field.
 function wmContours(ctx, vals, cw, ch, B) {
