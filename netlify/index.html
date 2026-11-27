@@ -2874,7 +2874,10 @@ function initMaps() {
   WM.ready = true;
   const mk = (id) => {
     const m = L.map(id, { zoomControl: false, attributionControl: false, zoomSnap: .5, minZoom: 3, maxZoom: 12, zoomAnimation: false, fadeAnimation: false });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, className: 'base-tiles' }).addTo(m);
+    // A plain grey base with no names on it: the chart's own names showed
+    // through the colours as faint second copies of the ones wmPlaces draws.
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+      { maxNativeZoom: 16, maxZoom: 19, className: 'base-tiles' }).addTo(m);
     return m;
   };
   for (const [k, id] of [[0, 'wmMapA'], [1, 'wmMapB']]) {
@@ -2885,14 +2888,10 @@ function initMaps() {
     field.className = 'wm-cv'; flow.className = 'wm-cv';
     const fp = map.createPane('wmField'); fp.style.zIndex = 350; fp.style.pointerEvents = 'none'; fp.appendChild(field);
     const pp = map.createPane('wmFlow'); pp.style.zIndex = 360; pp.style.pointerEvents = 'none'; pp.appendChild(flow);
-    // Town and place names over the colours, as PredictWind shows them:
-    // Esri's labels-only reference tiles (dark grey text, white halo; more
-    // names as you zoom in). No key needed. (CARTO's labels now want an API
-    // key and draw "API key required" in each tile instead of the names.)
-    const lp = map.createPane('wmLabels'); lp.style.zIndex = 370; lp.style.pointerEvents = 'none';
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
-      { pane: 'wmLabels', maxNativeZoom: 16, maxZoom: 19 }).addTo(map);
-    const side = { k, map, field, flow, fctx: field.getContext('2d'), pctx: flow.getContext('2d'), parts: [], boat: null, box: null };
+    // Town and place names over the colours, as PredictWind shows them (wmPlaces).
+    const labels = document.createElement('canvas'); labels.className = 'wm-cv';
+    const lp = map.createPane('wmLabels'); lp.style.zIndex = 370; lp.style.pointerEvents = 'none'; lp.appendChild(labels);
+    const side = { k, map, field, flow, labels, fctx: field.getContext('2d'), pctx: flow.getContext('2d'), lctx: labels.getContext('2d'), parts: [], boat: null, box: null };
     WM.sides.push(side);
     map.on('move', () => { wmSync(side); wmQueueDraw(); });
     map.on('zoomstart movestart', () => { side.pctx.clearRect(0, 0, flow.width, flow.height); side.parts = []; });
@@ -3068,6 +3067,7 @@ function wmDrawSide(s, cfg, resetParticles) {
   const o = s.map.containerPointToLayerPoint([0, 0]);
   s.field.style.opacity = WMP.opacity;
   L.DomUtil.setPosition(s.field, o); L.DomUtil.setPosition(s.flow, o);
+  wmPlaces(s, o);
   ctx.clearRect(0, 0, W_, H_);
   s.cur = null;
   if (resetParticles) { s.parts = []; s.pctx.clearRect(0, 0, W_, H_); }
@@ -3213,6 +3213,49 @@ function wmCoastLines(ctx, links, NX, X, Y, passes) {
   };
   for (const [id, nb] of links) if (nb.length === 1 && !seen.has(id)) walk(id, false);   // lines running off the screen
   for (const id of links.keys()) if (!seen.has(id)) walk(id, true);                      // islands and lakes
+}
+// ─── Place names over the colours ──────────────────────────────────
+// From places.json (GeoNames towns of 1000+ people; tools/wxmaps/make_places.py),
+// each with the lowest zoom at which it fits without crowding a bigger one,
+// so names never overlap and more appear as you zoom in. White with a dark
+// edge so they read on every colour. Drawn sharp at the screen's pixel density.
+const WPL = { list: null, p: null };
+function wmPlacesLoad() {
+  if (!WPL.p) WPL.p = fetch('places.json?v=1').then(r => r.ok ? r.json() : null)
+    .then(a => { if (Array.isArray(a)) { WPL.list = a; wmQueueDraw(); } }).catch(() => {});
+  return WPL.p;
+}
+function wmPlaces(s, o) {
+  const cv = s.labels, W_ = s.field.width, H_ = s.field.height, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W_ * dpr) || cv.height !== Math.round(H_ * dpr)) {
+    cv.width = Math.round(W_ * dpr); cv.height = Math.round(H_ * dpr);
+    cv.style.width = W_ + 'px'; cv.style.height = H_ + 'px';
+  }
+  L.DomUtil.setPosition(cv, o);
+  const ctx = s.lctx; ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W_, H_);
+  if (!WPL.list) { wmPlacesLoad(); return; }
+  const m = s.map, z = m.getZoom() + .01, b = m.getBounds(), pad = .3 / Math.pow(2, Math.max(0, z - 6));
+  const S_ = b.getSouth() - pad, N_ = b.getNorth() + pad, W0 = b.getWest() - pad, E0 = b.getEast() + pad;
+  const shown = [];
+  for (const p of WPL.list) {
+    if (p[3] > z) break;                                    // sorted by zoom: the rest need closer in
+    if (p[1] < S_ || p[1] > N_ || p[2] < W0 || p[2] > E0) continue;
+    const pt = m.latLngToContainerPoint([p[1], p[2]]);
+    shown.push([p[0], pt.x, pt.y, p[4]]);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
+  for (const pass of [0, 1]) {                              // all the dark edges first, then the letters
+    for (const [name, x, y, big] of shown) {
+      ctx.font = (big ? '700 13px' : '600 12px') + ' -apple-system, system-ui, sans-serif';
+      if (pass === 0) {
+        ctx.strokeStyle = 'rgba(8,14,22,.78)'; ctx.lineWidth = 3.2; ctx.strokeText(name, x, y - 6);
+        ctx.fillStyle = 'rgba(8,14,22,.78)'; ctx.beginPath(); ctx.arc(x, y, 3.3, 0, 2 * Math.PI); ctx.fill();
+      } else {
+        ctx.fillStyle = '#fff'; ctx.fillText(name, x, y - 6);
+        ctx.beginPath(); ctx.arc(x, y, 2, 0, 2 * Math.PI); ctx.fill();
+      }
+    }
+  }
 }
 // Isobars: marching squares over the screen-sampled pressure field.
 function wmContours(ctx, vals, cw, ch, B) {
@@ -3715,6 +3758,7 @@ async function offSave() {
     add(here, 'same-origin');
     if (location.pathname !== '/') add(location.origin + '/', 'same-origin');
     add(location.origin + '/land.png?v=1', 'same-origin');
+    add(location.origin + '/places.json?v=1', 'same-origin');
     document.querySelectorAll('script[src], link[rel="stylesheet"][href]').forEach(el => add(el.src || el.href));
     [`${FSB}/weather/${VESSEL}`, FC_URL, PLACES_URL, PX_URL].forEach(u => add(u));
     const frames = frFrames(), bust = Date.now();
