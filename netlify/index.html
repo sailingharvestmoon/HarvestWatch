@@ -347,6 +347,17 @@ table.fc td.td em { position:absolute; left:2px; top:2px; font-size:max(8px, cal
 .fcs-row .txt small { display:block; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .fcs-main { font-size:12.5px; font-weight:600; color:var(--accent); padding:6px 8px; border-radius:8px; flex:none; }
 .fcs-main.on { background:var(--accent); color:var(--accent-ink); }
+/* Validation */
+.va-row .mb { width:30px; height:30px; font-size:15px; }
+.va-row .txt { flex:1; min-width:0; }
+.va-best { font-size:11px; font-weight:700; color:var(--ok); text-transform:uppercase; letter-spacing:.05em; margin-left:6px; }
+.va-bar { display:block; height:5px; border-radius:3px; background:var(--surface2); margin-top:6px; overflow:hidden; }
+.va-bar i { display:block; height:100%; border-radius:3px; }
+.va-err { font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; flex:none; }
+.va-err small { font-size:12px; font-weight:600; color:var(--muted); margin-left:2px; }
+#vaLead button { font-size:12.5px; }
+#vaGraph .dash-key { flex-wrap:wrap; row-gap:4px; }
+#vaGraph .dash-key span { white-space:nowrap; }
 .fc-wrap.small tr.cat th.fc-lab .fc-cat { padding-right:14px; }
 .fc-wrap { touch-action:pan-x pan-y; }
 /* Date, hour and weather rows stay at the top of the screen while the table
@@ -749,6 +760,7 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
       <button data-v="maps" onclick="wxMenuGo('maps')"><svg viewBox="0 0 24 24"><path d="M3 8h12a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Weather maps</button>
       <button data-v="fronts" onclick="wxMenuGo('fronts')"><svg viewBox="0 0 24 24"><path d="M4 18a9 9 0 0 1 9-9M8 18a5 5 0 0 1 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M15 6l3 3-3 3M17 13l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Fronts</button>
       <button data-v="passage" onclick="wxMenuGo('passage')"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="18" cy="6" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 17c5-1 2-8 8-9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.5 2.5"/></svg>Passage</button>
+      <button data-v="valid" onclick="wxMenuGo('valid')"><svg viewBox="0 0 24 24"><path d="M7 4h10v4a5 5 0 0 1-10 0z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M7 6H4.5a2.5 2.5 0 0 0 2.6 3.4M17 6h2.5a2.5 2.5 0 0 1-2.6 3.4M12 13v4M8 20h8M9.5 17h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>Validation</button>
     </div>
     <!-- ANCHOR -->
     <section class="view active" id="view-anchor">
@@ -854,6 +866,18 @@ table.px-grid.px-wide th:not(.fc-lab), table.px-grid.px-wide td { min-width:52px
       <div class="section-title">Offline copy</div>
       <div class="card pad" id="offCard"></div>
       <p class="note" id="wxAge" style="text-align:center;margin-top:14px;"></p>
+    </section>
+
+    <!-- VALIDATION: which model has been right at the boat (PredictWind's Validation) -->
+    <section class="view scroll wx-page" id="view-valid">
+      <div class="wx-head"><button onclick="wxMenu()" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><button class="wx-title loc-title" onclick="openLoc()"><span>Boat position</span><svg viewBox="0 0 14 14"><path d="M2 4.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><span></span></div>
+      <div class="section-title">Which model has been right here</div>
+      <div class="seg" id="vaWin"><button data-w="24" onclick="vaSet('win',24)">24 hours</button><button data-w="72" onclick="vaSet('win',72)">3 days</button><button data-w="168" onclick="vaSet('win',168)">7 days</button></div>
+      <div class="seg" id="vaLead" style="margin-top:8px"><button data-l="h0" onclick="vaSet('lead','h0')">As forecast at the time</button><button data-l="h24" onclick="vaSet('lead','h24')">A day ahead</button></div>
+      <div class="list" id="vaRank" style="margin-top:12px"></div>
+      <div class="section-title">Measured wind and the models</div>
+      <div class="card dash-graph" id="vaGraph"></div>
+      <p class="note" id="vaNote" style="margin:8px 4px 0;"></p>
     </section>
 
     <!-- WEATHER MAPS -->
@@ -1130,7 +1154,8 @@ const DEF = {
   awaEnabled: false, awaMaxDeg: 70, awaSustainMin: 5,
   aisEnabled: false, aisWarnM: 50, aisCollisionM: 5, aisSpeedKn: 3, aisTcpaMin: 20,
   deadmanEnabled: true, deadmanDelayMin: 30, dailyPingEnabled: false, dailyPingHour: 8,
-  bowOffsetEnabled: true, bowOffsetFt: 30, loaFt: 38, magVarDeg: 0
+  bowOffsetEnabled: true, bowOffsetFt: 30, loaFt: 38, magVarDeg: 0,
+  fcAlertEnabled: false, fcAlertWindKn: 25, fcAlertGustKn: 33, fcAlertPressHpa: 4, fcAlertHours: 48, fcAlertModels: 2
 };
 function C(k) {
   const f = S.cfg[k];
@@ -2060,6 +2085,17 @@ const ALERTS = [
       { k: 'aisTcpaMin', label: 'Only if closing within', min: 2, max: 90, step: 1, unit: 'min' }],
     summary: () => `${C('aisWarnM')} m warning · ${C('aisCollisionM')} m collision`,
     now: () => { const n = aisRows().length; return S.ais ? `${n} target${n === 1 ? '' : 's'} within 2 km` : ''; } },
+  { id: 'fcst', icon: '🌦️', name: 'Forecast warnings', en: 'fcAlertEnabled', always: true,
+    desc: 'Hear about Sunday\'s front on Friday. After each hourly forecast the weather worker checks the next hours at the forecast spot (the boat, or the place picked for the forecast) for strong wind, gusts, thunderstorms or pressure falling fast, by at least the number of models set here. It pushes once per event, and again only if the event moves by half a day or gets 5 kn (3 hPa) worse. Works whether or not the anchor watch is on.',
+    fields: [
+      { k: 'fcAlertWindKn', label: 'Sustained wind over', min: 10, max: 50, step: 1, unit: 'kn' },
+      { k: 'fcAlertGustKn', label: 'Gusts over', min: 15, max: 70, step: 1, unit: 'kn' },
+      { k: 'fcAlertPressHpa', label: 'Pressure falling more than (0 = off)', min: 0, max: 10, step: 1, unit: 'hPa in 3 h', int: true },
+      { k: 'fcAlertHours', label: 'Looking ahead', min: 12, max: 96, step: 6, unit: 'h', int: true },
+      { k: 'fcAlertModels', label: 'Models that must agree', min: 1, max: 6, step: 1, unit: '', int: true }],
+    summary: () => `${C('fcAlertWindKn')} kn wind · ${C('fcAlertGustKn')} kn gusts · next ${C('fcAlertHours')} h`,
+    now: () => FCA.err && FCA.err !== 'none' ? `Not sent: ${FCA.err}` : FCA.last ? `Last: ${FCA.last}` : '',
+    saved: 'Saved — checked with the next hourly forecast' },
   { id: 'offline', icon: '🔌', name: 'Boat offline', en: 'deadmanEnabled', latch: 'staleAlerted',
     desc: 'The boat schedules this alert ahead of time and keeps pushing it back while it is alive. If the Pi, the Vesper or the internet dies, it arrives on its own — nothing needs to be working for it to reach you.',
     fields: [{ k: 'deadmanDelayMin', label: 'Alert after silence of', min: 15, max: 180, step: 5, unit: 'min' }],
@@ -2069,9 +2105,22 @@ const ALERTS = [
     fields: [{ k: 'dailyPingHour', label: 'Send at', min: 0, max: 23, step: 1, unit: ':00' }],
     summary: () => `at ${String(C('dailyPingHour')).padStart(2, '0')}:00` }
 ];
+// What the weather worker last did with forecast warnings (weather/<vessel>-wxstate).
+const FCA = { last: '', err: '' };
+async function loadFcaState() {
+  try {
+    const r = await fetch(`${FSB}/weather/${VESSEL}-wxstate?mask.fieldPaths=fcAlertLast&mask.fieldPaths=fcAlertErr`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const f = (await r.json()).fields || {}, last = str(f.fcAlertLast);
+    FCA.err = str(f.fcAlertErr);
+    FCA.last = last ? `${ago(Date.parse(last.slice(0, 24)))} — ${last.slice(25)}` : '';
+    paintAlerts();
+  } catch (e) {}
+}
 function alertStatus(a) {
   const enabled = a.en ? C(a.en) : true;
   if (!enabled) return ['off', 'Off'];
+  if (a.always) return ['active', 'Active'];
   if (a.latch && bool(S.st[a.latch]) && S.armed) return ['triggered', 'Triggered'];
   if (!S.armed) return ['ready', 'Ready'];
   if (snoozed()) return ['snoozed', 'Snoozed'];
@@ -2141,7 +2190,7 @@ function openAlertPage(id) {
   }
   $('apBody').innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;"><span class="chip ${cls}">${lbl}</span><span class="note">${esc(nowTxt)}</span></div>
-    ${a.en ? `<p class="note" style="margin:-4px 4px 12px;">Switch at top right turns this alert on or off. Tap Save to send it to the boat.</p>` : `<p class="note" style="margin:-4px 4px 12px;">Always on while the anchor watch runs — to stop it, end the watch on the Anchor tab.</p>`}
+    ${a.en ? `<p class="note" style="margin:-4px 4px 12px;">Switch at top right turns this alert on or off. Tap Save to send it${a.always ? '' : ' to the boat'}.</p>` : `<p class="note" style="margin:-4px 4px 12px;">Always on while the anchor watch runs — to stop it, end the watch on the Anchor tab.</p>`}
     <div class="card">${fields}</div>
     <p class="note" style="margin:12px 4px 0;">${a.desc}</p>${extra}`;
   a.fields.forEach(f => $('ap_' + f.k).addEventListener('input', e => {
@@ -2167,7 +2216,7 @@ async function saveAlertPage() {
   if (!ok) { toast('Could not reach the cloud — not saved', 4000); return; }
   Object.assign(S.cfg, fields);
   closeAlertPage(); paintAll();
-  toast('Saved — the boat picks it up within 30 s');
+  toast(a.saved || 'Saved — the boat picks it up within 30 s');
 }
 
 // ═══ INSTRUMENTS ═══════════════════════════════════════════════════
@@ -2695,6 +2744,85 @@ function fcExpandAll() {
   const all = ids.every(id => FCU.open[id]);
   FCU.open = {}; if (!all) ids.forEach(id => FCU.open[id] = true);
   saveFcu(); paintForecast();
+}
+
+// ═══ VALIDATION ════════════════════════════════════════════════════
+// Which model has been right at the boat lately: each model's wind for an
+// hour (as forecast then, or a day ahead: weather/<vessel>-fchist) against
+// the wind Harvest Moon measured that hour (weather/<vessel>-obs), both
+// recorded by the weather worker. Masthead wind is scaled to the 10 m the
+// models forecast for. An hour counts when the boat reported for 15+ min
+// and the forecast spot was within 5 nm of the boat.
+const VA = { win: 72, lead: 'h0', obs: null, fc: null, at: 0 };
+const ANEMO_M = 17, ANEMO_TO_10M = Math.pow(10 / ANEMO_M, 0.11);   // ~17 m masthead -> 10 m: x0.94
+async function loadValid(force) {
+  paintValid();
+  if (!force && VA.at && Date.now() - VA.at < 5 * 60000) return;
+  const get = async k => { try { const r = await fetch(`${FSB}/weather/${VESSEL}-${k}`, { cache: 'no-store' }); if (!r.ok) return null; return JSON.parse(str(((await r.json()).fields || {}).data) || 'null'); } catch (e) { return null; } };
+  const [o, f] = await Promise.all([get('obs'), get('fchist')]);
+  VA.obs = o; VA.fc = f; VA.at = Date.now(); paintValid();
+}
+function vaSet(k, v) { VA[k] = v; paintValid(); }
+function vaHours() {
+  const now = Date.now(), from = now - VA.win * 3600000, O = (VA.obs && VA.obs.h) || {}, F = (VA.fc && VA.fc[VA.lead]) || {}, out = [];
+  for (const k of Object.keys(O)) {
+    const t = +k, b = O[k]; if (t < from || b[0] < 3) continue;
+    const ws = b[1] / b[0] * ANEMO_TO_10M, wd = b[2] ? (Math.atan2(b[3], b[4]) * 180 / Math.PI + 360) % 360 : null;
+    const f = F[k], near = f && (b[6] === null || haversine(b[6], b[7], f.la, f.lo) < 5 * 1852);
+    out.push({ t, ws, wd, f: near ? f.m : null });
+  }
+  return out.sort((a, b) => a.t - b.t);
+}
+function paintValid() {
+  const rank = $('vaRank'); if (!rank) return;
+  document.querySelectorAll('#vaWin button').forEach(b => b.classList.toggle('on', +b.dataset.w === VA.win));
+  document.querySelectorAll('#vaLead button').forEach(b => b.classList.toggle('on', b.dataset.l === VA.lead));
+  const H = vaHours(), withF = H.filter(h => h.f);
+  const sc = MODELS.map(m => {
+    let n = 0, abs = 0, bias = 0, nd = 0, dabs = 0;
+    for (const h of withF) {
+      const v = h.f[m.id]; if (!v || v[0] === null) continue;
+      n++; abs += Math.abs(v[0] - h.ws); bias += v[0] - h.ws;
+      if (h.wd !== null && h.ws >= 5 && v[2] !== null) { nd++; dabs += Math.abs(((v[2] - h.wd + 540) % 360) - 180); }
+    }
+    return { m, n, mae: n ? abs / n : null, bias: n ? bias / n : null, dir: nd ? dabs / nd : null };
+  }).filter(x => x.n >= 3).sort((a, b) => a.mae - b.mae);
+  const first = VA.obs && VA.obs.h ? Math.min(...Object.keys(VA.obs.h).map(Number)) : 0;
+  if (!VA.at) rank.innerHTML = '<div class="row"><div class="txt"><small>Loading…</small></div></div>';
+  else if (!H.length) rank.innerHTML = `<div class="row"><div class="txt"><b>No measured wind yet</b><small style="white-space:normal">The weather worker records the boat's wind every 5 minutes while the instruments are on, and each model's forecast every hour. Check back after a few hours.</small></div></div>`;
+  else if (!sc.length) rank.innerHTML = `<div class="row"><div class="txt"><b>Not enough to compare yet</b><small style="white-space:normal">${H.length} hour${H.length === 1 ? '' : 's'} of measured wind, ${withF.length} with ${VA.lead === 'h24' ? 'day-ahead forecasts (they start a day after recording began)' : 'forecasts for the same spot'}. Needs 3 or more.</small></div></div>`;
+  else {
+    const worst = Math.max(...sc.map(x => x.mae), 1);
+    rank.innerHTML = sc.map((x, k) => {
+      const b = x.bias, side = Math.abs(b) < .3 ? 'on average about right' : `on average ${Math.abs(b).toFixed(1)} kn ${b > 0 ? 'too strong' : 'too light'}`;
+      return `<div class="row va-row${k === 0 ? ' best' : ''}">${mBadge(x.m, k === 0)}<div class="txt"><b>${x.m.label}${k === 0 ? ' <span class="va-best">best here</span>' : ''}</b>`
+        + `<small style="white-space:normal">${side}${x.dir !== null ? ` · direction ±${Math.round(x.dir)}°` : ''} · ${x.n} h</small>`
+        + `<i class="va-bar"><i style="width:${(x.mae / worst * 100).toFixed(0)}%;background:${x.m.id === 'ecmwf' ? 'var(--ink)' : x.m.bg}"></i></i></div>`
+        + `<span class="va-err">±${x.mae.toFixed(1)}<small>kn</small></span></div>`;
+    }).join('');
+  }
+  $('vaGraph').innerHTML = H.length ? vaGraph(H, sc.map(x => x.m)) : '';
+  $('vaNote').innerHTML = `±kn is how far each model's wind speed has been from what the boat measured, on average${VA.lead === 'h24' ? ', forecast a day ahead' : ', as the forecast stood at the time'}. `
+    + `The boat's masthead true wind is scaled down to the 10 m height models forecast for (×${ANEMO_TO_10M.toFixed(2)}). An hour counts when the instruments reported for 15 minutes or more and the forecast spot was within 5 nm of the boat.`
+    + (first ? ` Recording since ${new Date(first).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.` : '');
+}
+function vaGraph(H, models) {
+  const w = Math.max(280, ($('vaGraph').clientWidth || 340) - 12), Hh = 190, L = 26, R = 6, T = 10, B = 22, pw = w - L - R, ph = Hh - T - B;
+  const t0 = Date.now() - VA.win * 3600000, t1 = Date.now(), X = t => L + (t - t0) / (t1 - t0) * pw;
+  const all = H.flatMap(h => [h.ws].concat(h.f ? models.map(m => h.f[m.id] ? h.f[m.id][0] : null) : [])).filter(v => v !== null && v === v);
+  const top = Math.max(15, Math.ceil(Math.max(...all, 0) * 1.1 / 5) * 5), Y = v => T + ph - Math.min(v, top) / top * ph;
+  let svg = `<svg viewBox="0 0 ${w} ${Hh}" height="${Hh}" role="img" aria-label="Measured wind and each model's forecast">`;
+  for (let v = 0; v <= top; v += top > 30 ? 10 : 5) svg += `<line x1="${L}" x2="${w - R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--line)"/><text x="${L - 5}" y="${Y(v) + 3.5}" text-anchor="end">${v}</text>`;
+  for (let d = new Date(t0); d.getTime() <= t1; d.setHours(d.getHours() + 1)) {
+    if (d.getHours() !== 0 || d.getTime() < t0) continue;
+    const x = X(d.getTime());
+    svg += `<line x1="${x}" x2="${x}" y1="${T}" y2="${T + ph}" stroke="var(--muted)" opacity=".5"/><text x="${x + 3}" y="${Hh - 6}">${d.toLocaleDateString('en-US', { weekday: 'short' })}</text>`;
+  }
+  const path = pts => { let d = '', prev = null; for (const [t, v] of pts) { if (v === null || v !== v) { prev = null; continue; } d += (prev !== null && t - prev <= 2 * 3600000 ? 'L' : 'M') + X(t).toFixed(1) + ' ' + Y(v).toFixed(1); prev = t; } return d; };
+  for (const m of models) svg += `<path d="${path(H.map(h => [h.t, h.f && h.f[m.id] ? h.f[m.id][0] : null]))}" fill="none" stroke="${m.id === 'ecmwf' ? '#8a94a0' : m.bg}" stroke-width="1.6" opacity=".9"/>`;
+  svg += `<path d="${path(H.map(h => [h.t, h.ws]))}" fill="none" stroke="var(--ink)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>`;
+  return svg + '</svg><div class="dash-key"><span><i style="background:var(--ink)"></i>Measured at the boat</span>'
+    + models.map(m => `<span><i style="background:${m.id === 'ecmwf' ? '#8a94a0' : m.bg}"></i>${m.label}</span>`).join('') + '<span>knots</span></div>';
 }
 
 // ═══ FORECAST DASHBOARD ════════════════════════════════════════════
@@ -5812,7 +5940,7 @@ function pxOpenRoute(id) {
 }
 
 // ═══ NAV ═══════════════════════════════════════════════════════════
-const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', dash: 'Dashboard', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
+const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', dash: 'Dashboard', valid: 'Validation', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of table / maps / fronts / passage you left it on
 function safeAreas() {
   const pr = document.createElement('div');
@@ -5852,11 +5980,11 @@ function paintScreenDiag() {
 window.addEventListener('resize', () => { if ($('view-boat').classList.contains('active')) paintScreenDiag(); });
 function showView(v) {
   if (!VIEW_NAMES[v]) v = 'anchor';
-  const tab = (v === 'maps' || v === 'fronts' || v === 'passage' || v === 'dash') ? 'weather' : v;
+  const tab = (v === 'maps' || v === 'fronts' || v === 'passage' || v === 'dash' || v === 'valid') ? 'weather' : v;
   if (tab === 'weather') lastWx = v;
   document.querySelectorAll('.view').forEach(e => e.classList.toggle('active', e.id === 'view-' + v));
   document.body.classList.toggle('full-map', v === 'maps');
-  document.body.classList.toggle('full-wx', v === 'weather' || v === 'dash');
+  document.body.classList.toggle('full-wx', v === 'weather' || v === 'dash' || v === 'valid');
   $('wxMenu').classList.remove('open');
   document.querySelectorAll('#wxMenu button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
   document.querySelectorAll('.tab').forEach(e => e.classList.toggle('active', e.dataset.v === tab));
@@ -5864,6 +5992,8 @@ function showView(v) {
   if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
   if (v === 'anchor') setTimeout(() => map.invalidateSize(), 50);
   if (v === 'boat') { paintBoat(); loadFrameMode(); loadCam(); setTimeout(paintScreenDiag, 50); }
+  if (v === 'valid') loadValid(false);
+  if (v === 'alerts') loadFcaState();
   else clearTimeout(CAM.timer);
   if (v === 'weather' || v === 'dash') { loadForecast(false); setTimeout(() => { fcPinSync(); if (v === 'dash' && FC) paintDash(); }, 30); }
   if (v === 'maps') openMaps();

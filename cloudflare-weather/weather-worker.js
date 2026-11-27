@@ -9,7 +9,12 @@
 //                  come from Open-Meteo at the boat, and the place name from
 //                  OpenStreetMap (see NWS_MAX_KM).
 //   every hour    7-model point forecast -> weather/<vessel>-forecast
-//   on request    the same, within a minute of the app's Refresh button
+//                 + what each model said for this hour and a day ahead ->
+//                   weather/<vessel>-fchist (for Validation in the app)
+//                 + forecast warnings pushed to ntfy (see FORECAST WARNINGS)
+//   every 5 min   the boat's measured true wind, averaged by the hour ->
+//                 weather/<vessel>-obs (Validation)
+//   on request    the forecast, within a minute of the app's Refresh button
 //   by hand only  ?run=fronts (coded fronts -> weather/<vessel>-fronts) and
 //                 ?run=wx (rain areas -> weather/<vessel>-fronts-wx). The app's
 //                 Fronts view now shows NOAA WPC's own charts, loaded straight
@@ -30,6 +35,9 @@
 // Variables (wrangler.toml [vars]): PROJECT_ID, VESSEL_ID, NWS_UA
 // Secrets (Cloudflare dashboard, type "Secret"): FB_EMAIL, FB_PASSWORD - the boat
 //   systems Firebase login, so writes pass the locked database rules (FIREBASE SIGN-IN)
+//   NTFY_TOPIC, NTFY_TOKEN (and NTFY_SERVER if not ntfy.sh) - the same values
+//   as the anchor watcher's, for the forecast warnings. Without them the
+//   warnings are worked out but not sent (shown in the app's alert page).
 // Manual:  https://<worker-url>/?run=now | ?run=forecast | ?run=fronts | ?run=wx | ?status=1
 // Data:    https://<worker-url>/data  - everything the app knows, as plain JSON
 //          (?only=position,instruments,... to pick sections, ?pretty=1 to indent)
@@ -76,6 +84,7 @@ export default {
       if (u.pathname === '/data') return dataFeed(e, u);
       if (u.searchParams.get('run') === 'now') return json(await jobNow(e, await getState(e)));
       if (u.searchParams.get('run') === 'forecast') return json(await jobForecast(e, await getState(e)));
+      if (u.searchParams.get('run') === 'obs') return json(await jobObs(e, await getState(e)));
       if (u.searchParams.get('run') === 'fronts') return json(await jobFronts(e, await getState(e)));
       if (u.searchParams.get('run') === 'wx') return json(await jobWx(e, await getState(e)));
       const st = await getState(e);
@@ -104,7 +113,8 @@ function cfg(env) {
   const t = v => typeof v === 'string' ? v.trim() : v;
   return { PROJECT_ID: t(env.PROJECT_ID) || 'harvest-moon-watch', VESSEL_ID: t(env.VESSEL_ID) || 'harvest-moon',
            NWS_UA: t(env.NWS_UA) || 'harvest-watch (sailingharvestmoon@gmail.com)',
-           FB_API_KEY: t(env.FB_API_KEY), FB_EMAIL: t(env.FB_EMAIL), FB_PASSWORD: t(env.FB_PASSWORD) };
+           FB_API_KEY: t(env.FB_API_KEY), FB_EMAIL: t(env.FB_EMAIL), FB_PASSWORD: t(env.FB_PASSWORD),
+           NTFY_TOPIC: t(env.NTFY_TOPIC), NTFY_TOKEN: t(env.NTFY_TOKEN), NTFY_SERVER: t(env.NTFY_SERVER) };
 }
 const json = (o, s = 200) => new Response(JSON.stringify(o, null, 2), { status: s, headers: { 'content-type': 'application/json' } });
 const ago = ms => ms ? Math.round((Date.now() - ms) / 60000) + ' min ago' : 'never';
@@ -228,7 +238,8 @@ async function getState(e) {
   const f = await fsGet(e, `weather/${e.VESSEL_ID}-wxstate`) || {};
   return { lastNow: num(f.lastNow) || 0, lastFc: num(f.lastFc) || 0, lastFronts: num(f.lastFronts) || 0, lastWx: num(f.lastWx) || 0,
            station: parse(str(f.station), null), pressLog: parse(str(f.pressLog), []),
-           place: parse(str(f.place), null), pressSrc: str(f.pressSrc) };
+           place: parse(str(f.place), null), pressSrc: str(f.pressSrc),
+           lastObs: num(f.lastObs) || 0, fcAlert: parse(str(f.fcAlert), {}) };
 }
 async function boatPosition(e) {
   try {
@@ -255,6 +266,7 @@ async function tick(e) {
   const fcDue = now - st.lastFc > FC_EVERY_MIN * 60000 || (req > st.lastFc && now - st.lastFc > FC_MIN_GAP_MIN * 60000);
   if (fcDue) return jobForecast(e, st);
   if (now - st.lastNow > NOW_EVERY_MIN * 60000) return jobNow(e, st);
+  if (now - st.lastObs > OBS_EVERY_MIN * 60000) return jobObs(e, st);
   return { idle: true };
 }
 
@@ -523,7 +535,146 @@ async function jobForecast(e, st) {
   // Whole-document write on purpose: it also clears the app's requestAt.
   await fsWrite(e, `weather/${e.VESSEL_ID}-forecast`, { data: JSON.stringify(data), updatedAt: at }, false);
   await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastFc: at }, true);
-  return { ok: true, models: Object.fromEntries(Object.entries(models).map(([k, v]) => [k, v.ok ? v.api : v.err])) };
+  // Neither of these may cost the forecast itself: errors are logged and noted only.
+  let hist = null, warn = null;
+  try { hist = await recordForecast(e, data); } catch (err) { hist = 'failed: ' + String(err.message || err).slice(0, 120); }
+  try { warn = await forecastWarnings(e, st, data); } catch (err) { warn = 'failed: ' + String(err.message || err).slice(0, 120); }
+  return { ok: true, models: Object.fromEntries(Object.entries(models).map(([k, v]) => [k, v.ok ? v.api : v.err])), history: hist, warnings: warn };
+}
+
+// ═══ VALIDATION: what each model said vs what the boat measured ═══
+// Like PredictWind's Validation, but against Harvest Moon's own instruments.
+// weather/<vessel>-fchist: every hour, each model's wind for this hour (h0,
+// as the forecast stood then) and for this hour tomorrow (h24, a day ahead).
+// weather/<vessel>-obs: the Pi's true wind (masthead), sampled every 5 min
+// and summed by the hour. The app does the scoring. 14 days are kept.
+const OBS_EVERY_MIN = 5, VALID_DAYS = 14, HOUR = 3600000;
+const utcOf = (t, off) => Date.parse(t + ':00Z') - (off || 0) * 1000;   // the forecast's local hour -> UTC ms
+function prune(o, keepFrom) { for (const k of Object.keys(o)) if (+k < keepFrom) delete o[k]; return o; }
+async function recordForecast(e, data) {
+  const now = Date.now(), h0 = Math.floor(now / HOUR) * HOUR;
+  const idx = {}; data.time.forEach((t, i) => { idx[utcOf(t, data.off)] = i; });
+  const snap = at => {
+    const i = idx[at]; if (i === undefined) return null;
+    const m = {};
+    for (const [id, r] of Object.entries(data.models)) {
+      if (!r.ok || !r.h) continue;
+      const ws = r.h.wind_speed_10m[i], wg = r.h.wind_gusts_10m[i], wd = r.h.wind_direction_10m[i];
+      if (ws !== null && ws !== undefined) m[id] = [ws, wg === undefined ? null : wg, wd === undefined ? null : wd];
+    }
+    return Object.keys(m).length ? { la: data.lat, lo: data.lon, m } : null;
+  };
+  const f = await fsGet(e, `weather/${e.VESSEL_ID}-fchist`) || {};
+  const H = parse(str(f.data), {}); H.h0 = H.h0 || {}; H.h24 = H.h24 || {};
+  const a = snap(h0), b = snap(h0 + 24 * HOUR);
+  if (a) H.h0[h0] = a;
+  if (b) H.h24[h0 + 24 * HOUR] = b;
+  const keep = now - VALID_DAYS * 86400000;
+  prune(H.h0, keep); prune(H.h24, keep);
+  await fsWrite(e, `weather/${e.VESSEL_ID}-fchist`, { data: JSON.stringify(H), updatedAt: now }, false);
+  return { hour: new Date(h0).toISOString().slice(0, 13), models: a ? Object.keys(a.m).length : 0, hours: Object.keys(H.h0).length };
+}
+async function jobObs(e, st) {
+  const now = Date.now();
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { lastObs: now }, true);
+  const t = await fsGet(e, `telemetry/${e.VESSEL_ID}`) || {};
+  const at = num(t.updatedAt), ws = num(t.windSpeedTrueKn), wd = num(t.windDirTrueDeg), gu = num(t.gustKn);
+  const la = num(t.lat), lo = num(t.lon);
+  if (!at || now - at > 4 * 60000 || ws === null) return { ok: true, note: 'no fresh wind from the boat' };
+  const f = await fsGet(e, `weather/${e.VESSEL_ID}-obs`) || {};
+  const O = parse(str(f.data), {}); O.h = O.h || {};
+  if (O.lastTs === at) return { ok: true, note: 'no new reading since the last sample' };
+  let pos = null;
+  if (la === null || lo === null) { try { pos = await boatPosition(e); } catch (err) {} }
+  const key = Math.floor(at / HOUR) * HOUR;
+  // [samples, sum of speed, samples with direction, sum u, sum v (wind FROM), peak gust, lat, lon]
+  const b = O.h[key] || [0, 0, 0, 0, 0, 0, null, null];
+  b[0]++; b[1] += ws;
+  if (wd !== null) { b[2]++; b[3] += Math.sin(wd * Math.PI / 180) * ws; b[4] += Math.cos(wd * Math.PI / 180) * ws; }
+  if (gu !== null) b[5] = Math.max(b[5], gu);
+  b[6] = la !== null ? la : pos ? pos.lat : b[6]; b[7] = lo !== null ? lo : pos ? pos.lon : b[7];
+  b[1] = Math.round(b[1] * 10) / 10; b[3] = Math.round(b[3] * 10) / 10; b[4] = Math.round(b[4] * 10) / 10;
+  O.h[key] = b; O.lastTs = at;
+  prune(O.h, now - VALID_DAYS * 86400000);
+  await fsWrite(e, `weather/${e.VESSEL_ID}-obs`, { data: JSON.stringify(O), updatedAt: now }, false);
+  return { ok: true, hour: new Date(key).toISOString().slice(0, 13), samples: b[0] };
+}
+
+// ═══ FORECAST WARNINGS (ntfy) ══════════════════════════════════════
+// After each forecast: strong wind, gusts, thunderstorms or a fast pressure
+// fall in the next hours, at the forecast spot, by enough models to agree.
+// Settings are the app's "Forecast warnings" alert (alarms/<vessel>):
+// fcAlertEnabled, fcAlertWindKn, fcAlertGustKn, fcAlertPressHpa (0 = off),
+// fcAlertHours, fcAlertModels. Each kind of event is pushed once; again only
+// if it moves by more than half a day, or the peak grows by 5 kn (3 hPa).
+// An event that drops out of the forecast is forgotten after 6 hours.
+const FCA_DEF = { fcAlertEnabled: false, fcAlertWindKn: 25, fcAlertGustKn: 33, fcAlertPressHpa: 4, fcAlertHours: 48, fcAlertModels: 2 };
+const MODEL_NAMES = { ecmwf: 'ECMWF', gfs: 'GFS', ukmo: 'UKMO', icon: 'ICON', nam: 'NAM', hrrr: 'HRRR', aifs: 'AIFS' };
+async function forecastWarnings(e, st, data) {
+  const c = await fsGet(e, `alarms/${e.VESSEL_ID}`, Object.keys(FCA_DEF)) || {};
+  const C = k => { const d = FCA_DEF[k]; if (typeof d === 'boolean') return c[k] ? !!c[k].booleanValue : d; const v = num(c[k]); return v === null ? d : v; };
+  if (!C('fcAlertEnabled')) return 'off';
+  const now = Date.now(), until = now + C('fcAlertHours') * HOUR, need = Math.max(1, Math.round(C('fcAlertModels')));
+  const ok = Object.entries(data.models).filter(([, r]) => r.ok && r.h);
+  const hrs = data.time.map((t, i) => [utcOf(t, data.off), i]).filter(([u]) => u >= now - HOUR && u <= until);
+  const tz = data.tzName || 'UTC';
+  const when = ms => new Date(ms).toLocaleString('en-US', { timeZone: tz, weekday: 'short', hour: 'numeric' }).replace(',', '');
+  const place = data.place || 'the boat';
+  const found = {};
+  const scan = (kind, test, val, unit) => {
+    let start = null, peak = -Infinity, per = {}, most = 0;
+    for (const [u, i] of hrs) {
+      const hit = ok.filter(([, r]) => { try { return test(r.h, i); } catch (x) { return false; } });
+      if (hit.length >= need) {
+        if (start === null) start = u;
+        most = Math.max(most, hit.length);
+        for (const [id, r] of hit) { const v = val(r.h, i); if (v !== null && v > (per[id] || -Infinity)) per[id] = v; }
+      }
+    }
+    if (start === null) return;
+    const vals = Object.values(per); peak = vals.length ? Math.max(...vals) : 0;
+    found[kind] = { start, peak: Math.round(peak), per, n: Math.max(most, Object.keys(per).length), unit };
+  };
+  const W = C('fcAlertWindKn'), G = C('fcAlertGustKn'), P = C('fcAlertPressHpa');
+  scan('wind', (h, i) => h.wind_speed_10m[i] >= W, (h, i) => h.wind_speed_10m[i], 'kn');
+  scan('gust', (h, i) => h.wind_gusts_10m[i] >= G, (h, i) => h.wind_gusts_10m[i], 'kn');
+  scan('thunder', (h, i) => h.weather_code[i] >= 95, () => null, '');
+  if (P > 0) scan('press', (h, i) => i >= 3 && h.pressure_msl[i] !== null && h.pressure_msl[i - 3] !== null && h.pressure_msl[i - 3] - h.pressure_msl[i] >= P,
+                  (h, i) => h.pressure_msl[i - 3] - h.pressure_msl[i], 'hPa');
+  const old = st.fcAlert || {}, next = {}, sent = [], errs = [];
+  for (const kind of ['wind', 'gust', 'thunder', 'press']) {
+    const f = found[kind], o = old[kind];
+    if (!f) { if (o && now - (o.seen || 0) < 6 * HOUR) next[kind] = o; continue; }
+    const same = o && Math.abs(o.start - f.start) <= 12 * HOUR;
+    const worse = same && f.peak >= (o.peak || 0) + (kind === 'press' ? 3 : 5);
+    next[kind] = { start: f.start, peak: same ? Math.max(f.peak, o.peak || 0) : f.peak, seen: now, sentAt: same ? o.sentAt : 0 };
+    if (same && !worse) continue;
+    const who = Object.entries(f.per).sort((a, b) => b[1] - a[1]).map(([id, v]) => `${MODEL_NAMES[id] || id} ${Math.round(v)}`).join(', ');
+    const msg = {
+      wind: [`Wind ${W}+ kn forecast`, `Wind to ${f.peak} kn from ${when(f.start)} at ${place} (${who}; ${f.n} of ${ok.length} models).`],
+      gust: [`Gusts ${G}+ kn forecast`, `Gusts to ${f.peak} kn from ${when(f.start)} at ${place} (${who}; ${f.n} of ${ok.length} models).`],
+      thunder: ['Thunderstorms forecast', `Thunderstorms from ${when(f.start)} at ${place} (${f.n} of ${ok.length} models).`],
+      press: ['Pressure falling fast', `Pressure falling ${f.peak} hPa in 3 h from ${when(f.start)} at ${place} (${who}).`]
+    }[kind];
+    if (worse) msg[0] += ' — worse';
+    const r = await sendNtfy(e, `Harvest Moon — ${msg[0]}`, msg[1] + ' Tap Harvest Watch → Weather for the detail.', 3, kind === 'thunder' ? 'zap' : 'cloud_with_rain');
+    if (r === true) { next[kind].sentAt = now; sent.push(msg[0]); } else errs.push(r);
+  }
+  await fsWrite(e, `weather/${e.VESSEL_ID}-wxstate`, { fcAlert: JSON.stringify(next),
+    fcAlertLast: sent.length ? `${new Date(now).toISOString()} ${sent.join('; ')}` : undefined,
+    fcAlertErr: errs.length ? errs[0] : (sent.length ? 'none' : undefined) }, true);
+  return { found: Object.keys(found), sent, errors: errs };
+}
+async function sendNtfy(e, title, message, priority, tags) {
+  if (!e.NTFY_TOPIC) return 'NTFY_TOPIC is not set on the weather worker';
+  const server = (e.NTFY_SERVER || 'https://ntfy.sh').replace(/\/+$/, '');
+  const headers = { 'Content-Type': 'application/json' };
+  if (e.NTFY_TOKEN) headers.Authorization = 'Bearer ' + e.NTFY_TOKEN;
+  try {
+    const r = await fetch(server, { method: 'POST', headers,
+      body: JSON.stringify({ topic: e.NTFY_TOPIC, title, message, priority, tags: [tags] }) });
+    return r.ok ? true : `ntfy -> ${r.status}`;
+  } catch (err) { return 'ntfy: ' + String(err.message || err).slice(0, 100); }
 }
 
 // ═══ JOB: "Now" summary for the boat and the cabin display ════════
