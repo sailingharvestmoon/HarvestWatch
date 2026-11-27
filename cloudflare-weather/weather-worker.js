@@ -461,19 +461,27 @@ async function omJson(url) {
   if (!r.ok || !j || j.error) throw new Error((j && j.reason) || 'HTTP ' + r.status);
   return j;
 }
+// Each model's feeds are tried in order until one has wind in it. An answer
+// with no wind at all (Open-Meteo sometimes gives AIFS like that, all nulls)
+// used to end the search as "no coverage here" without trying the next feed,
+// which is why AIFS came and went; a failed request (an error, a timeout) is
+// now also asked once more before moving on.
 async function fcModel(apis, lat, lon) {
-  let last = 'failed';
+  let last = 'failed', empty = null;
   for (const name of apis) {
-    try {
-      const j = await omJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
-        + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit&cell_selection=sea`
-        + `&precipitation_unit=mm&timezone=auto&forecast_days=${FC_DAYS}`);
-      const h = j.hourly || {};
-      const ok = (h.wind_speed_10m || []).some(v => v !== null);
-      return { j, meta: { api: name, ok, err: ok ? '' : 'no coverage here' } };
-    } catch (err) { last = String(err.message || err).slice(0, 120); }
+    for (let k = 0; k < 2; k++) {
+      try {
+        const j = await omJson(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}`
+          + `&hourly=${FC_VARS.join(',')}&daily=sunrise,sunset&models=${name}&wind_speed_unit=kn&temperature_unit=fahrenheit&cell_selection=sea`
+          + `&precipitation_unit=mm&timezone=auto&forecast_days=${FC_DAYS}`);
+        const h = j.hourly || {};
+        if ((h.wind_speed_10m || []).some(v => v !== null)) return { j, meta: { api: name, ok: true, err: '' } };
+        if (!empty) empty = { j, meta: { api: name, ok: false, err: 'no coverage here' } };
+        break;                                   // answered, but empty: try the next feed
+      } catch (err) { last = String(err.message || err).slice(0, 120); }
+    }
   }
-  return { j: null, meta: { ok: false, err: last } };
+  return empty || { j: null, meta: { ok: false, err: last } };
 }
 async function jobForecast(e, st) {
   const p = await forecastPosition(e);
