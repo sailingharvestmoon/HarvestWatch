@@ -4495,32 +4495,53 @@ const BOAT_FIELDS = [
   { k: 'bowOffsetFt', label: 'GPS antenna to bow roller', unit: 'ft', step: 1, note: 'Drag is measured from the bow', sw: 'bowOffsetEnabled' },
   { k: 'bowRollerFt', label: 'Bow roller above water', unit: 'ft', step: .5, note: 'Used for scope' },
   { k: 'transducerOffsetFt', label: 'Depth transducer below water', unit: 'ft', step: .5, note: 'Added to the sounder reading' },
-  { k: 'magVarDeg', label: 'Magnetic variation', unit: '°', step: .5, note: 'West is negative. Fallback only: the Pi works variation out from the GPS position (World Magnetic Model).' }
+  { k: 'magVarDeg', label: 'Magnetic variation', unit: '°', step: .5, hem: true }
 ];
+// Variation: what the Pi is using now, and the fallback typed here (a number
+// and E/W - an iPhone's number pad has no minus key). West is stored negative.
+let boatVarHem = null;                 // E/W tapped but not saved yet
+const fmtVar = v => `${Math.abs(v).toFixed(1)}° ${v < 0 ? 'W' : 'E'}`;
+function boatVarNow() {
+  const t = S.tel, age = t ? ageMin(num(t.updatedAt)) : null, v = t ? num(t.variationDeg) : null, src = t ? str(t.variationSource) : '';
+  if (!t || v === null || !src) return `<span style="color:var(--warn)">The Pi hasn't reported a variation yet.</span>`;
+  const why = src === 'gps' ? 'sent by the GPS' : src === 'model' ? "worked out from the boat's position (World Magnetic Model)" : 'your fallback below (no GPS fix)';
+  const old = age !== null && age > 60 ? ` · last report ${ago(num(t.updatedAt))}` : '';
+  return `The Pi is using <span style="font-weight:700;color:var(--ink)">${fmtVar(v)}</span> — ${why}${old}.`;
+}
+function boatHem(h) { boatVarHem = h; document.querySelectorAll('#bsHem button').forEach(b => b.classList.toggle('on', b.dataset.h === h)); }
 function paintBoat() {
   const el = $('boatSetup');
   if (el.contains(document.activeElement)) return;   // don't fight the keyboard
-  el.innerHTML = BOAT_FIELDS.map(f => `
+  el.innerHTML = BOAT_FIELDS.map(f => {
+    if (f.hem) {
+      const v = C(f.k) || 0, hem = boatVarHem || (v < 0 ? 'W' : 'E');
+      return `<div class="row" style="display:block"><div class="txt"><b>${f.label}</b><small style="white-space:normal">${boatVarNow()}</small></div></div>
+    <div class="row"><div class="txt"><b style="font-weight:500">Fallback</b><small style="white-space:normal">Only if the Pi can't work it out. Leave 0 if unsure.</small></div>
+      <input class="text-in" id="bs_${f.k}" type="number" inputmode="decimal" min="0" max="40" step="${f.step}" value="${Math.abs(v)}" style="width:70px;text-align:right;padding:9px 10px;font-size:16px;">
+      <span class="val" style="width:12px;">°</span>
+      <div class="seg" id="bsHem" style="width:86px;flex:none;">${['E', 'W'].map(h => `<button type="button" data-h="${h}" class="${hem === h ? 'on' : ''}" onclick="boatHem('${h}')">${h}</button>`).join('')}</div></div>`;
+    }
+    return `
     <div class="row"><div class="txt"><b>${f.label}</b><small>${f.note}</small></div>
       ${f.sw ? `<label class="switch" style="margin-right:4px;"><input type="checkbox" id="bs_${f.sw}" ${C(f.sw) ? 'checked' : ''}><span></span></label>` : ''}
       <input class="text-in" id="bs_${f.k}" type="number" inputmode="decimal" step="${f.step}" value="${C(f.k)}" style="width:84px;text-align:right;padding:9px 10px;font-size:16px;">
-      <span class="val" style="width:18px;">${f.unit}</span></div>`).join('');
-  const v = C('magVarDeg');
-  if (!S.cfg.magVarDeg || v === 0) {
-    // Fine without a setting while the Pi gets variation from the GPS or works it out from the position.
-    const known = !!S.tel && (bool(S.tel.variationFromGps) || str(S.tel.variationSource) === 'model');
-    if (!known) el.insertAdjacentHTML('beforeend', `<div class="row"><div class="txt"><small style="white-space:normal;color:var(--warn)">The GPS isn't sending variation and none is set, so the bow position is being projected along magnetic heading.</small></div></div>`);
-  }
+      <span class="val" style="width:18px;">${f.unit}</span></div>`;
+  }).join('');
 }
 async function saveBoat() {
   const fields = {};
   for (const f of BOAT_FIELDS) {
-    const v = parseFloat($('bs_' + f.k).value);
+    let v = parseFloat($('bs_' + f.k).value);
+    if (f.hem && isFinite(v)) {
+      const hem = boatVarHem || ((C(f.k) || 0) < 0 ? 'W' : 'E');
+      v = Math.min(40, Math.abs(v)) * (hem === 'W' ? -1 : 1);
+    }
     if (isFinite(v)) fields[f.k] = fD(v);
     if (f.sw) fields[f.sw] = fB($('bs_' + f.sw).checked);
   }
   const ok = await writeAlarms(fields);
   if (!ok) { toast('Could not reach the cloud — not saved', 4000); return; }
+  boatVarHem = null;
   Object.assign(S.cfg, fields); document.activeElement && document.activeElement.blur(); paintAll();
   toast('Boat setup saved');
 }
