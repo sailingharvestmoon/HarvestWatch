@@ -38,6 +38,9 @@
 
 * { box-sizing:border-box; margin:0; padding:0; -webkit-tap-highlight-color:transparent; }
 html, body { height:100%; }
+/* What iOS shows past the bottom of the app's window (see fitShortWindow): the tab bar's colour. */
+html { background:var(--tabbar); }
+html.ios-short .tabbar { padding-bottom:0; }
 body {
   background:var(--bg); color:var(--ink); overflow:hidden;
   font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -5790,21 +5793,40 @@ function pxOpenRoute(id) {
 // ═══ NAV ═══════════════════════════════════════════════════════════
 const VIEW_NAMES = { anchor: 'Anchor', instruments: 'Instruments', alerts: 'Alerts', weather: 'Weather', dash: 'Dashboard', maps: 'Weather maps', fronts: 'Fronts · day 0–7', passage: 'Passage', boat: 'Boat' };
 let lastWx = 'weather';   // the Weather tab reopens whichever of table / maps / fronts / passage you left it on
-// Screen sizes as iOS reports them (Boat tab, bottom): for sorting out the
-// empty band under the tab bar on the Home Screen app.
-function paintScreenDiag() {
-  const el = $('scrDiag'); if (!el) return;
+function safeAreas() {
   const pr = document.createElement('div');
   pr.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)';
   document.body.appendChild(pr); const c = getComputedStyle(pr);
   const sa = [c.paddingTop, c.paddingBottom, c.paddingLeft, c.paddingRight].map(x => parseFloat(x) || 0);
-  pr.remove();
+  pr.remove(); return sa;
+}
+// iPhone Home Screen app (seen on iOS 18.7): iOS can give the app a window
+// short of the screen by exactly the status bar (797 of 844 points) and show
+// only the page colour below it. Nothing drawn reaches that band, so it takes
+// the tab bar's colour (html background, above) and the tab bar drops its own
+// home-bar padding, since the band already sits over the home bar.
+function fitShortWindow() {
+  const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  let short = false;
+  if (standalone && window.screen) {
+    const sa = safeAreas(), land = innerWidth > innerHeight;
+    const full = land ? Math.min(screen.width, screen.height) : Math.max(screen.width, screen.height);
+    short = sa[0] > 0 && Math.abs(innerHeight + sa[0] - full) <= 2;
+  }
+  document.documentElement.classList.toggle('ios-short', short);
+}
+fitShortWindow(); window.addEventListener('resize', fitShortWindow); window.addEventListener('orientationchange', () => setTimeout(fitShortWindow, 300));
+// Screen sizes as iOS reports them (Boat tab, bottom).
+function paintScreenDiag() {
+  const el = $('scrDiag'); if (!el) return;
+  const sa = safeAreas();
   const app = document.querySelector('.app').getBoundingClientRect(), vv = window.visualViewport;
   const standalone = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
   const ios = (/OS (\d+[_\d]*)/.exec(navigator.userAgent) || [])[1];
   el.textContent = `Screen ${screen.width}×${screen.height} · window ${innerWidth}×${innerHeight}`
     + ` · page ${document.documentElement.clientHeight}${vv ? ` · visual ${Math.round(vv.height)}` : ''} · app ${Math.round(app.top)}–${Math.round(app.bottom)}`
-    + ` · safe areas top ${sa[0]} bottom ${sa[1]} · ${standalone ? 'Home Screen app' : 'browser'}${ios ? ' · iOS ' + ios.replace(/_/g, '.') : ''}`;
+    + ` · safe areas top ${sa[0]} bottom ${sa[1]} · ${standalone ? 'Home Screen app' : 'browser'}${ios ? ' · iOS ' + ios.replace(/_/g, '.') : ''}`
+    + (document.documentElement.classList.contains('ios-short') ? ' · short window fitted' : '');
 }
 window.addEventListener('resize', () => { if ($('view-boat').classList.contains('active')) paintScreenDiag(); });
 function showView(v) {
